@@ -14,7 +14,7 @@
 3. **Message Queue (RabbitMQ)**:
    - Facilitates async communication between Transaction Service, Fraud Detection Service, and Account Service.
 4. **Database**:
-   - MySQL instance shared by User, Account, and Transaction Services.
+   - MySQL instance shared by User, Account, and Transaction Services, with separate tables per service.
 5. **Logging**:
    - File-based logging for Fraud Detection Service.
 6. **Kubernetes**:
@@ -60,14 +60,14 @@
 ```
 
 ### Explanation
-- **Frontend**: Top box, connects to microservices via HTTP.
-- **User Service**: Left box, REST API to frontend, connects to MySQL.
-- **Account Service**: Middle box, GraphQL to frontend, connects to MySQL, listens to RabbitMQ for balance updates.
-- **Transaction Service**: Right box, REST API to frontend, connects to MySQL, sends/receives RabbitMQ messages for fraud checks and account updates.
-- **Fraud Detection Service**: Bottom-right box, built with FastAPI (Python), consumes/produces RabbitMQ messages, logs to a file.
+- **Frontend**: Connects to microservices via HTTP.
+- **User Service**: REST API to frontend, connects to MySQL.
+- **Account Service**: GraphQL to frontend, connects to MySQL, listens to RabbitMQ for balance updates.
+- **Transaction Service**: REST API to frontend, connects to MySQL, sends/receives RabbitMQ messages for fraud checks and account updates.
+- **Fraud Detection Service**: Built with FastAPI (Python), consumes/produces RabbitMQ messages, logs to a file.
 - **RabbitMQ**: Central hub for async messaging between Transaction, Fraud Detection, and Account Services.
-- **MySQL**: Single shared database instance for C# services, shown with dotted connections.
-- **Kubernetes**: Outer dashed rectangle encompassing all components.
+- **MySQL**: Single shared database instance for C# services, with dotted connections.
+- **Kubernetes**: Encompasses all components.
 
 ---
 
@@ -86,38 +86,33 @@
 ---
 
 ## Frontend
-
 - **Technology**: React
 - **Functionality**: 
   - Register/login via User Service (REST).
   - View account balance via Account Service (GraphQL).
   - Initiate a transfer via Transaction Service (REST).
   - Display transfer status (success or flagged as fraud).
-- **Scope**: Minimal UI—just a few pages with basic forms and tables, no fancy styling or real-time updates.
+- **Scope**: Minimal UI—just a few pages with basic forms and tables, no styling or real-time updates.
 
 ---
 
 ## Infrastructure
-
 - **Message Queue**: RabbitMQ
   - Used for basic async communication (e.g., Transaction → Fraud Detection → Account).
   - Simple queues with no advanced features like retries or dead-letter queues.
 - **Containerization**: Docker
   - Basic Dockerfiles for each microservice and frontend.
 - **Orchestration**: Kubernetes
-  - Run locally with Minikube or a simple cloud provider (e.g., DigitalOcean Kubernetes with a free tier).
-  - Minimal setup: deployments and services, no ingress or advanced networking.
+  - Run locally with Minikube for development; DigitalOcean Kubernetes chosen for its free tier and ease of setup for the final demo.
 - **Logging**: 
-  - File-based logging per service (e.g., text files in Python for fraud detection).
-  - Skip ELK Stack to reduce setup time.
-- **Monitoring**: None (optional Prometheus if time permits, but not prioritized).
+  - File-based logging per service (e.g., text files for Fraud Detection), chosen for simplicity in a demo context.
+- **Monitoring**: None, though Prometheus is an option if time permits.
 - **CI/CD**: 
-  - GitHub Actions with a simple pipeline: build Docker images, run basic tests, and deploy to Kubernetes.
+  - GitHub Actions pipeline: build Docker images, run basic tests, deploy to Kubernetes.
 
 ---
 
 ## Specifications
-
 ### Functional Requirements
 1. **User Management**:
    - Register with username/password.
@@ -133,7 +128,7 @@
 
 ### Non-Functional Requirements
 - **Scalability**: Basic microservices structure (no high-load optimization needed).
-- **Security**: Minimal—plain text passwords in SQLite (not production-ready, but fine for a demo).
+- **Security**: Plain text passwords in MySQL for demo simplicity (not production-ready).
 - **Reliability**: Basic error handling; no complex retry logic.
 - **Performance**: Adequate for a demo with a few users.
 - **Maintainability**: Simple code with comments.
@@ -141,41 +136,40 @@
 
 ---
 
-## Communication Flow (Simplified Transfer)
-
-1. **Frontend**: User submits a transfer via Transaction Service REST API.
-2. **Transaction Service**: 
-   - Publishes a “CheckFraud” message to RabbitMQ.
-3. **Fraud Detection Service**: 
-   - Consumes the message, checks if amount > $1000, logs result to a file, publishes “FraudResult”.
-4. **Transaction Service**: 
-   - Consumes “FraudResult”. If not fraudulent, publishes “UpdateAccounts”.
-5. **Account Service**: 
-   - Consumes “UpdateAccounts”, adjusts balances, publishes “TransferComplete”.
-6. **Transaction Service**: 
-   - Consumes “TransferComplete”, updates the transaction status.
-7. **Frontend**: Polls Transaction Service to show the result.
+## System Architecture Design
+- **Architectural Pattern**: Message-Driven Microservices Architecture using RabbitMQ for asynchronous communication.
+- **Team Responsibilities**:
+  - Person 1: User Service + Frontend.
+  - Person 2: Account Service.
+  - Person 3: Transaction Service.
+  - Person 4: Fraud Detection Service + DevOps (Kubernetes, CI/CD).
 
 ---
 
 ## Development and Deployment Plan
-
 1. **Project Management**:
    - Use GitHub with a monorepo (one repo, folders for each service).
    - Simple task board (GitHub Issues) for tracking.
 2. **CI/CD Setup**:
-   - GitHub Actions: 
+   - GitHub Actions:
      - Build Docker images.
-     - Run minimal unit tests (e.g., one test per service).
-     - Deploy to Minikube or a small Kubernetes cluster.
-3. **Implementation Steps** (~60-75 hours total per person):
-   - **Week 1-2**: Define specs, set up repo, and Docker/Kubernetes basics (10-15 hours).
+     - Run minimal unit tests (e.g., one test per service for core functionality).
+     - Deploy to Minikube or DigitalOcean Kubernetes.
+3. **Documentation Strategy**:
+   - GitHub README for setup instructions.
+   - Inline code comments for implementation details.
+   - Final report for architecture and design decisions.
+4. **Versioning Strategy**:
+   - **Code**: Git tags (e.g., v1.0.0).
+   - **APIs**: Semantic versioning in endpoints (e.g., `/v1/transfer`).
+   - **Database**: Manual schema updates for MySQL tables.
+5. **Implementation Steps** (~60-75 hours per person):
+   - **Week 1-2**: Define specs, set up repo, Docker/Kubernetes basics (10-15 hours).
    - **Week 3-5**: Build User Service + Frontend login/register (15-20 hours).
    - **Week 6-8**: Build Account Service + balance view (15-20 hours).
    - **Week 9-11**: Build Transaction Service + transfer logic (15-20 hours).
    - **Week 12-13**: Build Fraud Detection Service + RabbitMQ integration (10-15 hours).
-   - **Week 14**: Polish UI, test, and deploy (5-10 hours).
-4. **Deployment**:
-   - Use Minikube locally for development.
-   - Optionally deploy to a free/low-cost Kubernetes cluster (e.g., DigitalOcean) for the final demo.
-
+   - **Week 14**: Polish UI, test, deploy (5-10 hours).
+6. **Deployment**:
+   - Minikube locally for development.
+   - DigitalOcean Kubernetes for the final demo.
