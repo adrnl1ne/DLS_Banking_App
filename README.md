@@ -1,7 +1,3 @@
-You’re absolutely right—10 ECTS (typically around 250-300 hours of work total, or 60-75 hours per person for a group of 4 over a semester) suggests a project that should be challenging but manageable within the time constraints. The previous proposal, while comprehensive, might indeed be overly ambitious for a semester project with a small team. Let’s scale it down to focus on core functionality, simplify the scope, and ensure it’s achievable while still meeting the minimum requirements (4 microservices, frontend, Kubernetes, C# backend, Python fraud detection, RabbitMQ, and logging). Below is a revised, lightweight version of the banking application tailored to your constraints.
-
----
-
 ## Revised Architecture Overview
 
 The application will still use a microservices architecture with exactly four backend microservices (no optional extras), a simple frontend, and a streamlined feature set. It will run on Kubernetes, use RabbitMQ for messaging, and keep complexity low by reducing dependencies and advanced features like third-party integrations or serverless functions.
