@@ -1,46 +1,91 @@
-## Revised Architecture Overview
+## Architecture Diagram Description
 
-The application will still use a microservices architecture with exactly four backend microservices (no optional extras), a simple frontend, and a streamlined feature set. It will run on Kubernetes, use RabbitMQ for messaging, and keep complexity low by reducing dependencies and advanced features like third-party integrations or serverless functions.
+### Components
+1. **Frontend (React)**:
+   - Communicates with:
+     - User Service via REST API.
+     - Account Service via GraphQL.
+     - Transaction Service via REST API (polling for status).
+2. **Microservices**:
+   - **User Service (C#)**: Handles registration/login, uses MySQL.
+   - **Account Service (C#)**: Manages balances, uses MySQL.
+   - **Transaction Service (C#)**: Processes transfers, uses MySQL.
+   - **Fraud Detection Service (Python with FastAPI)**: Analyzes transfers, logs to a file.
+3. **Message Queue (RabbitMQ)**:
+   - Facilitates async communication between Transaction Service, Fraud Detection Service, and Account Service.
+4. **Database**:
+   - MySQL instance shared by User, Account, and Transaction Services.
+5. **Logging**:
+   - File-based logging for Fraud Detection Service.
+6. **Kubernetes**:
+   - Orchestrates all containers (frontend, microservices, RabbitMQ, MySQL).
 
-- **Team分工 (Tentative)**: 
-  - Person 1: User Service + Frontend
-  - Person 2: Account Service
-  - Person 3: Transaction Service
-  - Person 4: Fraud Detection Service + DevOps (Kubernetes, CI/CD)
-
-- **Time Estimate**: ~60-75 hours per person, spread over a semester (e.g., 5-6 hours/week for 12-14 weeks).
-
----
-
-## Microservices (Simplified)
-
-1. **User Service**
-   - **Language**: C# (ASP.NET Core)
-   - **Functionality**: Handles user registration and login with basic username/password authentication (no JWT or OAuth2 to save time).
-   - **Communication**: REST API for frontend; publishes registration events to RabbitMQ.
-   - **Database**: SQLite (lightweight, embedded, no separate server setup).
-
-2. **Account Service**
-   - **Language**: C# (ASP.NET Core)
-   - **Functionality**: Manages user accounts and balances (create account, view balance).
-   - **Communication**: GraphQL API for frontend; listens to RabbitMQ for transaction updates.
-   - **Database**: SQLite.
-
-3. **Transaction Service**
-   - **Language**: C# (ASP.NET Core)
-   - **Functionality**: Processes simple transfers between accounts (no deposits/withdrawals to reduce scope).
-   - **Communication**: REST API for frontend; uses RabbitMQ to coordinate with Fraud Detection and Account Services.
-   - **Database**: SQLite.
-
-4. **Fraud Detection Service**
-   - **Language**: Python (Flask)
-   - **Functionality**: Checks transfers for fraud using a basic rule (e.g., flag transfers > $1000). Logs results to a file.
-   - **Communication**: Consumes and publishes messages via RabbitMQ.
-   - **Database**: None (logs to a file instead of a database).
+### Flow
+- Arrows represent communication:
+  - Solid lines: HTTP (REST/GraphQL) between frontend and microservices.
+  - Dashed lines: RabbitMQ messages between microservices.
+  - Dotted lines: Database connections from C# services to MySQL.
 
 ---
 
-## Frontend (Simplified)
+## ASCII Art Diagram
+
+```
++--------------------+
+|   Frontend (React) |
+|--------------------|
+| REST  | GraphQL    | REST
++--------------------+
+    |         |         |
+    v         v         v
++--------+  +--------+  +--------+
+| User   |  | Account|  | Trans- |
+| Service|  | Service|  | action |
+| (C#)   |  | (C#)   |  | Service|
++--------+  +--------+  | (C#)  |
+    :         :         +--------+
+    :.....    :.....       |
+    :     +--------+       v
+    :     | MySQL  |    +---------+   +-------+
+    :.....|        |<-->| RabbitMQ|<->| Fraud  |
+          +--------+    +---------+   | Detect |
+                                      | (FastAPI)|
+                                      | File Log|
+                                      +-------+
+                                          ^
+                                          |
++-----------------------------------------+
+|             Kubernetes                  |
++-----------------------------------------+
+```
+
+### Explanation
+- **Frontend**: Top box, connects to microservices via HTTP.
+- **User Service**: Left box, REST API to frontend, connects to MySQL.
+- **Account Service**: Middle box, GraphQL to frontend, connects to MySQL, listens to RabbitMQ for balance updates.
+- **Transaction Service**: Right box, REST API to frontend, connects to MySQL, sends/receives RabbitMQ messages for fraud checks and account updates.
+- **Fraud Detection Service**: Bottom-right box, built with FastAPI (Python), consumes/produces RabbitMQ messages, logs to a file.
+- **RabbitMQ**: Central hub for async messaging between Transaction, Fraud Detection, and Account Services.
+- **MySQL**: Single shared database instance for C# services, shown with dotted connections.
+- **Kubernetes**: Outer dashed rectangle encompassing all components.
+
+---
+
+## Detailed Flow (Transfer Example)
+1. **Frontend → Transaction Service**: REST POST `/transfer {fromAccount, toAccount, amount}`.
+2. **Transaction Service → RabbitMQ**: Publishes `"CheckFraud": {transferId, amount}`.
+3. **RabbitMQ → Fraud Detection Service**: Consumes `"CheckFraud"`.
+4. **Fraud Detection Service**: Checks if `amount > 1000`, logs result to file, publishes `"FraudResult": {transferId, isFraud}`.
+5. **RabbitMQ → Transaction Service**: Consumes `"FraudResult"`.
+6. **Transaction Service → RabbitMQ**: If not fraud, publishes `"UpdateAccounts": {fromAccount, toAccount, amount}`.
+7. **RabbitMQ → Account Service**: Consumes `"UpdateAccounts"`, updates balances in MySQL.
+8. **Account Service → RabbitMQ**: Publishes `"TransferComplete": {transferId}`.
+9. **RabbitMQ → Transaction Service**: Consumes `"TransferComplete"`, updates status in MySQL.
+10. **Frontend → Transaction Service**: Polls REST GET `/transfer/{transferId}` for status.
+
+---
+
+## Frontend
 
 - **Technology**: React
 - **Functionality**: 
@@ -52,13 +97,11 @@ The application will still use a microservices architecture with exactly four ba
 
 ---
 
-## Infrastructure (Simplified)
+## Infrastructure
 
 - **Message Queue**: RabbitMQ
   - Used for basic async communication (e.g., Transaction → Fraud Detection → Account).
   - Simple queues with no advanced features like retries or dead-letter queues.
-- **Database**: SQLite
-  - Embedded in each C# service to avoid managing a separate database server.
 - **Containerization**: Docker
   - Basic Dockerfiles for each microservice and frontend.
 - **Orchestration**: Kubernetes
@@ -136,14 +179,3 @@ The application will still use a microservices architecture with exactly four ba
    - Use Minikube locally for development.
    - Optionally deploy to a free/low-cost Kubernetes cluster (e.g., DigitalOcean) for the final demo.
 
----
-
-## Why This Works for 10 ECTS
-
-- **Reduced Scope**: Only core banking features (no email service, admin GUI, or third-party logins).
-- **Simplified Tech**: SQLite instead of PostgreSQL, file logging instead of ELK, no monitoring unless time allows.
-- **Minimal Frontend**: Basic React app with a few screens.
-- **Team Size Fit**: Each person owns one microservice (or frontend), with one handling DevOps—workload is balanced.
-- **Time Feasible**: ~60-75 hours per person aligns with 10 ECTS, assuming a semester of 12-14 weeks.
-
-This version still meets all requirements (4 microservices, C# backend, Python fraud detection, RabbitMQ, Kubernetes, REST + GraphQL, logging for fraud), but it’s stripped down to be achievable by a group of 4 in a semester. Let me know if you’d like to tweak it further!
