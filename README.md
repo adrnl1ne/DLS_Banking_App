@@ -139,10 +139,10 @@
 ## System Architecture Design
 - **Architectural Pattern**: Message-Driven Microservices Architecture using RabbitMQ for asynchronous communication.
 - **Team Responsibilities**:
-  - Person 1: User Service + Frontend.
-  - Person 2: Account Service.
-  - Person 3: Transaction Service.
-  - Person 4: Fraud Detection Service + DevOps (Kubernetes, CI/CD).
+  - Daniel: User Service + Frontend.
+  - Jakob: Account Service.
+  - Albert: Transaction Service.
+  - Frederik: Fraud Detection Service + DevOps (Kubernetes, CI/CD).
 
 ---
 
