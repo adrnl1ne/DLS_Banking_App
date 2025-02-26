@@ -28,39 +28,10 @@
 
 ---
 
-## ASCII Art Diagram
+## Distributed system architecture
 
 ![image](https://github.com/user-attachments/assets/9a25d294-1d23-407b-b8b9-f78acb0ab21b)
 
-
-```
-+--------------------+
-|   Frontend (React) |
-|--------------------|
-| REST  | GraphQL    | REST
-+--------------------+
-    |         |         |
-    v         v         v
-+--------+  +--------+  +--------+
-| User   |  | Account|  | Trans- |
-| Service|  | Service|  | action |
-| (C#)   |  | (C#)   |  | Service|
-+--------+  +--------+  | (C#)  |
-    :         :         +--------+
-    :.....    :.....       |
-    :     +--------+       v
-    :     | MySQL  |    +---------+   +-------+
-    :.....|        |<-->| RabbitMQ|<->| Fraud  |
-          +--------+    +---------+   | Detect |
-                                      | (FastAPI)|
-                                      | File Log|
-                                      +-------+
-                                          ^
-                                          |
-+-----------------------------------------+
-|             Kubernetes                  |
-+-----------------------------------------+
-```
 
 ### Explanation
 - **Frontend**: Connects to microservices via HTTP.
