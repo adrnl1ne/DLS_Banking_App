@@ -114,7 +114,7 @@
 - **Architectural Pattern**: Message-Driven Microservices Architecture using RabbitMQ for asynchronous communication.
 - **Team Responsibilities**:
   - Daniel: User Service + Frontend.
-  - Jakob: Account Service.
+  - Jakob: Account Service + RabbitMQ.
   - Albert: Transaction Service.
   - Frederik: Fraud Detection Service + DevOps (Kubernetes, CI/CD).
 
