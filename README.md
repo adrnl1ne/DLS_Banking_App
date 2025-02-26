@@ -30,6 +30,9 @@
 
 ## ASCII Art Diagram
 
+![image](https://github.com/user-attachments/assets/9a25d294-1d23-407b-b8b9-f78acb0ab21b)
+
+
 ```
 +--------------------+
 |   Frontend (React) |
