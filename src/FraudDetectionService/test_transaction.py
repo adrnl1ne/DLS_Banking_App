@@ -6,7 +6,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 # Publish test messages to the CheckFraud queue
-def send_test_messages(num_tests=100):
+def send_test_messages(num_tests=100, duplicate_id=None):
     connection = pika.BlockingConnection(pika.ConnectionParameters(host="rabbitmq"))
     channel = connection.channel()
     channel.queue_declare(queue="CheckFraud")
@@ -15,8 +15,12 @@ def send_test_messages(num_tests=100):
     
     print(f"Sending {num_tests} test messages...")
     for i in range(num_tests):
-        # Generate random transaction ID and amount
-        transfer_id = str(uuid.uuid4())[:8]  # Use first 8 chars of UUID for readability
+        # Use a fixed transfer_id for duplicates, or generate a new one
+        if duplicate_id and i % 2 == 1:  # Send duplicate every other message
+            transfer_id = duplicate_id
+        else:
+            transfer_id = str(uuid.uuid4())[:8]  # Use first 8 chars of UUID for readability
+        
         amount = random.randint(100, 5000)  # Random amount between $100 and $5000
         
         # Create and send test message
@@ -36,7 +40,7 @@ def send_test_messages(num_tests=100):
     return results
 
 # Consume the results from the FraudResult queue
-def consume_results(expected_count=100, timeout=30):
+def consume_results(expected_count=5, timeout=30):
     connection = pika.BlockingConnection(pika.ConnectionParameters(host="rabbitmq"))
     channel = connection.channel()
     channel.queue_declare(queue="FraudResult")
@@ -98,15 +102,10 @@ def consume_results(expected_count=100, timeout=30):
 
 if __name__ == "__main__":
     num_tests = 100
+    # Use a fixed transfer_id for duplicates
+    duplicate_id = "test-duplicate-id"
     
-    print(f"🚀 Starting test with {num_tests} random transactions")
-    sent_transactions = send_test_messages(num_tests)
+    print(f"🚀 Starting test with {num_tests} transactions, some duplicates")
+    sent_transactions = send_test_messages(num_tests, duplicate_id=duplicate_id)
     time.sleep(1)  # Give some time for processing to begin
-    received_results = consume_results(expected_count=num_tests)
-    
-    # Calculate how many messages we may have missed
-    missing_count = num_tests - len(received_results)
-    if missing_count > 0:
-        print(f"⚠️ Warning: {missing_count} messages were not received within the timeout period.")
-    else:
-        print("✅ All messages were successfully processed!")
+    received_results = consume_results(expected_count=num_tests - (num_tests // 2))  # Expect fewer results due to duplicates

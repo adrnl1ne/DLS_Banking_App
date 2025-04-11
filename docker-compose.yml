@@ -24,13 +24,14 @@ services:
       prometheus:
         condition: service_healthy
     volumes:
-      - grafana-data:/var/lib/grafana 
+      - grafana-data:/var/lib/grafana
+    entrypoint: ["/bin/sh", "-c", "sleep 10 && /run.sh"]
 
   rabbitmq:
     image: rabbitmq:3-management
     container_name: rabbitmq
     ports:
-      - "5672:5672" 
+      - "5672:5672"
       - "15672:15672"
     environment:
       RABBITMQ_DEFAULT_USER: guest
@@ -42,6 +43,17 @@ services:
       retries: 5
       start_period: 15s
 
+  redis:
+    image: redis:6.2
+    container_name: redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   fraud-detection-service:
     build:
       context: ./src/FraudDetectionService
@@ -49,12 +61,14 @@ services:
     restart: on-failure
     ports:
       - "8000:8000"
-      - "8001:8001" 
+      - "8001:8001"
     volumes:
       - ./src/FraudDetectionService:/app
     command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     depends_on:
       rabbitmq:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       prometheus:
         condition: service_healthy
@@ -64,6 +78,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
-      
+
 volumes:
-  grafana-data: 
+  grafana-data:

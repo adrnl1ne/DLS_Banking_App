@@ -7,6 +7,7 @@ from fastapi import FastAPI
 import uvicorn
 from prometheus_client import Counter, start_http_server
 import threading
+import redis
 
 # Set up console logging for operational information
 logging.basicConfig(
@@ -22,7 +23,6 @@ file_handler.setLevel(logging.ERROR)
 formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 file_handler.setFormatter(formatter)
 error_logger.addHandler(file_handler)
-# Prevent error propagation to root logger to avoid duplicate logging
 error_logger.propagate = False
 
 app = FastAPI(title="Fraud Detection Service")
@@ -31,6 +31,10 @@ app = FastAPI(title="Fraud Detection Service")
 messages_processed = Counter("messages_processed", "Total number of messages processed")
 fraud_detections = Counter("fraud_detections", "Number of fraud cases detected")
 processing_errors = Counter("processing_errors", "Number of errors during message processing")
+duplicate_messages = Counter("duplicate_messages", "Number of duplicate messages skipped")
+
+# Redis client for idempotence and transaction storage
+redis_client = redis.Redis(host="redis", port=6379, db=0, decode_responses=True)
 
 # RabbitMQ connection setup with retry logic
 def get_rabbitmq_connection(max_retries=30, initial_delay=1, max_delay=30):
@@ -69,10 +73,33 @@ def callback(ch, method, properties, body):
         transfer_id = message["transferId"]
         amount = message["amount"]
 
+        # Check for idempotence using Redis
+        if redis_client.get(f"transfer:{transfer_id}"):
+            logging.info(f"Duplicate message for transfer {transfer_id}, skipping processing")
+            duplicate_messages.inc()  # Increment duplicate message counter
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+            return
+
+        # Mark the transfer as processed (for idempotence)
+        redis_client.setex(f"transfer:{transfer_id}", 86400, "processed")  # Expire after 24 hours
+
+        # Store transaction details in Redis (for auditing)
+        transaction_data = {
+            "transferId": transfer_id,
+            "amount": amount,
+            "timestamp": time.time()
+        }
+        redis_client.setex(f"transaction:{transfer_id}", 604800, json.dumps(transaction_data))  # Expire after 7 days
+
         # Fraud detection logic: flag if amount > $1000
         is_fraud = amount > 1000
         status = "declined" if is_fraud else "approved"
         result = {"transferId": transfer_id, "isFraud": is_fraud, "status": status}
+
+        # Update transaction data with fraud detection result
+        transaction_data["isFraud"] = is_fraud
+        transaction_data["status"] = status
+        redis_client.setex(f"transaction:{transfer_id}", 604800, json.dumps(transaction_data))
 
         # Increment Prometheus metrics
         messages_processed.inc()
@@ -134,10 +161,12 @@ async def health_check():
         # Attempt to connect to RabbitMQ as a health check
         connection = get_rabbitmq_connection(max_retries=1, initial_delay=1)
         connection.close()
-        return {"status": "healthy", "rabbitmq": "connected"}
+        # Attempt to connect to Redis as a health check
+        redis_client.ping()
+        return {"status": "healthy", "rabbitmq": "connected", "redis": "connected"}
     except Exception as e:
         error_logger.error(f"Health check failed: {str(e)}")
-        return {"status": "unhealthy", "rabbitmq": "disconnected", "error": str(e)}
+        return {"status": "unhealthy", "rabbitmq": "disconnected", "redis": "disconnected", "error": str(e)}
 
 # Start the RabbitMQ consumer in a separate thread when FastAPI starts
 @app.on_event("startup")
