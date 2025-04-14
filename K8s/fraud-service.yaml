@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: fraud-detection
+spec:
+  selector:
+    app: fraud-detection
+  ports:
+    - port: 8000
+      targetPort: 8000
+  type: ClusterIP
