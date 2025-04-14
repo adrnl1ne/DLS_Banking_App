@@ -1,9 +1,10 @@
 {
   "version": 2,
-  "dgSpecHash": "b/v82aTHNz4=",
+  "dgSpecHash": "btdCJVCECzM=",
   "success": true,
-  "projectFilePath": "/Users/frederikhansen/Github Repositories/DLS_Banking_App/src/AccountService/AccountService.csproj",
+  "projectFilePath": "/Users/frederikhansen/Github Repositories/DLS_Banking_App/src/UserAccountService/UserAccountService.csproj",
   "expectedPackageFiles": [
+    "/Users/frederikhansen/.nuget/packages/bcrypt.net-next/4.0.3/bcrypt.net-next.4.0.3.nupkg.sha512",
     "/Users/frederikhansen/.nuget/packages/bouncycastle.cryptography/2.3.1/bouncycastle.cryptography.2.3.1.nupkg.sha512",
     "/Users/frederikhansen/.nuget/packages/coredata.data.entityframeworkcore.extensions/1.0.0/coredata.data.entityframeworkcore.extensions.1.0.0.nupkg.sha512",
     "/Users/frederikhansen/.nuget/packages/google.protobuf/3.26.1/google.protobuf.3.26.1.nupkg.sha512",

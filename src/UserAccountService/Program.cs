@@ -6,18 +6,23 @@ using Prometheus;
 using System.Text;
 using AccountService.Database.Data;
 using AccountService.Repository;
-using AccountService.Service.AccountService;
 using AccountService.Services;
 using Microsoft.OpenApi.Models;
+using UserAccountService.Repository;
+using UserAccountService.Service;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddControllers();
 
-
+// Register repositories and services
+builder.Services.AddHttpContextAccessor(); // Register IHttpContextAccessor
+builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddScoped<IAccountRepository, AccountRepository>();
-builder.Services.AddScoped<IAccountService, AccountService.Service.AccountService.AccountService>();
+builder.Services.AddScoped<IAccountService, UserAccountService.Service.AccountService>();
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddSingleton<IEventPublisher, RabbitMQEventPublisher>();
 
 var connectionString = string.Format("server={0};port={1};database={2};user={3};password={4};SslMode=Required",
     builder.Configuration.GetValue<string>("MYSQL_HOST"),
@@ -29,13 +34,14 @@ var connectionString = string.Format("server={0};port={1};database={2};user={3};
 // Register the DbContext with MySQL configuration
 builder.Services.AddDbContext<UserAccountDbContext>(options =>
     options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString),
-            mySqlOptions => mySqlOptions.EnableStringComparisonTranslations())
+        mySqlOptions => mySqlOptions.EnableStringComparisonTranslations())
 );
 
 // Configure JWT Authentication
 var jwtIssuer = builder.Configuration.GetValue<string>("JWT_ISSUER");
 var jwtAudience = builder.Configuration.GetValue<string>("JWT_AUDIENCE");
-var jwtKey = builder.Configuration.GetValue<string>("JWT_KEY") ?? throw new InvalidOperationException("JWT Key must be configured");
+var jwtKey = builder.Configuration.GetValue<string>("JWT_KEY") ??
+             throw new InvalidOperationException("JWT Key must be configured");
 
 builder.Services.AddAuthentication(options =>
 {
@@ -97,7 +103,7 @@ app.MapControllers();
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
-    c.SwaggerEndpoint("/swagger/v1/swagger.json", "AccountService API v1");
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "UserAccountService API v1");
     c.RoutePrefix = string.Empty;
 });
 

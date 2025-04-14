@@ -9,7 +9,7 @@ namespace UserAccountService.Controller;
 [Route("api/[controller]")]
 [ApiController]
 [Authorize]
-public class AccountsController(IAccountService accountService) : ControllerBase
+public class AccountController(IAccountService accountService) : ControllerBase
 {
     [HttpGet("test")]
     [ProducesResponseType(StatusCodes.Status200OK)]

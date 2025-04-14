@@ -5,10 +5,11 @@
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
         <UserSecretsId>01bb054c-9f89-4f42-a231-f9c8b820d4b4</UserSecretsId>
-        <RootNamespace>AccountService</RootNamespace>
+        <RootNamespace>UserAccountService</RootNamespace>
     </PropertyGroup>
 
     <ItemGroup>
+        <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
         <PackageReference Include="CoreData.Data.EntityFrameworkCore.Extensions" Version="1.0.0" />
         <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.8" />
         <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.0" />

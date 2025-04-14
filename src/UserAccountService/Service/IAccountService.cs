@@ -1,12 +1,11 @@
-using System.Security.Claims;
-using AccountService.Models;
 using Microsoft.AspNetCore.Mvc;
+using UserAccountService.Shared.DTO;
 
-namespace AccountService.Service.AccountService;
+namespace UserAccountService.Service;
 
 public interface IAccountService
 {
-    Task<ActionResult<IEnumerable<Account>>> GetAccountsAsync(ClaimsPrincipal user);
-    Task<ActionResult<Account>> GetAccountAsync(int id, ClaimsPrincipal user);
-    Task<ActionResult<Account>> CreateAccountAsync(Account account, ClaimsPrincipal user);
+    Task<ActionResult<IEnumerable<AccountResponse>>> GetAccountsAsync();
+    Task<ActionResult<AccountResponse>> GetAccountAsync(int id);
+    Task<ActionResult<AccountResponse>> CreateAccountAsync(AccountCreationRequest request);
 }

@@ -1,93 +1,70 @@
-using System.Security.Claims;
 using System.Text.Json;
 using AccountService.Models;
 using AccountService.Repository;
 using AccountService.Services;
 using Microsoft.AspNetCore.Mvc;
+using UserAccountService.Shared.DTO;
 
-namespace AccountService.Service.AccountService;
+namespace UserAccountService.Service;
 
-public class AccountService(IAccountRepository accountRepository, IEventPublisher eventPublisher)
+public class AccountService(
+    IAccountRepository accountRepository,
+    IEventPublisher eventPublisher,
+    ICurrentUserService currentUserService)
     : IAccountService
 {
-    public async Task<ActionResult<IEnumerable<Account>>> GetAccountsAsync(ClaimsPrincipal user)
+    public async Task<ActionResult<IEnumerable<AccountResponse>>> GetAccountsAsync()
     {
-        var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var roleClaim = user.FindFirst("role")?.Value;
-
-        Console.WriteLine($"Found userId claim: {userIdClaim}");
-        Console.WriteLine("User Claims: " + string.Join(", ", user.Claims.Select(c => $"{c.Type}={c.Value}")));
-
-        if (string.IsNullOrEmpty(userIdClaim))
+        IEnumerable<Account> accounts;
+        if (string.Equals(currentUserService.Role, "admin", StringComparison.OrdinalIgnoreCase))
         {
-            return new UnauthorizedObjectResult("User ID not found in token.");
+            accounts = await accountRepository.GetAllAccountsAsync();
+        }
+        else
+        {
+            accounts = await accountRepository.GetAccountsByUserIdAsync(currentUserService.UserId);
         }
 
-        if (!int.TryParse(userIdClaim, out int userId))
+        var response = accounts.Select(a => new AccountResponse
         {
-            return new BadRequestObjectResult("Invalid user ID in token.");
-        }
+            Name = a.Name,
+            Amount = a.Amount
+        });
 
-        if (roleClaim == "admin")
-        {
-            var accounts = await accountRepository.GetAllAccountsAsync();
-            return new ActionResult<IEnumerable<Account>>(accounts);
-        }
-
-        var userAccounts = await accountRepository.GetAccountsByUserIdAsync(userId);
-        return new ActionResult<IEnumerable<Account>>(userAccounts);
+        return new ActionResult<IEnumerable<AccountResponse>>(response);
     }
 
-    public async Task<ActionResult<Account>> GetAccountAsync(int id, ClaimsPrincipal user)
+    public async Task<ActionResult<AccountResponse>> GetAccountAsync(int id)
     {
-        var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var roleClaim = user.FindFirst("role")?.Value;
-
-        Console.WriteLine($"Found userId claim: {userIdClaim}");
-        Console.WriteLine("User Claims: " + string.Join(", ", user.Claims.Select(c => $"{c.Type}={c.Value}")));
-
-        if (string.IsNullOrEmpty(userIdClaim))
-        {
-            return new UnauthorizedObjectResult("User ID not found in token.");
-        }
-
-        if (!int.TryParse(userIdClaim, out int userId))
-        {
-            return new BadRequestObjectResult("Invalid user ID in token.");
-        }
-
         var account = await accountRepository.GetAccountByIdAsync(id);
         if (account == null)
         {
             return new NotFoundResult();
         }
 
-        if (roleClaim != "admin" && account.UserId != userId)
+        if (!string.Equals(currentUserService.Role, "admin", StringComparison.OrdinalIgnoreCase) &&
+            account.UserId != currentUserService.UserId)
         {
             return new ForbidResult();
         }
 
-        return account;
+        var response = new AccountResponse
+        {
+            Name = account.Name,
+            Amount = account.Amount
+        };
+
+        return response;
     }
 
-    public async Task<ActionResult<Account>> CreateAccountAsync(Account account, ClaimsPrincipal user)
+    public async Task<ActionResult<AccountResponse>> CreateAccountAsync(AccountCreationRequest request)
     {
-        var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-
-        Console.WriteLine($"Found userId claim: {userIdClaim}");
-        Console.WriteLine("User Claims: " + string.Join(", ", user.Claims.Select(c => $"{c.Type}={c.Value}")));
-
-        if (string.IsNullOrEmpty(userIdClaim))
+        var account = new Account
         {
-            return new UnauthorizedObjectResult("User ID not found in token.");
-        }
+            Name = request.Name,
+            UserId = currentUserService.UserId
+        };
 
-        if (!int.TryParse(userIdClaim, out int userId))
-        {
-            return new BadRequestObjectResult("Invalid user ID in token.");
-        }
-
-        account.UserId = userId;
         await accountRepository.AddAccountAsync(account);
         await accountRepository.SaveChangesAsync();
 
@@ -102,6 +79,16 @@ public class AccountService(IAccountRepository accountRepository, IEventPublishe
         };
         eventPublisher.Publish("AccountEvents", JsonSerializer.Serialize(eventMessage));
 
-        return new CreatedAtActionResult(nameof(GetAccountAsync), "Accounts", new { id = account.Id }, account);
+        var response = new AccountResponse
+        {
+            Name = account.Name,
+            Amount = account.Amount
+        };
+
+        return new CreatedAtActionResult(
+            actionName: "GetAccount",
+            controllerName: "Account",
+            routeValues: new { id = account.Id },
+            value: response);
     }
 }

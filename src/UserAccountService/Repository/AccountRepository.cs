@@ -1,8 +1,9 @@
 using AccountService.Database.Data;
 using AccountService.Models;
+using AccountService.Repository;
 using Microsoft.EntityFrameworkCore;
 
-namespace AccountService.Repository;
+namespace UserAccountService.Repository;
 
 public class AccountRepository(UserAccountDbContext context) : IAccountRepository
 {

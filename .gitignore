@@ -1,1 +1,41 @@
 src/FraudDetectionService/__pycache__/
+.env
+
+# Build output
+[Bb]in/
+[Oo]bj/
+*.csproj.user
+*.suo
+*.cache
+*.dll
+*.pdb
+*.exe
+*.log
+
+# Dependency directories
+[Pp]ackages/
+*.nupkg
+!packages.lock.json
+
+# IDE files
+.idea/
+*.sln.iml
+.vs/
+.vscode/
+*.swp
+*~
+
+# Runtime and test artifacts
+*.pidb
+*.userprefs
+*.tss
+*.testlog
+TestResults/
+
+# Miscellaneous
+.DS_Store
+Thumbs.db
+*.bak
+*.tmp
+*.temp
+*.metaproj
