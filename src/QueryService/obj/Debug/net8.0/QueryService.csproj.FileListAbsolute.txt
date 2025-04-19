@@ -1,0 +1,8 @@
+C:\Users\bekjo\Desktop\School\2.semester SOFT\DLS_Banking_App\src\QueryService\obj\Debug\net8.0\QueryService.csproj.AssemblyReference.cache
+C:\Users\bekjo\Desktop\School\2.semester SOFT\DLS_Banking_App\src\QueryService\obj\Debug\net8.0\QueryService.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\bekjo\Desktop\School\2.semester SOFT\DLS_Banking_App\src\QueryService\obj\Debug\net8.0\QueryService.AssemblyInfoInputs.cache
+C:\Users\bekjo\Desktop\School\2.semester SOFT\DLS_Banking_App\src\QueryService\obj\Debug\net8.0\QueryService.AssemblyInfo.cs
+C:\Users\bekjo\Desktop\School\2.semester SOFT\DLS_Banking_App\src\QueryService\obj\Debug\net8.0\QueryService.csproj.CoreCompileInputs.cache
+C:\Users\bekjo\Desktop\School\2.semester SOFT\DLS_Banking_App\src\QueryService\obj\Debug\net8.0\QueryService.MvcApplicationPartsAssemblyInfo.cs
+C:\Users\bekjo\Desktop\School\2.semester SOFT\DLS_Banking_App\src\QueryService\obj\Debug\net8.0\QueryService.MvcApplicationPartsAssemblyInfo.cache
+C:\Users\bekjo\Desktop\School\2.semester SOFT\DLS_Banking_App\src\QueryService\obj\Debug\net8.0\QueryService.sourcelink.json
