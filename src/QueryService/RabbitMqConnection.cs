@@ -1,13 +1,16 @@
-﻿using RabbitMQ.Client;
+﻿using System.Text;
+using RabbitMQ.Client;
 
 namespace QueryService;
 
-public class RabbitMqConnection
+public class RabbitMqConnection : IAsyncDisposable
 {
 
     private ConnectionFactory _factory;
     private IConnection _connection;
     private IChannel _channel;
+    
+    
     
     public RabbitMqConnection(string hostName, string userName, string password)
     {
@@ -17,6 +20,20 @@ public class RabbitMqConnection
             UserName = userName,
             Password = password
         };
+        
+    }
+    
+    public async void send_message(string queueName, string message)
+    {
+        if (_channel == null || !_channel.IsOpen)
+        {
+            throw new InvalidOperationException("Channel is not open.");
+        }
+        
+        var body = Encoding.UTF8.GetBytes(message);
+        await _channel.BasicPublishAsync(exchange: "",
+            routingKey: queueName,
+            body: body);
     }
     
     public IChannel Channel => _channel;
@@ -61,5 +78,11 @@ public class RabbitMqConnection
         
         Console.WriteLine("Failed to open channel to RabbitMQ.");
         return false;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _connection.DisposeAsync();
+        await _channel.DisposeAsync();
     }
 }

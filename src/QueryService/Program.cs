@@ -11,7 +11,9 @@ var settings = new ConnectionSettings(new Uri("http://localhost:9200"))
     .DefaultIndex("transactions");
 var elasticClient = new ElasticClient(settings);
 
-builder.Services.AddSingleton<IElasticClient>(elasticClient);
+
+
+//builder.Services.AddSingleton<IElasticClient>(elasticClient);
 
 
 builder.Services.AddSingleton<RabbitMqConnection>(sp =>
@@ -29,6 +31,21 @@ builder.Services
     .AddQueryType<Query>();
 
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    var rabbit = scope.ServiceProvider.GetRequiredService<RabbitMqConnection>();
+    await rabbit.open_connection();
+    await rabbit.open_channel();
+    
+    rabbit.send_message("CheckFraud", "Hello, RabbitMQ!");
+}
+
+
+
+
+
+
 
 app.UseHttpsRedirection();
 app.MapGraphQL();

@@ -1,0 +1,11 @@
+{
+  "Version": 1,
+  "Hash": "VOGgWnuf80t3G/8+zrQmm499vVXcJDHfx+SfTAsq9kM=",
+  "Source": "QueryService",
+  "BasePath": "_content/QueryService",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [],
+  "Assets": []
+}
