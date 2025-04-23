@@ -1,6 +1,6 @@
 namespace TransactionService.Infrastructure.Messaging.RabbitMQ;
 
-public class RabbitMQConfiguration
+public abstract class RabbitMqConfiguration
 {
     public required string HostName { get; set; }
     public int Port { get; set; } = 5672;

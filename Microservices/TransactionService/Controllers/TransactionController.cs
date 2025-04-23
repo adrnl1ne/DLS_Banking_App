@@ -1,10 +1,6 @@
-using System;
-using System.Collections.Generic;
 using System.Security.Claims;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Logging;
 using Prometheus;
 using TransactionService.Models;
 using TransactionService.Services;
@@ -13,28 +9,20 @@ namespace TransactionService.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class TransactionController : ControllerBase
+public class TransactionController(ITransactionService transactionService, ILogger<TransactionController> logger)
+    : ControllerBase
 {
-    private readonly ITransactionService _transactionService;
-    private readonly ILogger<TransactionController> _logger;
-
     // Prometheus metrics
     private static readonly Counter TransactionRequestsTotal = Metrics.CreateCounter(
         "transaction_requests_total",
         "Total number of transaction requests",
-        new CounterConfiguration { LabelNames = new[] { "method" } }
+        new CounterConfiguration { LabelNames = ["method"] }
     );
     private static readonly Counter TransactionErrorsTotal = Metrics.CreateCounter(
         "transaction_errors_total",
         "Total number of transaction errors",
-        new CounterConfiguration { LabelNames = new[] { "method" } }
+        new CounterConfiguration { LabelNames = ["method"] }
     );
-
-    public TransactionController(ITransactionService transactionService, ILogger<TransactionController> logger)
-    {
-        _transactionService = transactionService;
-        _logger = logger;
-    }
 
     [HttpPost("transfer")]
     [Authorize]
@@ -59,27 +47,27 @@ public class TransactionController : ControllerBase
 
             request.UserId = userId; // Set the user ID from the token
 
-            _logger.LogInformation($"Creating transfer from account {request.FromAccount} to account {request.ToAccount} for amount {request.Amount}");
+            logger.LogInformation($"Creating transfer from account {request.FromAccount} to account {request.ToAccount} for amount {request.Amount}");
 
-            var result = await _transactionService.CreateTransferAsync(request);
+            var result = await transactionService.CreateTransferAsync(request);
             return CreatedAtAction(nameof(GetTransaction), new { transferId = result.TransferId }, result);
         }
         catch (UnauthorizedAccessException ex)
         {
             TransactionErrorsTotal.WithLabels("POST").Inc();
-            _logger.LogWarning(ex, "Unauthorized access attempt during transfer creation");
+            logger.LogWarning(ex, "Unauthorized access attempt during transfer creation");
             return Unauthorized(ex.Message);
         }
         catch (InvalidOperationException ex)
         {
             TransactionErrorsTotal.WithLabels("POST").Inc();
-            _logger.LogWarning(ex, "Invalid operation during transfer creation");
+            logger.LogWarning(ex, "Invalid operation during transfer creation");
             return BadRequest(ex.Message);
         }
         catch (Exception ex)
         {
             TransactionErrorsTotal.WithLabels("POST").Inc();
-            _logger.LogError(ex, "Error creating transfer");
+            logger.LogError(ex, "Error creating transfer");
             return StatusCode(500, "An error occurred while processing your request");
         }
     }
@@ -92,7 +80,7 @@ public class TransactionController : ControllerBase
 
         try
         {
-            _logger.LogInformation($"Getting transaction with ID: {transferId}");
+            logger.LogInformation($"Getting transaction with ID: {transferId}");
 
             if (string.IsNullOrEmpty(transferId))
             {
@@ -100,11 +88,11 @@ public class TransactionController : ControllerBase
                 return BadRequest("Transfer ID cannot be empty");
             }
 
-            var transaction = await _transactionService.GetTransactionByTransferIdAsync(transferId);
+            var transaction = await transactionService.GetTransactionByTransferIdAsync(transferId);
 
             if (transaction == null)
             {
-                _logger.LogWarning($"Transaction not found with ID: {transferId}");
+                logger.LogWarning($"Transaction not found with ID: {transferId}");
                 return NotFound($"Transaction with ID {transferId} not found");
             }
 
@@ -113,7 +101,7 @@ public class TransactionController : ControllerBase
         catch (Exception ex)
         {
             TransactionErrorsTotal.WithLabels("GET").Inc();
-            _logger.LogError(ex, $"Error retrieving transaction {transferId}");
+            logger.LogError(ex, $"Error retrieving transaction {transferId}");
             return StatusCode(500, $"An error occurred while retrieving the transaction: {ex.Message}");
         }
     }
@@ -126,7 +114,7 @@ public class TransactionController : ControllerBase
 
         try
         {
-            _logger.LogInformation($"Getting transactions for account: {accountId}");
+            logger.LogInformation($"Getting transactions for account: {accountId}");
 
             if (string.IsNullOrEmpty(accountId))
             {
@@ -134,11 +122,11 @@ public class TransactionController : ControllerBase
                 return BadRequest("Account ID cannot be empty");
             }
 
-            var transactions = await _transactionService.GetTransactionsByAccountAsync(accountId);
+            var transactions = await transactionService.GetTransactionsByAccountAsync(accountId);
 
             if (transactions == null)
             {
-                _logger.LogWarning($"No transactions found for account: {accountId}");
+                logger.LogWarning($"No transactions found for account: {accountId}");
                 return Ok(Array.Empty<TransactionResponse>());
             }
 
@@ -147,7 +135,7 @@ public class TransactionController : ControllerBase
         catch (Exception ex)
         {
             TransactionErrorsTotal.WithLabels("GET").Inc();
-            _logger.LogError(ex, $"Error retrieving transactions for account {accountId}");
+            logger.LogError(ex, $"Error retrieving transactions for account {accountId}");
             return StatusCode(500, $"An error occurred while retrieving transactions: {ex.Message}");
         }
     }

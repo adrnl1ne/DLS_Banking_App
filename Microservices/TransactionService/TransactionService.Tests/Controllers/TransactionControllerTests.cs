@@ -1,7 +1,4 @@
-using System;
-using System.Collections.Generic;
 using System.Security.Claims;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -16,21 +13,19 @@ namespace TransactionService.Tests.Controllers
     public class TransactionControllerTests
     {
         private readonly Mock<ITransactionService> _mockTransactionService;
-        private readonly Mock<ILogger<TransactionController>> _mockLogger;
         private readonly TransactionController _controller;
 
         public TransactionControllerTests()
         {
             _mockTransactionService = new Mock<ITransactionService>();
-            _mockLogger = new Mock<ILogger<TransactionController>>();
-            _controller = new TransactionController(_mockTransactionService.Object, _mockLogger.Object);
+            Mock<ILogger<TransactionController>> mockLogger = new();
+            _controller = new TransactionController(_mockTransactionService.Object, mockLogger.Object);
             
-            // Setup the controller with a ClaimsPrincipal
-            var user = new ClaimsPrincipal(new ClaimsIdentity(new Claim[]
-            {
+            // Set up the controller with a ClaimsPrincipal
+            var user = new ClaimsPrincipal(new ClaimsIdentity([
                 new Claim(ClaimTypes.NameIdentifier, "123"),
-                new Claim(ClaimTypes.Name, "testuser")
-            }, "mock"));
+                new Claim(ClaimTypes.Name, "tester")
+            ], "mock"));
             
             _controller.ControllerContext = new ControllerContext
             {

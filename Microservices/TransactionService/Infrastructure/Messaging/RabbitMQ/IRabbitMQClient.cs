@@ -1,10 +1,8 @@
-using System;
-using System.Threading;
-using System.Threading.Tasks;
+
 
 namespace TransactionService.Infrastructure.Messaging.RabbitMQ;
 
-public interface IRabbitMQClient
+public interface IRabbitMqClient
 {
     /// <summary>
     /// Publishes a typed message to the specified queue after serializing it to JSON

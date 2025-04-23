@@ -1,18 +1,9 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Prometheus;
-using TransactionService.Clients;
-using TransactionService.Infrastructure.Data;
 using TransactionService.Infrastructure.Data.Repositories;
 using TransactionService.Infrastructure.Messaging.RabbitMQ;
 using TransactionService.Models;
-using TransactionService.Services;
 using Xunit;
 
 namespace TransactionService.Tests.Services
@@ -20,27 +11,23 @@ namespace TransactionService.Tests.Services
     public class TransactionServiceTests
     {
         private readonly Mock<ITransactionRepository> _mockRepository;
-        private readonly Mock<IRabbitMQClient> _mockRabbitMqClient;
-        private readonly Mock<ILogger<global::TransactionService.Services.TransactionService>> _mockLogger;
-        private readonly Mock<Counter> _mockCounter;
-        private readonly Mock<Histogram> _mockHistogram;
         private readonly global::TransactionService.Services.TransactionService _service;
 
         public TransactionServiceTests()
         {
             _mockRepository = new Mock<ITransactionRepository>();
-            _mockRabbitMqClient = new Mock<IRabbitMQClient>();
-            _mockLogger = new Mock<ILogger<global::TransactionService.Services.TransactionService>>();
-            _mockCounter = new Mock<Counter>();
-            _mockHistogram = new Mock<Histogram>();
+            var mock = new Mock<IRabbitMqClient>();
+            if (mock == null) throw new ArgumentNullException(nameof(mock));
+            Mock<ILogger<TransactionService.Services.TransactionService>> mockLogger = new();
+            var mock1 = new Mock<Counter>();
+            if (mock1 == null) throw new ArgumentNullException(nameof(mock1));
+            Mock<Histogram> mockHistogram = new();
 
             // Create the service with the correct constructor parameters
             _service = new global::TransactionService.Services.TransactionService(
                 _mockRepository.Object,
-                _mockRabbitMqClient.Object,
-                _mockLogger.Object,
-                _mockCounter.Object,
-                _mockHistogram.Object);
+                mockLogger.Object,
+                mockHistogram.Object);
         }
 
         [Fact]
@@ -117,9 +104,9 @@ namespace TransactionService.Tests.Services
         public async Task GetTransactionsByAccountAsync_ExistingAccount_ReturnsTransactions()
         {
             // Arrange
-            var accountId = "123456";
-            var transactions = new List<Transaction>
-            {
+            const string accountId = "123456";
+            List<Transaction> transactions =
+            [
                 new Transaction
                 {
                     Id = Guid.NewGuid(),
@@ -131,6 +118,7 @@ namespace TransactionService.Tests.Services
                     Status = "completed",
                     CreatedAt = DateTime.UtcNow
                 },
+
                 new Transaction
                 {
                     Id = Guid.NewGuid(),
@@ -142,7 +130,7 @@ namespace TransactionService.Tests.Services
                     Status = "completed",
                     CreatedAt = DateTime.UtcNow
                 }
-            };
+            ];
 
             _mockRepository.Setup(r => r.GetTransactionsByAccountAsync(accountId))
                 .ReturnsAsync(transactions);
@@ -152,9 +140,10 @@ namespace TransactionService.Tests.Services
 
             // Assert
             Assert.NotNull(results);
-            Assert.Equal(2, results.Count());
-            Assert.Contains(results, r => r.TransferId == "TRX-123");
-            Assert.Contains(results, r => r.TransferId == "TRX-456");
+            var transactionResponses = results as TransactionResponse?[] ?? results.ToArray();
+            Assert.Equal(2, transactionResponses.Length);
+            Assert.Contains(transactionResponses, r => r?.TransferId == "TRX-123");
+            Assert.Contains(transactionResponses, r => r?.TransferId == "TRX-456");
         }
     }
 }

@@ -3,13 +3,8 @@ using TransactionService.Models;
 
 namespace TransactionService.Infrastructure.Data;
 
-public class TransactionDbContext : DbContext
+public class TransactionDbContext(DbContextOptions<TransactionDbContext> options) : DbContext(options)
 {
-    public TransactionDbContext(DbContextOptions<TransactionDbContext> options)
-        : base(options)
-    {
-    }
-
     public DbSet<Transaction> Transactions { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

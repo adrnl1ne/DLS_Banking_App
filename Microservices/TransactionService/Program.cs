@@ -96,7 +96,7 @@ builder.Services.AddHttpClient<UserAccountClient>(client =>
 });
 
 // Register RabbitMQ
-builder.Services.AddSingleton<IRabbitMQClient, RabbitMQClient>();
+builder.Services.AddSingleton<IRabbitMqClient, RabbitMqClient>();
 
 // Register repositories
 builder.Services.AddScoped<ITransactionRepository, TransactionRepository>();
