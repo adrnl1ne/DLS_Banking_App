@@ -107,7 +107,7 @@ public class TransactionController : ControllerBase
             
             if (transactions == null)
             {
-                _logger.LogWarning($"No transactions found for account: {accountId}");
+                _logger.LogWarning($"No transactions found for account: {hashedAccountId}");
                 return Ok(Array.Empty<TransactionResponse>());
             }
             
