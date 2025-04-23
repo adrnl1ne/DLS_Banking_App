@@ -114,7 +114,7 @@ public class TransactionRepository : ITransactionRepository
         {
             var sanitizedAccountId = accountId.Replace("\n", "").Replace("\r", "");
             var hashedAccountId = HashAccountId(sanitizedAccountId);
-            _logger.LogInformation("Getting transactions for account: {AccountId}", hashedAccountId);
+            _logger.LogInformation("Getting transactions for the specified account.");
             
             var transactions = new List<Transaction>();
             
@@ -151,14 +151,14 @@ public class TransactionRepository : ITransactionRepository
                 transactions.Add(transaction);
             }
             
-            _logger.LogInformation("Found {Count} transactions for account: {AccountId}", 
-                transactions.Count, hashedAccountId);
+            _logger.LogInformation("Found {Count} transactions for the specified account.", 
+                transactions.Count);
             return transactions;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting transactions for account: {AccountId}. Error: {Message}", 
-                sanitizedAccountId, ex.Message);
+            _logger.LogError(ex, "Error getting transactions for the specified account. Error: {Message}", 
+                ex.Message);
             throw;
         }
     }
