@@ -60,7 +60,7 @@ services:
     restart: always
     environment:
       - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
-      - MYSQL_DATABASE=${MYSQL_ROOT_DATABASE}
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
       - MYSQL_USER=${MYSQL_USER}
       - MYSQL_PASSWORD=${MYSQL_PASSWORD}
     ports:
@@ -76,31 +76,28 @@ services:
       retries: 5
 
   # MySQL Database
-  TransactionDB:
+  mysql-transaction:
     container_name: mysql-transaction
     image: mysql:8.0
     ports:
-      - "3308:3306"
+      - "3308:3307"
     environment:
-      - MYSQLTA_ROOT_PASSWORD=${MYSQLTA_ROOT_PASSWORD}
-      - MYSQLTA_DATABASE=${MYSQLTA_DATABASE}
+      - MYSQL_ROOT_PASSWORD=${TA_ROOT_PASSWORD}
+      - MYSQL_ROOT_DATABASE=${TA_DATABASE}
     volumes:
-      - mysql-data:/var/lib/mysql
-    networks:
-      - banking-network
+      - mysql-transaction-data:/var/lib/mysql
     restart: always
-    command: --default-authentication-plugin=mysql_native_password
 
   fraud-detection-service:
     build:
-      context: ./src/FraudDetectionService
+      context: ./Microservices/FraudDetectionService
     container_name: fraud-detection-service
     restart: on-failure
     ports:
       - "8000:8000"
       - "8001:8001"
     volumes:
-      - ./src/FraudDetectionService:/app
+      - ./Microservices/FraudDetectionService:/app
     command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     depends_on:
       rabbitmq:
@@ -160,3 +157,4 @@ volumes:
   grafana-data:
   esdata:
   mysql-data:
+  mysql-transaction-data:
