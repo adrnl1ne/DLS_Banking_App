@@ -26,16 +26,27 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
-    c.SwaggerDoc("v1", new OpenApiInfo { Title = "Transaction API", Version = "v1" });
+    c.SwaggerDoc("v1", new OpenApiInfo { 
+        Title = "Transaction API", 
+        Version = "v1",
+        Description = "API for managing banking transactions",
+        Contact = new OpenApiContact
+        {
+            Name = "Banking App Team",
+            Email = "support@bankingapp.com"
+        }
+    });
+    
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
-        Description = "JWT Authorization header using the Bearer scheme.",
+        Description = "JWT Authorization header using the Bearer scheme. Example: \"Authorization: Bearer {token}\"",
         Name = "Authorization",
         In = ParameterLocation.Header,
         Type = SecuritySchemeType.Http,
         Scheme = "bearer",
         BearerFormat = "JWT"
     });
+    
     c.AddSecurityRequirement(new OpenApiSecurityRequirement
     {
         {
@@ -50,6 +61,11 @@ builder.Services.AddSwaggerGen(c =>
             Array.Empty<string>()
         }
     });
+    
+    // Optional: Add XML comments
+    // var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    // var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+    // c.IncludeXmlComments(xmlPath);
 });
 
 // Configure DB Context
@@ -120,7 +136,21 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-    app.UseSwaggerUI();
+    app.UseSwaggerUI(c => 
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Transaction API v1");
+        c.RoutePrefix = string.Empty; // To serve the Swagger UI at the app's root
+    });
+}
+else
+{
+    // Production configuration
+    app.UseSwagger();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Transaction API v1");
+        c.RoutePrefix = "api-docs";
+    });
 }
 
 app.UseHttpsRedirection();
