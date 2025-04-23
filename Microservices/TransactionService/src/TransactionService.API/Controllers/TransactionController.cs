@@ -1,29 +1,18 @@
 using System;
 using System.Collections.Generic;
 using System.Security.Cryptography;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Logging;
 using TransactionService.API.Models;
 using TransactionService.API.Services;
-using System.Security.Cryptography;
 
 namespace TransactionService.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class TransactionController : ControllerBase
+public class TransactionController(ITransactionService transactionService, ILogger<TransactionController> logger)
+    : ControllerBase
 {
-    private readonly ITransactionService _transactionService;
-    private readonly ILogger<TransactionController> _logger;
-
-    public TransactionController(ITransactionService transactionService, ILogger<TransactionController> logger)
-    {
-        _transactionService = transactionService;
-        _logger = logger;
-    }
-
     private string HashSensitiveData(string data)
     {
         if (string.IsNullOrEmpty(data))
@@ -50,14 +39,14 @@ public class TransactionController : ControllerBase
             var sanitizedFromAccount = request.FromAccount?.Replace("\n", "").Replace("\r", "");
             var sanitizedToAccount = request.ToAccount?.Replace("\n", "").Replace("\r", "");
             var sanitizedAmount = request.Amount.ToString().Replace("\n", "").Replace("\r", "");
-            _logger.LogInformation($"Creating transfer from {sanitizedFromAccount} to {sanitizedToAccount} for {sanitizedAmount}");
+            logger.LogInformation($"Creating transfer from {sanitizedFromAccount} to {sanitizedToAccount} for {sanitizedAmount}");
             
-            var result = await _transactionService.CreateTransferAsync(request);
+            var result = await transactionService.CreateTransferAsync(request);
             return CreatedAtAction(nameof(GetTransaction), new { transferId = result.TransferId }, result);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating transfer");
+            logger.LogError(ex, "Error creating transfer");
             return StatusCode(500, "An error occurred while processing your request");
         }
     }
@@ -69,19 +58,19 @@ public class TransactionController : ControllerBase
         try
         {
             var sanitizedTransferId = transferId?.Replace("\n", "").Replace("\r", "");
-            _logger.LogInformation($"Getting transaction with ID: {sanitizedTransferId}");
+            logger.LogInformation($"Getting transaction with ID: {sanitizedTransferId}");
             
             if (string.IsNullOrEmpty(transferId))
             {
                 return BadRequest("Transfer ID cannot be empty");
             }
             
-            var transaction = await _transactionService.GetTransactionByTransferIdAsync(transferId);
+            var transaction = await transactionService.GetTransactionByTransferIdAsync(transferId);
             
             if (transaction == null)
             {
                 sanitizedTransferId = transferId?.Replace("\n", "").Replace("\r", "");
-                _logger.LogWarning($"Transaction not found with ID: {sanitizedTransferId}");
+                logger.LogWarning($"Transaction not found with ID: {sanitizedTransferId}");
                 return NotFound($"Transaction with ID {transferId} not found");
             }
             
@@ -90,7 +79,7 @@ public class TransactionController : ControllerBase
         catch (Exception ex)
         {
             var sanitizedTransferId = transferId?.Replace("\n", "").Replace("\r", "");
-            _logger.LogError(ex, $"Error retrieving transaction {sanitizedTransferId}");
+            logger.LogError(ex, $"Error retrieving transaction {sanitizedTransferId}");
             return StatusCode(500, $"An error occurred while retrieving the transaction: {ex.Message}");
         }
     }
@@ -102,18 +91,18 @@ public class TransactionController : ControllerBase
         try
         {
             var hashedAccountId = HashSensitiveData(accountId);
-            _logger.LogInformation($"Getting transactions for account: {hashedAccountId}");
+            logger.LogInformation($"Getting transactions for account: {hashedAccountId}");
             
             if (string.IsNullOrEmpty(accountId))
             {
                 return BadRequest("Account ID cannot be empty");
             }
             
-            var transactions = await _transactionService.GetTransactionsByAccountAsync(accountId);
+            var transactions = await transactionService.GetTransactionsByAccountAsync(accountId);
             
             if (transactions == null)
             {
-                _logger.LogWarning($"No transactions found for account: {hashedAccountId}");
+                logger.LogWarning($"No transactions found for account: {hashedAccountId}");
                 return Ok(Array.Empty<TransactionResponse>());
             }
             
@@ -122,7 +111,7 @@ public class TransactionController : ControllerBase
         catch (Exception ex)
         {
             var hashedAccountId = HashSensitiveData(accountId);
-            _logger.LogError(ex, $"Error retrieving transactions for account {hashedAccountId}");
+            logger.LogError(ex, $"Error retrieving transactions for account {hashedAccountId}");
             return StatusCode(500, $"An error occurred while retrieving transactions: {ex.Message}");
         }
     }

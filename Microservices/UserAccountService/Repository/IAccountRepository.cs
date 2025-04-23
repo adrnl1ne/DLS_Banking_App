@@ -1,4 +1,5 @@
 using AccountService.Models;
+using UserAccountService.Models;
 
 namespace AccountService.Repository;
 

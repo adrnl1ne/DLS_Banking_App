@@ -31,7 +31,7 @@ public class RabbitMQEventPublisher : IEventPublisher
         var body = Encoding.UTF8.GetBytes(message);
         _channel.BasicPublish(exchange: "", routingKey: queueName, basicProperties: null, body: body);
     }
-
+    
     public void Dispose()
     {
         _channel?.Dispose();

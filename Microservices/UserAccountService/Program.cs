@@ -24,6 +24,7 @@ builder.Services.AddScoped<IAccountService, UserAccountService.Service.AccountSe
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddSingleton<IEventPublisher, RabbitMQEventPublisher>();
 
+
 var connectionString = string.Format("server={0};port={1};database={2};user={3};password={4};SslMode=Required",
     builder.Configuration.GetValue<string>("MYSQL_HOST"),
     builder.Configuration.GetValue<string>("MYSQL_PORT"),
@@ -86,8 +87,6 @@ builder.Services.AddSwaggerGen(c =>
         }
     });
 });
-
-builder.Services.AddSingleton<IEventPublisher, RabbitMQEventPublisher>();
 
 // Add authorization
 builder.Services.AddAuthorization();

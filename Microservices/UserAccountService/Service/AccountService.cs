@@ -3,6 +3,7 @@ using AccountService.Models;
 using AccountService.Repository;
 using AccountService.Services;
 using Microsoft.AspNetCore.Mvc;
+using UserAccountService.Models;
 using UserAccountService.Shared.DTO;
 
 namespace UserAccountService.Service;
