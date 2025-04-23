@@ -50,7 +50,8 @@ public class TransactionController : ControllerBase
     {
         try
         {
-            _logger.LogInformation($"Getting transaction with ID: {transferId}");
+            var sanitizedTransferId = transferId?.Replace("\n", "").Replace("\r", "");
+            _logger.LogInformation($"Getting transaction with ID: {sanitizedTransferId}");
             
             if (string.IsNullOrEmpty(transferId))
             {
