@@ -17,6 +17,14 @@ public class TransactionRepository : ITransactionRepository
     private readonly ILogger<TransactionRepository> _logger;
     private readonly string _connectionString;
 
+    private static string HashAccountId(string accountId)
+    {
+        using var sha256 = SHA256.Create();
+        var bytes = Encoding.UTF8.GetBytes(accountId);
+        var hash = sha256.ComputeHash(bytes);
+        return Convert.ToBase64String(hash);
+    }
+
     public TransactionRepository(
         TransactionDbContext context, 
         ILogger<TransactionRepository> logger,
@@ -105,7 +113,8 @@ public class TransactionRepository : ITransactionRepository
         try
         {
             var sanitizedAccountId = accountId.Replace("\n", "").Replace("\r", "");
-            _logger.LogInformation("Getting transactions for account: {AccountId}", sanitizedAccountId);
+            var hashedAccountId = HashAccountId(sanitizedAccountId);
+            _logger.LogInformation("Getting transactions for account: {AccountId}", hashedAccountId);
             
             var transactions = new List<Transaction>();
             
