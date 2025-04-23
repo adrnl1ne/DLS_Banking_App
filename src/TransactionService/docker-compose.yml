@@ -1,0 +1,62 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  # Transaction Service API
+  transaction-service:
+    build:
+      context: ./src/TransactionService
+      dockerfile: Dockerfile
+    ports:
+      - "5000:80"
+      - "5001:443"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Server=mysql;Database=transaction_db;User=root;Password=password;
+      - RabbitMQ__Host=rabbitmq
+      - RabbitMQ__Username=guest
+      - RabbitMQ__Password=guest
+      - Jwt__Key=YourSecureKeyWithAtLeast32Characters123
+      - Jwt__Issuer=UserAccountService
+      - Jwt__Audience=BankingApp
+    depends_on:
+      - mysql
+      - rabbitmq
+    networks:
+      - banking-network
+    restart: on-failure
+
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    ports:
+      - "3306:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=password
+      - MYSQL_DATABASE=transaction_db
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - banking-network
+    restart: always
+    command: --default-authentication-plugin=mysql_native_password
+
+  # RabbitMQ Message Broker
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"   # AMQP port
+      - "15672:15672" # Management UI
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - banking-network
+    restart: always
+
+networks:
+  banking-network:
+    driver: bridge
+
+volumes:
+  mysql-data:
+  rabbitmq-data:
