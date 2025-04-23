@@ -29,7 +29,10 @@ public class TransactionController : ControllerBase
                 return BadRequest("Amount must be greater than zero");
             }
             
-            _logger.LogInformation($"Creating transfer from {request.FromAccount} to {request.ToAccount} for {request.Amount}");
+            var sanitizedFromAccount = request.FromAccount?.Replace("\n", "").Replace("\r", "");
+            var sanitizedToAccount = request.ToAccount?.Replace("\n", "").Replace("\r", "");
+            var sanitizedAmount = request.Amount.ToString().Replace("\n", "").Replace("\r", "");
+            _logger.LogInformation($"Creating transfer from {sanitizedFromAccount} to {sanitizedToAccount} for {sanitizedAmount}");
             
             var result = await _transactionService.CreateTransferAsync(request);
             return CreatedAtAction(nameof(GetTransaction), new { transferId = result.TransferId }, result);
