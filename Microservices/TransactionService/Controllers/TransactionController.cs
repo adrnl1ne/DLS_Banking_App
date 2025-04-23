@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Security.Cryptography;
+using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -8,7 +8,6 @@ using Microsoft.Extensions.Logging;
 using Prometheus;
 using TransactionService.Models;
 using TransactionService.Services;
-using System.Security.Claims;
 
 namespace TransactionService.Controllers;
 

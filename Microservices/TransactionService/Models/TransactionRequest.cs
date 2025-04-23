@@ -1,9 +1,10 @@
-namespace TransactionService.Models;
-
-public class TransactionRequest
+namespace TransactionService.Models
 {
-    public required string FromAccount { get; set; }
-    public required string ToAccount { get; set; }
-    public decimal Amount { get; set; }
-    public int UserId { get; set; }
+    public class TransactionRequest
+    {
+        public string FromAccount { get; set; } = string.Empty;
+        public string ToAccount { get; set; } = string.Empty;
+        public decimal Amount { get; set; }
+        public int UserId { get; set; }
+    }
 }
