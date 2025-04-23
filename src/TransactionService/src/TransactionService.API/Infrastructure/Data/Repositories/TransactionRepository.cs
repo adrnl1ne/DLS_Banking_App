@@ -1,11 +1,5 @@
-using System;
-using System.Collections.Generic;
-using System.Data;
-using System.Text.Json;
-using System.Threading.Tasks;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
+using System.Security.Cryptography;
+using System.Text;
 using MySqlConnector;
 using TransactionService.API.Models;
 
@@ -98,7 +92,7 @@ public class TransactionRepository : ITransactionRepository
                 return transaction;
             }
             
-            var sanitizedTransferId = transferId?.Replace("\n", "").Replace("\r", "");
+            sanitizedTransferId = transferId?.Replace("\n", "").Replace("\r", "");
             _logger.LogWarning("No transaction found with transfer ID: {TransferId}", sanitizedTransferId);
             return null;
         }
