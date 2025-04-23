@@ -1,23 +1,39 @@
-using AccountService.Database.Data;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.IdentityModel.Tokens;
 using System;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
-using System.Threading.Tasks;
-using BCrypt.Net;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.IdentityModel.Tokens;
+using BCrypt.Net;
 using UserAccountService.Shared.DTO;
+using AccountService.Database.Data;
+using AccountService.Models;
 
 namespace UserAccountService.Service;
 
-public class AuthService(UserAccountDbContext context, IConfiguration configuration) : IAuthService
+public class AuthService : IAuthService
 {
+    private readonly UserAccountDbContext _context;
+    private readonly IConfiguration _configuration;
+    private readonly ILogger<AuthService> _logger;
+
+    public AuthService(UserAccountDbContext context, IConfiguration configuration, ILogger<AuthService> logger)
+    {
+        _context = context;
+        _configuration = configuration;
+        _logger = logger;
+
+        // Log configuration values for debugging
+        _logger.LogInformation("AuthService initialized with JWT_ISSUER: {Issuer}, JWT_AUDIENCE: {Audience}", 
+            configuration["JWT_ISSUER"], configuration["JWT_AUDIENCE"]);
+    }
+
     public async Task<ActionResult> LoginAsync(string usernameOrEmail, string password)
     {
         // Find user by email or username
-        var user = await context.Users
+        var user = await _context.Users
             .Include(u => u.Role)
             .FirstOrDefaultAsync(u => u.Email == usernameOrEmail || u.Username == usernameOrEmail);
 
@@ -33,11 +49,28 @@ public class AuthService(UserAccountDbContext context, IConfiguration configurat
         }
 
         // Generate JWT token
-        var jwtKey = configuration.GetValue<string>("JWT_KEY") ??
+        var tokenString = GenerateUserToken(user);
+        return new OkObjectResult(new { Token = tokenString });
+    }
+
+    public Task<ActionResult> GenerateServiceTokenAsync(string serviceName)
+    {
+        if (string.IsNullOrEmpty(serviceName))
+        {
+            return Task.FromResult<ActionResult>(new BadRequestObjectResult("Service name must be provided."));
+        }
+
+        var tokenString = GenerateServiceToken(serviceName);
+        return Task.FromResult<ActionResult>(new OkObjectResult(new { Token = tokenString }));
+    }
+
+    private string GenerateUserToken(User user)
+    {
+        var jwtKey = _configuration.GetValue<string>("JWT_KEY") ??
                      throw new InvalidOperationException("JWT_KEY not configured");
-        var jwtIssuer = configuration.GetValue<string>("JWT_ISSUER") ??
+        var jwtIssuer = _configuration.GetValue<string>("JWT_ISSUER") ??
                         throw new InvalidOperationException("JWT_ISSUER not configured");
-        var jwtAudience = configuration.GetValue<string>("JWT_AUDIENCE") ??
+        var jwtAudience = _configuration.GetValue<string>("JWT_AUDIENCE") ??
                           throw new InvalidOperationException("JWT_AUDIENCE not configured");
 
         var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
@@ -45,7 +78,8 @@ public class AuthService(UserAccountDbContext context, IConfiguration configurat
 
         var claims = new[]
         {
-            new Claim(JwtRegisteredClaimNames.NameId, user.Id.ToString()),
+            new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+            new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new Claim(JwtRegisteredClaimNames.Email, user.Email),
             new Claim("role", user.Role?.Name.ToLower() ?? "user"),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
@@ -59,40 +93,33 @@ public class AuthService(UserAccountDbContext context, IConfiguration configurat
             signingCredentials: credentials);
 
         var tokenString = new JwtSecurityTokenHandler().WriteToken(token);
-
-        return new OkObjectResult(new { Token = tokenString });
+        _logger.LogInformation("Generated user JWT token: {Token}", tokenString);
+        return tokenString;
     }
-    
-    public Task<ActionResult> GenerateServiceTokenAsync(string serviceName)
-    {
-        if (string.IsNullOrEmpty(serviceName))
-        {
-            return Task.FromResult<ActionResult>(new BadRequestObjectResult("Service name must be provided."));
-        }
 
-        var tokenString = GenerateServiceToken(serviceName);
-        return Task.FromResult<ActionResult>(new OkObjectResult(new { Token = tokenString }));
-    }
-    
     private string GenerateServiceToken(string serviceName)
     {
-        var jwtKey = configuration.GetValue<string>("JWT_KEY") ??
+        var jwtKey = _configuration.GetValue<string>("JWT_KEY") ??
                      throw new InvalidOperationException("JWT_KEY not configured");
-        var jwtIssuer = configuration.GetValue<string>("JWT_ISSUER") ??
+        var jwtIssuer = _configuration.GetValue<string>("JWT_ISSUER") ??
                         throw new InvalidOperationException("JWT_ISSUER not configured");
-        var jwtAudience = configuration.GetValue<string>("JWT_AUDIENCE") ??
+        var jwtAudience = _configuration.GetValue<string>("JWT_AUDIENCE") ??
                           throw new InvalidOperationException("JWT_AUDIENCE not configured");
 
         var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
         var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
 
-        var claims = new[]
+        var claims = new List<Claim>
         {
             new Claim(JwtRegisteredClaimNames.Sub, serviceName),
             new Claim("role", "service"),
-            new Claim("scopes", "read:accounts,update:account-balance"),
-            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new Claim(JwtRegisteredClaimNames.Iss, jwtIssuer)
         };
+
+        // Add scopes as separate claims
+        claims.Add(new Claim("scopes", "read:accounts"));
+        claims.Add(new Claim("scopes", "update:account-balance"));
 
         var token = new JwtSecurityToken(
             issuer: jwtIssuer,
@@ -101,6 +128,8 @@ public class AuthService(UserAccountDbContext context, IConfiguration configurat
             expires: DateTime.Now.AddMonths(6),
             signingCredentials: credentials);
 
-        return new JwtSecurityTokenHandler().WriteToken(token);
+        var tokenString = new JwtSecurityTokenHandler().WriteToken(token);
+        _logger.LogInformation("Generated service JWT token for {ServiceName}: {Token}", serviceName, tokenString);
+        return tokenString;
     }
 }

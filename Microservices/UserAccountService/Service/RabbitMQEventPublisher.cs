@@ -1,14 +1,15 @@
 using System.Text;
+using AccountService.Services;
 using RabbitMQ.Client;
 
-namespace AccountService.Services;
+namespace UserAccountService.Service;
 
-public class RabbitMQEventPublisher : IEventPublisher
+public class RabbitMqEventPublisher : IEventPublisher
 {
     private readonly IConnection _connection;
     private readonly IModel _channel;
 
-    public RabbitMQEventPublisher(IConfiguration configuration)
+    public RabbitMqEventPublisher(IConfiguration configuration)
     {
         var factory = new ConnectionFactory
         {

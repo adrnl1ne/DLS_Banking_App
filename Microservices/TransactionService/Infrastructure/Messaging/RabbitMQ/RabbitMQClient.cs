@@ -1,56 +1,18 @@
-using System;
 using System.Text;
 using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 
 namespace TransactionService.Infrastructure.Messaging.RabbitMQ;
 
-public class RabbitMQClient : IRabbitMQClient, IDisposable
+public class RabbitMqClient : IRabbitMQClient, IDisposable
 {
     private readonly IConnection _connection;
     private readonly IModel _channel;
-    private readonly ILogger<RabbitMQClient> _logger;
+    private readonly ILogger<RabbitMqClient> _logger;
 
-    // Constructor that accepts a configuration object
-    public RabbitMQClient(IConfiguration configuration, ILogger<RabbitMQClient> logger)
-    {
-        _logger = logger;
-        
-        var host = configuration["RabbitMQ:Host"] ?? "rabbitmq";
-        var port = configuration.GetValue<int>("RabbitMQ:Port", 5672);
-        var username = configuration["RabbitMQ:Username"] ?? "guest";
-        var password = configuration["RabbitMQ:Password"] ?? "guest";
-        var virtualHost = configuration["RabbitMQ:VirtualHost"] ?? "/";
-
-        var factory = new ConnectionFactory
-        {
-            HostName = host,
-            Port = port,
-            UserName = username,
-            Password = password,
-            VirtualHost = virtualHost
-        };
-
-        try
-        {
-            _connection = factory.CreateConnection();
-            _channel = _connection.CreateModel();
-            _logger.LogInformation("Connected to RabbitMQ at {Host}:{Port}", host, port);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to connect to RabbitMQ at {Host}:{Port}", host, port);
-            throw;
-        }
-    }
-
-    // Constructor that accepts a RabbitMQConfiguration object
-    public RabbitMQClient(RabbitMQConfiguration config, ILogger<RabbitMQClient> logger)
+    // Constructor using RabbitMQConfiguration
+    public RabbitMqClient(RabbitMQConfiguration config, ILogger<RabbitMqClient> logger)
     {
         _logger = logger;
         
@@ -101,7 +63,7 @@ public class RabbitMQClient : IRabbitMQClient, IDisposable
         }
     }
 
-    // Method to publish string messages (used in new implementation)
+    // Method to publish string messages
     public void Publish(string queueName, string message)
     {
         try
@@ -133,7 +95,7 @@ public class RabbitMQClient : IRabbitMQClient, IDisposable
             _channel.QueueDeclare(queue: queue, durable: true, exclusive: false, autoDelete: false);
 
             var consumer = new EventingBasicConsumer(_channel);
-            consumer.Received += (model, ea) =>
+            consumer.Received += (_, ea) =>
             {
                 try
                 {
@@ -166,7 +128,7 @@ public class RabbitMQClient : IRabbitMQClient, IDisposable
         }
     }
 
-    // New async consumption method from the updated implementation
+    // Async consumption method
     public async Task<string> ConsumeAsync(string queueName, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Setting up async consumption from queue {Queue}", queueName);
@@ -181,9 +143,10 @@ public class RabbitMQClient : IRabbitMQClient, IDisposable
         }, useSynchronizationContext: false);
 
         var consumer = new EventingBasicConsumer(_channel);
-        string consumerTag = null;
-        
-        consumer.Received += (model, ea) =>
+        string? consumerTag = null;
+
+        var tag = consumerTag;
+        consumer.Received += (_, ea) =>
         {
             try {
                 var body = ea.Body.ToArray();
@@ -195,8 +158,8 @@ public class RabbitMQClient : IRabbitMQClient, IDisposable
                 _channel.BasicAck(deliveryTag: ea.DeliveryTag, multiple: false);
                 
                 // Cancel consumption after receiving the message
-                if (consumerTag != null) {
-                    _channel.BasicCancel(consumerTag);
+                if (tag != null) {
+                    _channel.BasicCancel(tag);
                 }
             }
             catch (Exception ex) {

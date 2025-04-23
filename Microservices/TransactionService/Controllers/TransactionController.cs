@@ -17,7 +17,6 @@ namespace TransactionService.Controllers;
 public class TransactionController(ITransactionService transactionService, ILogger<TransactionController> logger)
     : ControllerBase
 {
-
     // Prometheus metrics
     private static readonly Counter TransactionRequestsTotal = Metrics.CreateCounter(
         "transaction_requests_total",
@@ -29,7 +28,6 @@ public class TransactionController(ITransactionService transactionService, ILogg
         "Total number of transaction errors",
         new CounterConfiguration { LabelNames = new[] { "method" } }
     );
-    
 
     [HttpPost("transfer")]
     [Authorize]
@@ -129,15 +127,35 @@ public class TransactionController(ITransactionService transactionService, ILogg
                 return BadRequest("Account ID cannot be empty");
             }
 
-            var transactions = await transactionService.GetTransactionsByAccountAsync(accountId);
-
-            if (transactions == null)
+            // Extract the authenticated user's ID from the JWT token
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
             {
-                logger.LogWarning($"No transactions found for account: {accountId}");
-                return Ok(Array.Empty<TransactionResponse>());
+                TransactionErrorsTotal.WithLabels("GET").Inc();
+                return Unauthorized("User ID not found in token.");
             }
 
+            var transactions = await transactionService.GetTransactionsByAccountAsync(accountId, userId);
+
             return Ok(transactions);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            TransactionErrorsTotal.WithLabels("GET").Inc();
+            logger.LogWarning(ex, "Unauthorized access attempt during retrieval of transactions for account {AccountId}", accountId);
+            return StatusCode(403, ex.Message);
+        }
+        catch (ArgumentException ex)
+        {
+            TransactionErrorsTotal.WithLabels("GET").Inc();
+            logger.LogWarning(ex, "Invalid argument during retrieval of transactions for account {AccountId}", accountId);
+            return BadRequest(ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            TransactionErrorsTotal.WithLabels("GET").Inc();
+            logger.LogWarning(ex, "Invalid operation during retrieval of transactions for account {AccountId}", accountId);
+            return NotFound(ex.Message);
         }
         catch (Exception ex)
         {

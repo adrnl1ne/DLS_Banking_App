@@ -1,5 +1,7 @@
 # .gitignore for .NET Transaction Service
 
+TransactionService.Tests/bin/
+TransactionService.Tests/obj/
 # .NET Build Output
 bin/
 obj/
