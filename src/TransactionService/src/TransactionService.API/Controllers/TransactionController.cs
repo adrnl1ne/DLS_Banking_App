@@ -61,7 +61,8 @@ public class TransactionController : ControllerBase
             
             if (transaction == null)
             {
-                _logger.LogWarning($"Transaction not found with ID: {transferId}");
+                var sanitizedTransferId = transferId?.Replace("\n", "").Replace("\r", "");
+                _logger.LogWarning($"Transaction not found with ID: {sanitizedTransferId}");
                 return NotFound($"Transaction with ID {transferId} not found");
             }
             
