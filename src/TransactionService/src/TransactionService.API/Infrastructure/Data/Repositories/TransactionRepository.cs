@@ -60,7 +60,8 @@ public class TransactionRepository : ITransactionRepository
     {
         try
         {
-            _logger.LogInformation("Getting transaction with transfer ID: {TransferId}", transferId);
+            var sanitizedTransferId = transferId?.Replace("\n", "").Replace("\r", "");
+            _logger.LogInformation("Getting transaction with transfer ID: {TransferId}", sanitizedTransferId);
             
             using var connection = new MySqlConnection(_connectionString);
             await connection.OpenAsync();
@@ -97,13 +98,15 @@ public class TransactionRepository : ITransactionRepository
                 return transaction;
             }
             
-            _logger.LogWarning("No transaction found with transfer ID: {TransferId}", transferId);
+            var sanitizedTransferId = transferId?.Replace("\n", "").Replace("\r", "");
+            _logger.LogWarning("No transaction found with transfer ID: {TransferId}", sanitizedTransferId);
             return null;
         }
         catch (Exception ex)
         {
+            var sanitizedTransferId = transferId?.Replace("\n", "").Replace("\r", "");
             _logger.LogError(ex, "Error getting transaction with transfer ID: {TransferId}. Error: {Message}", 
-                transferId, ex.Message);
+                sanitizedTransferId, ex.Message);
             throw;
         }
     }
