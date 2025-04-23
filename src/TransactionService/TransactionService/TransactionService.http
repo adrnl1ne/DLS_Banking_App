@@ -1,6 +1,0 @@
-@TransactionService_HostAddress = http://localhost:5111
-
-GET {{TransactionService_HostAddress}}/weatherforecast/
-Accept: application/json
-
-###
