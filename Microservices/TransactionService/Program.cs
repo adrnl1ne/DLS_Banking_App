@@ -61,11 +61,6 @@ builder.Services.AddSwaggerGen(c =>
             Array.Empty<string>()
         }
     });
-    
-    // Optional: Add XML comments
-    // var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
-    // var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
-    // c.IncludeXmlComments(xmlPath);
 });
 
 // Configure DB Context
