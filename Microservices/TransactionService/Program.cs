@@ -52,10 +52,30 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-// Configure DB Context
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+var connectionString = string.Format("server={0};port={1};database={2};user={3};password={4};SslMode=Required",
+    builder.Configuration.GetValue<string>("MYSQL_HOST"),
+    builder.Configuration.GetValue<string>("MYSQL_PORT"),
+    builder.Configuration.GetValue<string>("MYSQL_DATABASE"),
+    builder.Configuration.GetValue<string>("MYSQL_USER"),
+    builder.Configuration.GetValue<string>("MYSQL_PASSWORD"));
+
+// Register the DbContext with MySQL configuration
 builder.Services.AddDbContext<TransactionDbContext>(options =>
-    options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
+    options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString),
+        mySqlOptions => mySqlOptions.EnableStringComparisonTranslations())
+);
+
+// Configure RabbitMQ
+var rabbitMQConfig = new RabbitMQConfiguration
+{
+    HostName = builder.Configuration["RABBITMQ_HOST"] ?? "rabbitmq",
+    Port = int.Parse(builder.Configuration["RABBITMQ_PORT"] ?? "5672"),
+    UserName = builder.Configuration["RABBITMQ_USERNAME"] ?? "guest",
+    Password = builder.Configuration["RABBITMQ_PASSWORD"] ?? "guest",
+    VirtualHost = builder.Configuration["RABBITMQ_VHOST"] ?? "/",
+};
+builder.Services.AddSingleton(rabbitMQConfig);
+builder.Services.AddSingleton<IRabbitMQClient, RabbitMQClient>();
 
 // Configure Authentication
 builder.Services.AddAuthentication(options =>
@@ -84,8 +104,6 @@ builder.Services.AddHttpClient<UserAccountClient>(client =>
     client.BaseAddress = new Uri(builder.Configuration["Services:UserAccountService"]);
 });
 
-// Register RabbitMQ
-builder.Services.AddSingleton<IRabbitMQClient, RabbitMQClient>();
 
 // Register repositories
 builder.Services.AddScoped<ITransactionRepository, TransactionRepository>();

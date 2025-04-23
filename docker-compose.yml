@@ -105,9 +105,8 @@ services:
       - "3308:3306"
     volumes:
       - mysql-transaction-data:/var/lib/mysql
-      - ./src/TransactionService/Database/01-init-schema.sql:/docker-entrypoint-initdb.d/01-init-schema.sql
-      - ./src/TransactionService/Database/02-init-test-data.sql:/docker-entrypoint-initdb.d/02-init-test-data.sql
-    restart: always
+      - ./Microservices/TransactionService/Database/01-init-schema.sql:/docker-entrypoint-initdb.d/01-init-schema.sql
+      - ./Microservices/TransactionService/Database/02-init-test-data.sql:/docker-entrypoint-initdb.d/02-init-test-data.sql
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
@@ -202,7 +201,7 @@ services:
 
   transaction-service:
     build:
-      context: ./Microservices/TransactionService/src/TransactionService.API
+      context: ./Microservices/TransactionService
       dockerfile: Dockerfile
     mem_limit: 512m
     cpus: "0.5"
@@ -211,7 +210,7 @@ services:
       - "8003:80"
       - "9092:${PROMETHEUS_PORT}"
     volumes:
-      - ./Microservices/TransactionService/src/TransactionService.API:/app
+      - ./Microservices/TransactionService:/app
       - nuget-cache:/root/.nuget/packages
     environment:
       - MYSQL_HOST=mysql-transaction
