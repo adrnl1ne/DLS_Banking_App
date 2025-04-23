@@ -104,7 +104,8 @@ public class TransactionRepository : ITransactionRepository
     {
         try
         {
-            _logger.LogInformation("Getting transactions for account: {AccountId}", accountId);
+            var sanitizedAccountId = accountId.Replace("\n", "").Replace("\r", "");
+            _logger.LogInformation("Getting transactions for account: {AccountId}", sanitizedAccountId);
             
             var transactions = new List<Transaction>();
             
@@ -142,13 +143,13 @@ public class TransactionRepository : ITransactionRepository
             }
             
             _logger.LogInformation("Found {Count} transactions for account: {AccountId}", 
-                transactions.Count, accountId);
+                transactions.Count, sanitizedAccountId);
             return transactions;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting transactions for account: {AccountId}. Error: {Message}", 
-                accountId, ex.Message);
+                sanitizedAccountId, ex.Message);
             throw;
         }
     }
