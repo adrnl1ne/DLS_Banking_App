@@ -59,10 +59,8 @@ services:
     image: mysql
     restart: always
     environment:
-      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
-      - MYSQL_DATABASE=${MYSQL_DATABASE}
-      - MYSQL_USER=${MYSQL_USER}
-      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD_UA}
+      - MYSQL_ROOT_DATABASE=${MYSQL_DATABASE_UA}
     ports:
       - "3307:3306"
     volumes:
@@ -82,8 +80,8 @@ services:
     ports:
       - "3308:3307"
     environment:
-      - MYSQL_ROOT_PASSWORD=${TA_ROOT_PASSWORD}
-      - MYSQL_ROOT_DATABASE=${TA_DATABASE}
+      - MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD_TA}
+      - MYSQL_ROOT_DATABASE=${MYSQL_DATABASE_TA}
     volumes:
       - mysql-transaction-data:/var/lib/mysql
     restart: always
