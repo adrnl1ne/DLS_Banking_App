@@ -69,7 +69,8 @@ public class TransactionController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, $"Error retrieving transaction {transferId}");
+            var sanitizedTransferId = transferId?.Replace("\n", "").Replace("\r", "");
+            _logger.LogError(ex, $"Error retrieving transaction {sanitizedTransferId}");
             return StatusCode(500, $"An error occurred while retrieving the transaction: {ex.Message}");
         }
     }
