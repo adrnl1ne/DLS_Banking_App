@@ -1,3 +1,5 @@
+using System;
+
 namespace TransactionService.API.Models;
 
 public class TransactionResponse

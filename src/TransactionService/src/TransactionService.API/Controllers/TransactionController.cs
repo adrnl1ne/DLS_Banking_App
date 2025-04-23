@@ -1,6 +1,10 @@
+using System;
+using System.Collections.Generic;
 using System.Security.Cryptography;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using TransactionService.API.Models;
 using TransactionService.API.Services;
 using System.Security.Cryptography;

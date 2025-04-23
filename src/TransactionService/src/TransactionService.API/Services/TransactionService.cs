@@ -1,5 +1,13 @@
+<<<<<<< HEAD
 using System.Security.Cryptography;
 using System.Text;
+=======
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
+>>>>>>> abd4c79a21a28b0840bd70c982cde1623f7a08b8
 using TransactionService.API.Infrastructure.Data.Repositories;
 using TransactionService.API.Infrastructure.Messaging.Events;
 using TransactionService.API.Infrastructure.Messaging.RabbitMQ;
