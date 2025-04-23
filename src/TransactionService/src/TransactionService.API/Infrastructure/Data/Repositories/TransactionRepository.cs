@@ -152,7 +152,7 @@ public class TransactionRepository : ITransactionRepository
             }
             
             _logger.LogInformation("Found {Count} transactions for account: {AccountId}", 
-                transactions.Count, sanitizedAccountId);
+                transactions.Count, hashedAccountId);
             return transactions;
         }
         catch (Exception ex)
