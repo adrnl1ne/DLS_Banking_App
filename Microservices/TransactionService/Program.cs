@@ -74,8 +74,9 @@ var connectionString = string.Format("server={0};port={1};database={2};user={3};
 
 // Register the DbContext with MySQL configuration
 builder.Services.AddDbContext<TransactionDbContext>(options =>
-    options.UseMySql(connectionString, MySqlServerVersion.LatestSupportedServerVersion));
-
+    options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString),
+        mySqlOptions => mySqlOptions.EnableStringComparisonTranslations())
+);
 // Configure RabbitMQ
 var rabbitMQConfig = new RabbitMQConfiguration
 {
