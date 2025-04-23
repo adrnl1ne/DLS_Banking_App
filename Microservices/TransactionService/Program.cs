@@ -19,47 +19,76 @@ using TransactionService.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add this line near the top to force Development environment
-builder.Environment.EnvironmentName = "Development";
-
 // Add services to the container
 builder.Services.AddControllers();
 
-// Configure DbContext
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+// Configure DbContext with environment variables
+var connectionString = string.Format("server={0};port={1};database={2};user={3};password={4};SslMode=Required",
+    builder.Configuration.GetValue<string>("MYSQL_HOST", "mysql"),
+    builder.Configuration.GetValue<string>("MYSQL_PORT", "3306"),
+    builder.Configuration.GetValue<string>("MYSQL_DATABASE", "transaction_db"),
+    builder.Configuration.GetValue<string>("MYSQL_USER", "root"),
+    builder.Configuration.GetValue<string>("MYSQL_PASSWORD", "password"));
+
 builder.Services.AddDbContext<TransactionDbContext>(options =>
-    options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
+    options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString),
+            mySqlOptions => mySqlOptions.EnableStringComparisonTranslations())
+);
 
 // Configure RabbitMQ
-var rabbitMQConfig = builder.Configuration.GetSection("RabbitMQ").Get<RabbitMQConfiguration>() 
-    ?? throw new InvalidOperationException("RabbitMQ configuration is missing in appsettings");
+// First try environment variables, then fall back to config section
+var rabbitMQHost = builder.Configuration.GetValue<string>("RABBITMQ_HOST", "rabbitmq");
+var rabbitMQPort = builder.Configuration.GetValue<int>("RABBITMQ_PORT", 5672);
+var rabbitMQUsername = builder.Configuration.GetValue<string>("RABBITMQ_USERNAME", "guest");
+var rabbitMQPassword = builder.Configuration.GetValue<string>("RABBITMQ_PASSWORD", "guest");
+
+var rabbitMQConfig = new RabbitMQConfiguration
+{
+    HostName = rabbitMQHost,
+    Port = rabbitMQPort,
+    UserName = rabbitMQUsername,
+    Password = rabbitMQPassword,
+    VirtualHost = "/"
+};
+
+// Register RabbitMQ configuration and client
 builder.Services.AddSingleton(rabbitMQConfig);
 builder.Services.AddSingleton<IRabbitMQClient, RabbitMQClient>();
 
 // Register services and repositories
 builder.Services.AddScoped<ITransactionRepository, TransactionRepository>();
-builder.Services.AddScoped<ITransactionService, TransactionService.API.Services.TransactionService>();
+builder.Services.AddScoped<ITransactionService, TransactionService.Services.TransactionService>();
+
+// Add HTTP Client for user account service
+builder.Services.AddHttpClient<UserAccountClient>();
 
 // Configure JWT authentication
-var jwtKey = builder.Configuration["Jwt:Key"] ?? "ThisIsMySecureKeyWithAtLeast32Characters";
-var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "UserAccountService";
-var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "BankingApp";
+var jwtKey = builder.Configuration.GetValue<string>("JWT_KEY", builder.Configuration["Jwt:Key"]) 
+    ?? throw new InvalidOperationException("JWT Key must be configured");
+var jwtIssuer = builder.Configuration.GetValue<string>("JWT_ISSUER", builder.Configuration["Jwt:Issuer"]) 
+    ?? "UserAccountService";
+var jwtAudience = builder.Configuration.GetValue<string>("JWT_AUDIENCE", builder.Configuration["Jwt:Audience"]) 
+    ?? "BankingApp";
 
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
     {
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateLifetime = true,
-            ValidateIssuerSigningKey = true,
-            ValidIssuer = jwtIssuer,
-            ValidAudience = jwtAudience,
-            IssuerSigningKey = new SymmetricSecurityKey(
-                Encoding.UTF8.GetBytes(jwtKey))
-        };
-    });
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = jwtIssuer,
+        ValidAudience = jwtAudience,
+        IssuerSigningKey = new SymmetricSecurityKey(
+            Encoding.UTF8.GetBytes(jwtKey))
+    };
+});
 
 // Configure Swagger
 builder.Services.AddEndpointsApiExplorer();
@@ -118,21 +147,22 @@ var transactionAmountHistogram = Metrics.CreateHistogram(
     }
 );
 
-// Add these metrics to the DI container so they can be used in the services
+// Add these metrics to the DI container
 builder.Services.AddSingleton(transactionCounter);
 builder.Services.AddSingleton(transactionAmountHistogram);
 
 var app = builder.Build();
 
 // Configure the HTTP request pipeline
-if (app.Environment.IsDevelopment() || true) // Force Swagger UI to be available in all environments for testing
+if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Transaction Service API v1"));
 }
 
-// Add Prometheus metrics middleware
-app.UseMetricServer(); // Exposes /metrics endpoint for Prometheus
+// Configure Prometheus metrics endpoint with configurable port
+var prometheusPort = builder.Configuration.GetValue<int>("PROMETHEUS_PORT", 9092);
+app.UseMetricServer(prometheusPort);
 app.UseHttpMetrics(); // Tracks HTTP requests
 
 app.UseHttpsRedirection();
@@ -192,14 +222,13 @@ catch (Exception ex)
     logger.LogError(ex, "Error setting up RabbitMQ subscription");
 }
 
-// Ensure database is created
+// Ensure database is created and migrations applied
 using (var serviceScope = app.Services.CreateScope())
 {
     var dbContext = serviceScope.ServiceProvider.GetRequiredService<TransactionDbContext>();
     try
     {
         // Try to connect to the database and execute a simple command
-        // This will verify connection without using EnsureCreated()
         dbContext.Database.OpenConnection();
         dbContext.Database.CloseConnection();
         
@@ -215,6 +244,7 @@ using (var serviceScope = app.Services.CreateScope())
             CREATE TABLE IF NOT EXISTS `Transactions` (
                 `Id` CHAR(36) NOT NULL,
                 `TransferId` VARCHAR(255) NOT NULL,
+                `UserId` INT NOT NULL,
                 `FromAccount` VARCHAR(255) NOT NULL,
                 `ToAccount` VARCHAR(255) NOT NULL,
                 `Amount` DECIMAL(18, 2) NOT NULL,

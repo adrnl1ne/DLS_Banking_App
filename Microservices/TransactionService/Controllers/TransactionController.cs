@@ -6,8 +6,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Prometheus;
-using TransactionService.API.Models;
-using TransactionService.API.Services;
+using TransactionService.Models;
+using TransactionService.Services;
 using System.Security.Claims;
 
 namespace TransactionService.Controllers;

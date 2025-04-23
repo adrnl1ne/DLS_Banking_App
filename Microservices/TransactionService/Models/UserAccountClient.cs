@@ -3,7 +3,7 @@ using System.Net.Http.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 
-namespace TransactionService.API.Clients;
+namespace TransactionService.Clients;
 
 public class UserAccountClient
 {

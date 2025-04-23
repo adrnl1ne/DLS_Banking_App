@@ -3,13 +3,13 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using TransactionService.API.Infrastructure.Data.Repositories;
-using TransactionService.API.Infrastructure.Messaging.Events;
-using TransactionService.API.Infrastructure.Messaging.RabbitMQ;
-using TransactionService.API.Models;
+using TransactionService.Infrastructure.Data.Repositories;
+using TransactionService.Infrastructure.Messaging.Events;
+using TransactionService.Infrastructure.Messaging.RabbitMQ;
+using TransactionService.Models;
 using Prometheus;
 
-namespace TransactionService.API.Services;
+namespace TransactionService.Services;
 
 public class TransactionService : ITransactionService
 {

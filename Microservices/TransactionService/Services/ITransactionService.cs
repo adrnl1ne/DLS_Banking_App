@@ -1,8 +1,8 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using TransactionService.API.Models;
+using TransactionService.Models;
 
-namespace TransactionService.API.Services;
+namespace TransactionService.Services;
 
 public interface ITransactionService
 {

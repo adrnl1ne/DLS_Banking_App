@@ -6,9 +6,9 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using MySqlConnector;
-using TransactionService.API.Models;
+using TransactionService.Models;
 
-namespace TransactionService.API.Infrastructure.Data.Repositories;
+namespace TransactionService.Infrastructure.Data.Repositories;
 
 public class TransactionRepository : ITransactionRepository
 {

@@ -1,6 +1,6 @@
 using System;
 
-namespace TransactionService.API.Infrastructure.Messaging.Events;
+namespace TransactionService.Infrastructure.Messaging.Events;
 
 public class TransactionCreatedEvent
 {
