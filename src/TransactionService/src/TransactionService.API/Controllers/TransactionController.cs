@@ -18,6 +18,18 @@ public class TransactionController : ControllerBase
         _logger = logger;
     }
 
+    private string HashSensitiveData(string data)
+    {
+        if (string.IsNullOrEmpty(data))
+        {
+            return string.Empty;
+        }
+        
+        using var sha256 = SHA256.Create();
+        var hashedBytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(data));
+        return Convert.ToBase64String(hashedBytes);
+    }
+
     [HttpPost("transfer")]
     [Authorize]
     public async Task<ActionResult<TransactionResponse>> CreateTransfer([FromBody] TransactionRequest request)
@@ -83,7 +95,8 @@ public class TransactionController : ControllerBase
     {
         try
         {
-            _logger.LogInformation($"Getting transactions for account: {accountId}");
+            var hashedAccountId = HashSensitiveData(accountId);
+            _logger.LogInformation($"Getting transactions for account: {hashedAccountId}");
             
             if (string.IsNullOrEmpty(accountId))
             {
