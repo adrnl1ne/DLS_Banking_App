@@ -10,10 +10,12 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
-using TransactionService.API.Infrastructure.Data;
-using TransactionService.API.Infrastructure.Data.Repositories;
-using TransactionService.API.Infrastructure.Messaging.RabbitMQ;
-using TransactionService.API.Services;
+using Prometheus;
+using System.Diagnostics.Metrics;
+using TransactionService.Infrastructure.Data;
+using TransactionService.Infrastructure.Data.Repositories;
+using TransactionService.Infrastructure.Messaging.RabbitMQ;
+using TransactionService.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -99,6 +101,27 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
+// Create custom metrics
+var transactionCounter = Metrics.CreateCounter(
+    "transactions_total", 
+    "Total number of transactions processed",
+    new CounterConfiguration { LabelNames = new[] { "status", "type" } }
+);
+
+var transactionAmountHistogram = Metrics.CreateHistogram(
+    "transaction_amount",
+    "Distribution of transaction amounts",
+    new HistogramConfiguration
+    {
+        Buckets = new[] { 10, 50, 100, 500, 1000, 5000, 10000 },
+        LabelNames = new[] { "status" }
+    }
+);
+
+// Add these metrics to the DI container so they can be used in the services
+builder.Services.AddSingleton(transactionCounter);
+builder.Services.AddSingleton(transactionAmountHistogram);
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline
@@ -107,6 +130,10 @@ if (app.Environment.IsDevelopment() || true) // Force Swagger UI to be available
     app.UseSwagger();
     app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Transaction Service API v1"));
 }
+
+// Add Prometheus metrics middleware
+app.UseMetricServer(); // Exposes /metrics endpoint for Prometheus
+app.UseHttpMetrics(); // Tracks HTTP requests
 
 app.UseHttpsRedirection();
 app.UseAuthentication();

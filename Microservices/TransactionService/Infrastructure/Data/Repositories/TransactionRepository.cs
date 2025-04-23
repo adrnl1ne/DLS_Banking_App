@@ -97,15 +97,14 @@ public class TransactionRepository : ITransactionRepository
                 return transaction;
             }
             
-            sanitizedTransferId = transferId?.Replace("\n", "").Replace("\r", "");
             _logger.LogWarning("No transaction found with transfer ID: {TransferId}", sanitizedTransferId);
             return null;
         }
         catch (Exception ex)
         {
-            var sanitizedTransferId = transferId?.Replace("\n", "").Replace("\r", "");
+            var logSafeTransferId = transferId?.Replace("\n", "").Replace("\r", ""); // Use different name to avoid conflict
             _logger.LogError(ex, "Error getting transaction with transfer ID: {TransferId}. Error: {Message}", 
-                sanitizedTransferId, ex.Message);
+                logSafeTransferId, ex.Message);
             throw;
         }
     }

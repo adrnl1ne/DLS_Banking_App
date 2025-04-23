@@ -1,17 +1,13 @@
-<<<<<<< HEAD
-using System.Security.Cryptography;
-using System.Text;
-=======
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
->>>>>>> abd4c79a21a28b0840bd70c982cde1623f7a08b8
 using TransactionService.API.Infrastructure.Data.Repositories;
 using TransactionService.API.Infrastructure.Messaging.Events;
 using TransactionService.API.Infrastructure.Messaging.RabbitMQ;
 using TransactionService.API.Models;
+using Prometheus;
 
 namespace TransactionService.API.Services;
 
@@ -20,15 +16,21 @@ public class TransactionService : ITransactionService
     private readonly ITransactionRepository _repository;
     private readonly IRabbitMQClient _rabbitMqClient;
     private readonly ILogger<TransactionService> _logger;
+    private readonly Counter _transactionCounter;
+    private readonly Histogram _transactionAmountHistogram;
 
     public TransactionService(
         ITransactionRepository repository,
         IRabbitMQClient rabbitMqClient,
-        ILogger<TransactionService> logger)
+        ILogger<TransactionService> logger,
+        Counter transactionCounter,
+        Histogram transactionAmountHistogram)
     {
         _repository = repository;
         _rabbitMqClient = rabbitMqClient;
         _logger = logger;
+        _transactionCounter = transactionCounter;
+        _transactionAmountHistogram = transactionAmountHistogram;
     }
 
     public async Task<TransactionResponse> CreateTransferAsync(TransactionRequest request)
@@ -42,6 +44,8 @@ public class TransactionService : ITransactionService
             Amount = request.Amount,
             Status = "pending",
             CreatedAt = DateTime.UtcNow
+            // We store UserId in the request but don't need to store it in the transaction
+            // It's used for authorization checks
         };
 
         await _repository.CreateTransactionAsync(transaction);
@@ -63,12 +67,17 @@ public class TransactionService : ITransactionService
         var fraudCheckRequest = new
         {
             TransferId = transaction.TransferId,
-            Amount = transaction.Amount
+            Amount = transaction.Amount,
+            UserId = request.UserId
         };
         
         _rabbitMqClient.PublishMessage("CheckFraud", fraudCheckRequest);
         
         _logger.LogInformation($"Transaction {transaction.TransferId} created and sent for fraud check");
+        
+        // Record metrics
+        _transactionCounter.WithLabels("created", "transfer").Inc();
+        _transactionAmountHistogram.WithLabels("pending").Observe(request.Amount);
         
         return TransactionResponse.FromTransaction(transaction);
     }
@@ -76,12 +85,21 @@ public class TransactionService : ITransactionService
     public async Task<TransactionResponse?> GetTransactionByTransferIdAsync(string transferId)
     {
         var transaction = await _repository.GetTransactionByTransferIdAsync(transferId);
+        
+        if (transaction != null)
+        {
+            _transactionCounter.WithLabels("retrieved", "query").Inc();
+        }
+        
         return transaction != null ? TransactionResponse.FromTransaction(transaction) : null;
     }
 
     public async Task<IEnumerable<TransactionResponse>> GetTransactionsByAccountAsync(string accountId)
     {
         var transactions = await _repository.GetTransactionsByAccountAsync(accountId);
+        
+        _transactionCounter.WithLabels("listed", "query").Inc();
+        
         return transactions.Select(TransactionResponse.FromTransaction);
     }
 
