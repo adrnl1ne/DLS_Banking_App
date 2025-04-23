@@ -115,7 +115,8 @@ public class TransactionController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, $"Error retrieving transactions for account {accountId}");
+            var hashedAccountId = HashSensitiveData(accountId);
+            _logger.LogError(ex, $"Error retrieving transactions for account {hashedAccountId}");
             return StatusCode(500, $"An error occurred while retrieving transactions: {ex.Message}");
         }
     }
