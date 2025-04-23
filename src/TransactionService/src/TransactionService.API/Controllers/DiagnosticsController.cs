@@ -62,7 +62,8 @@ public class DiagnosticsController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error in diagnostics for transfer ID: {TransferId}", transferId);
+            var sanitizedTransferId = transferId.Replace("\n", "").Replace("\r", "");
+            _logger.LogError(ex, "Error in diagnostics for transfer ID: {TransferId}", sanitizedTransferId);
             return StatusCode(500, new { 
                 Error = "An error occurred during diagnostics",
                 Details = ex.Message,
