@@ -1,3 +1,8 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using TransactionService.API.Infrastructure.Data.Repositories;
 using TransactionService.API.Infrastructure.Messaging.Events;
 using TransactionService.API.Infrastructure.Messaging.RabbitMQ;

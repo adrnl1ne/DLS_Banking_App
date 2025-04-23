@@ -1,7 +1,11 @@
+using System;
+using System.Collections.Generic;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using MySqlConnector;
 using System.Data;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace TransactionService.API.Controllers;
 

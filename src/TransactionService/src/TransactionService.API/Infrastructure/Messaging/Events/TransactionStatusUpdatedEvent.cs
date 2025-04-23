@@ -1,3 +1,5 @@
+using System;
+
 namespace TransactionService.API.Infrastructure.Messaging.Events;
 
 public class TransactionStatusUpdatedEvent

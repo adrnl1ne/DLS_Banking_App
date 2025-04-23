@@ -1,3 +1,5 @@
+using System;
+
 namespace TransactionService.API.Infrastructure.Messaging.RabbitMQ;
 
 public interface IRabbitMQClient
