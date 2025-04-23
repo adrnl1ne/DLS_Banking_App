@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TransactionService.API.Models;
 using TransactionService.API.Services;
+using System.Security.Cryptography;
 
 namespace TransactionService.API.Controllers;
 

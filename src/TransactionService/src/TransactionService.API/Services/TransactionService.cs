@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using TransactionService.API.Infrastructure.Data.Repositories;
 using TransactionService.API.Infrastructure.Messaging.Events;
 using TransactionService.API.Infrastructure.Messaging.RabbitMQ;
