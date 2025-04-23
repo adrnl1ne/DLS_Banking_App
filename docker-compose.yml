@@ -105,14 +105,14 @@ services:
       - "3308:3306"
     volumes:
       - mysql-transaction-data:/var/lib/mysql
-      - ./Microservices/TransactionService/Database/init-transaction-schema.sql:/docker-entrypoint-initdb.d/01-init-transaction-schema.sql
-      - ./Microservices/TransactionService/Database/init-transaction-test-data.sql:/docker-entrypoint-initdb.d/02-init-transaction-test-data.sql
+      - ./src/TransactionService/Database/01-init-schema.sql:/docker-entrypoint-initdb.d/01-init-schema.sql
+      - ./src/TransactionService/Database/02-init-test-data.sql:/docker-entrypoint-initdb.d/02-init-test-data.sql
+    restart: always
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 30s
 
   fraud-detection-service:
     build:
