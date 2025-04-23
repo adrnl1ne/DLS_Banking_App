@@ -13,8 +13,8 @@ var elasticClient = new ElasticClient(settings);
 
 
 
-//builder.Services.AddSingleton<IElasticClient>(elasticClient);
-
+builder.Services.AddSingleton<IElasticClient>(elasticClient);
+builder.Services.AddHostedService<RabbitMqListener>();
 
 builder.Services.AddSingleton<RabbitMqConnection>(sp =>
 {
