@@ -73,18 +73,25 @@ services:
       timeout: 5s
       retries: 5
 
-  # MySQL Database
+  # Updated mysql-transaction service
   mysql-transaction:
     container_name: mysql-transaction
     image: mysql:8.0
     ports:
-      - "3308:3307"
+      - "3308:3306"  # Changed from 3308:3307 to 3308:3306 for standard MySQL port
     environment:
       - MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD_TA}
       - MYSQL_ROOT_DATABASE=${MYSQL_DATABASE_TA}
     volumes:
       - mysql-transaction-data:/var/lib/mysql
+      - ./src/TransactionService/Database/01-init-schema.sql:/docker-entrypoint-initdb.d/01-init-schema.sql
+      - ./src/TransactionService/Database/02-init-test-data.sql:/docker-entrypoint-initdb.d/02-init-test-data.sql
     restart: always
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   fraud-detection-service:
     build:
