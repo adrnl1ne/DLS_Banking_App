@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TransactionService.API.Models;
@@ -74,7 +75,7 @@ public class TransactionController : ControllerBase
             
             if (transaction == null)
             {
-                var sanitizedTransferId = transferId?.Replace("\n", "").Replace("\r", "");
+                sanitizedTransferId = transferId?.Replace("\n", "").Replace("\r", "");
                 _logger.LogWarning($"Transaction not found with ID: {sanitizedTransferId}");
                 return NotFound($"Transaction with ID {transferId} not found");
             }

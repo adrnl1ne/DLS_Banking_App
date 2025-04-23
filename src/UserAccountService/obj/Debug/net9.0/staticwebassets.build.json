@@ -1,0 +1,12 @@
+{
+  "Version": 1,
+  "Hash": "RRstiVX22xNkn0PBBW8yxVR+wniu+Q1es93AXjWiByQ=",
+  "Source": "UserAccountService",
+  "BasePath": "_content/UserAccountService",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [],
+  "Assets": [],
+  "Endpoints": []
+}
