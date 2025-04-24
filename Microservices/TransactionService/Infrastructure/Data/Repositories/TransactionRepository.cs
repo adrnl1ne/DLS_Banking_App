@@ -21,8 +21,9 @@ public class TransactionRepository(TransactionDbContext context, ILogger<Transac
         }
     }
 
-    public async Task<Transaction?> GetTransactionByIdAsync(Guid id)
+    public async Task<Transaction?> GetTransactionByIdAsync(string id)
     {
+        // Changed from Guid to string parameter
         return await context.Transactions.FindAsync(id);
     }
 
@@ -62,20 +63,26 @@ public class TransactionRepository(TransactionDbContext context, ILogger<Transac
             var sanitizedAccountId = accountId.Replace("\n", "").Replace("\r", "");
             logger.LogInformation("Getting transactions for account: {AccountId}", sanitizedAccountId);
 
-            // Fix comparison operators - use string comparison
-            var transactions = await context.Transactions
-                .AsQueryable()
+            var transactionsQuery = await context.Transactions
+                .AsNoTracking() // Better performance for read-only operations
                 .Where(t => t.FromAccount == sanitizedAccountId || t.ToAccount == sanitizedAccountId)
                 .ToListAsync();
+                
+            // Ensure UpdatedAt is not null before returning
+            foreach (var transaction in transactionsQuery)
+            {
+                if (transaction.UpdatedAt == null)
+                {
+                    transaction.UpdatedAt = transaction.CreatedAt;
+                }
+            }
 
-            // Fix logger argument order
             logger.LogInformation("Found {Count} transactions for account {AccountId}", 
-                transactions.Count, sanitizedAccountId);
-            return transactions;
+                transactionsQuery.Count, sanitizedAccountId);
+            return transactionsQuery;
         }
         catch (Exception ex)
         {
-            // Fix logger argument order
             logger.LogError(ex, "Error getting transactions for account {AccountId}: {Message}", 
                 accountId, ex.Message);
             throw;
