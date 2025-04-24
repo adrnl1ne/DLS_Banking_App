@@ -1,1 +1,17 @@
 2025-04-19 11:50:23,435 - ERROR - Error processing message: Expecting value: line 1 column 1 (char 0)
+2025-04-24 19:55:15,395 - ERROR - Error processing message: Expecting value: line 1 column 1 (char 0)
+2025-04-24 20:06:12,285 - ERROR - Error processing message: Expecting value: line 1 column 1 (char 0)
+2025-04-24 20:07:29,232 - ERROR - Error processing message: 'amount'
+2025-04-24 20:08:35,294 - ERROR - Error processing message: 'amount'
+2025-04-24 20:10:58,909 - ERROR - Error processing message: Expecting value: line 1 column 1 (char 0)
+2025-04-24 20:22:59,366 - ERROR - Error processing message: Expecting value: line 1 column 1 (char 0)
+2025-04-24 20:23:36,942 - ERROR - Error processing message: Expecting value: line 1 column 1 (char 0)
+2025-04-24 20:24:08,265 - ERROR - Error processing message: Expecting value: line 1 column 1 (char 0)
+2025-04-24 20:25:39,341 - ERROR - Error processing message: Expecting value: line 1 column 1 (char 0)
+2025-04-24 20:28:59,847 - ERROR - Error processing message: 'amount'
+2025-04-24 20:29:25,860 - ERROR - Error processing message: 'amount'
+2025-04-24 20:33:00,878 - ERROR - Error processing message: 'amount'
+2025-04-24 20:33:20,682 - ERROR - Error processing message: 'amount'
+2025-04-24 20:33:30,109 - ERROR - Error processing message: 'amount'
+2025-04-24 20:35:30,666 - ERROR - Error processing message: 'amount'
+2025-04-24 20:35:39,067 - ERROR - Error processing message: 'amount'

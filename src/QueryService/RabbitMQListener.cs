@@ -1,6 +1,5 @@
 ﻿using System.Text;
 using System.Text.Json;
-using Microsoft.Extensions.Hosting;
 using RabbitMQ.Client.Events;
 using Nest;
 using QueryService.DTO;
@@ -12,6 +11,12 @@ public class RabbitMqListener : BackgroundService
 {
     private readonly RabbitMqConnection _rabbit;
     private readonly IElasticClient _elasticClient;
+
+    private static readonly Dictionary<string, Type> _queueMap = new()
+    {
+        { "AccountCreated", typeof(AccountCreatedEvent) },
+        { "CheckFraud", typeof(CheckFraudEvent) }
+    };
 
     public RabbitMqListener(RabbitMqConnection rabbit, IElasticClient elasticClient)
     {
@@ -25,36 +30,49 @@ public class RabbitMqListener : BackgroundService
         await _rabbit.open_channel();
 
         var channel = _rabbit.Channel;
-        channel.QueueDeclareAsync(queue: "AccountEvents", durable: true, exclusive: false, autoDelete: false);
 
-        var consumer = new AsyncEventingBasicConsumer(channel);
-
-        consumer.ReceivedAsync += async (model, ea) =>
+        foreach (var queue in _queueMap.Keys)
         {
-            var body = ea.Body.ToArray();
-            var json = Encoding.UTF8.GetString(body);
+            await channel.QueueDeclareAsync(queue: queue, durable: false, exclusive: false, autoDelete: false);
 
-            Console.WriteLine($"📨 Received message: {json}");
+            
+            var consumer = new AsyncEventingBasicConsumer(channel);
+            var capturedQueue = queue;
 
-            try
+            consumer.ReceivedAsync += async (model, ea) =>
             {
-                var doc = JsonSerializer.Deserialize<AccountCreatedEvent>(json);
+                var body = ea.Body.ToArray();
+                var json = Encoding.UTF8.GetString(body);
 
-                if (doc != null)
+                Console.WriteLine($"📨 Received from [{capturedQueue}]: {json}");
+
+                try
                 {
-                    var result = await _elasticClient.IndexDocumentAsync(doc);
-                    Console.WriteLine(result.IsValid
-                        ? "✅ Indexed to Elasticsearch"
-                        : $"❌ Elasticsearch error: {result.DebugInformation}");
+                    if (_queueMap.TryGetValue(capturedQueue, out var eventType))
+                    {
+                        var evt = JsonSerializer.Deserialize(json, eventType);
+                        if (evt is not null)
+                        {
+                            var indexName = capturedQueue.ToLowerInvariant();
+                            var response = await _elasticClient.IndexAsync<object>(evt, idx => idx.Index(indexName));
+                            Console.WriteLine(response.IsValid
+                                ? $"✅ Indexed event from [{capturedQueue}]"
+                                : $"❌ Elasticsearch indexing failed: {response.DebugInformation}");
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine($"⚠️ No event type mapped for queue: {capturedQueue}");
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"❌ Failed to process message: {ex.Message}");
-            }
-        };
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"❌ Error processing message from [{capturedQueue}]: {ex.Message}");
+                }
+            };
 
-        channel.BasicConsumeAsync(queue: "AccountEvents", autoAck: true, consumer: consumer);
+            await channel.BasicConsumeAsync(queue: capturedQueue, autoAck: false, consumer: consumer);
+        }
 
         await Task.CompletedTask;
     }

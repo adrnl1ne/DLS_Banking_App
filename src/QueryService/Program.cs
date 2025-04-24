@@ -26,25 +26,17 @@ builder.Services.AddSingleton<RabbitMqConnection>(sp =>
     return new RabbitMqConnection(hostName, userName, password);
 });
 
+builder.Services.AddHostedService(provider =>
+    new RabbitMqListener(
+        provider.GetRequiredService<RabbitMqConnection>(),
+        provider.GetRequiredService<IElasticClient>()
+    ));
+
 builder.Services
     .AddGraphQLServer()
     .AddQueryType<Query>();
 
 var app = builder.Build();
-
-using (var scope = app.Services.CreateScope())
-{
-    var rabbit = scope.ServiceProvider.GetRequiredService<RabbitMqConnection>();
-    await rabbit.open_connection();
-    await rabbit.open_channel();
-    
-    rabbit.send_message("CheckFraud", "Hello, RabbitMQ!");
-}
-
-
-
-
-
 
 
 app.UseHttpsRedirection();
