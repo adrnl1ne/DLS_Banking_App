@@ -14,12 +14,16 @@ USE `transaction_db`;
 -- Table `transaction_db`.`Transactions`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `transaction_db`.`Transactions` (
-                                                               `Id` CHAR(36) NOT NULL COMMENT 'GUID as primary key',
+    `Id` CHAR(36) NOT NULL COMMENT 'GUID as primary key',
     `TransferId` VARCHAR(100) NOT NULL COMMENT 'Public facing transaction ID',
     `FromAccount` VARCHAR(100) NOT NULL COMMENT 'Source account ID',
     `ToAccount` VARCHAR(100) NOT NULL COMMENT 'Destination account ID',
     `Amount` DECIMAL(18,2) NOT NULL COMMENT 'Transaction amount',
+    `Currency` VARCHAR(3) NOT NULL DEFAULT 'USD' COMMENT 'Transaction currency code',
     `Status` VARCHAR(50) NOT NULL COMMENT 'Transaction status (pending, approved, declined)',
+    `TransactionType` VARCHAR(50) NULL DEFAULT NULL COMMENT 'Type of transaction (transfer, payment, etc.)',
+    `Description` VARCHAR(255) NULL DEFAULT NULL COMMENT 'Optional transaction description',
+    `UserId` INT NULL DEFAULT NULL COMMENT 'Optional user ID associated with the transaction',
     `CreatedAt` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation timestamp',
     `UpdatedAt` DATETIME NULL COMMENT 'Last update timestamp',
     PRIMARY KEY (`Id`),
@@ -27,14 +31,15 @@ CREATE TABLE IF NOT EXISTS `transaction_db`.`Transactions` (
     INDEX `IX_Transactions_FromAccount` (`FromAccount` ASC) VISIBLE,
     INDEX `IX_Transactions_ToAccount` (`ToAccount` ASC) VISIBLE,
     INDEX `IX_Transactions_Status` (`Status` ASC) VISIBLE,
-    INDEX `IX_Transactions_CreatedAt` (`CreatedAt` ASC) VISIBLE
-    ) ENGINE = InnoDB;
+    INDEX `IX_Transactions_CreatedAt` (`CreatedAt` ASC) VISIBLE,
+    INDEX `IX_Transactions_UserId` (`UserId` ASC) VISIBLE
+) ENGINE = InnoDB;
 
 -- -----------------------------------------------------
 -- Table `transaction_db`.`TransactionLogs`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `transaction_db`.`TransactionLogs` (
-                                                                  `Id` CHAR(36) NOT NULL COMMENT 'GUID as primary key',
+    `Id` CHAR(36) NOT NULL COMMENT 'GUID as primary key',
     `TransactionId` CHAR(36) NOT NULL COMMENT 'Reference to transaction ID',
     `LogType` VARCHAR(50) NOT NULL COMMENT 'Log type (status_change, fraud_check, error, etc.)',
     `Message` TEXT NOT NULL COMMENT 'Log message',
@@ -44,11 +49,11 @@ CREATE TABLE IF NOT EXISTS `transaction_db`.`TransactionLogs` (
     INDEX `IX_TransactionLogs_LogType` (`LogType` ASC) VISIBLE,
     INDEX `IX_TransactionLogs_CreatedAt` (`CreatedAt` ASC) VISIBLE,
     CONSTRAINT `FK_TransactionLogs_Transactions`
-    FOREIGN KEY (`TransactionId`)
-    REFERENCES `transaction_db`.`Transactions` (`Id`)
-    ON DELETE CASCADE
-    ON UPDATE NO ACTION
-    ) ENGINE = InnoDB;
+        FOREIGN KEY (`TransactionId`)
+        REFERENCES `transaction_db`.`Transactions` (`Id`)
+        ON DELETE CASCADE
+        ON UPDATE NO ACTION
+) ENGINE = InnoDB;
 
 SET SQL_MODE=@OLD_SQL_MODE;
 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS;
