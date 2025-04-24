@@ -1,0 +1,229 @@
+apiVersion: v1
+data:
+  .gitignore: |-
+    # Common IntelliJ Platform excludes
+
+    # User specific
+    **/.idea/**/workspace.xml
+    **/.idea/**/tasks.xml
+    **/.idea/shelf/*
+    **/.idea/dictionaries
+    **/.idea/httpRequests/
+
+    # Sensitive or high-churn files
+    **/.idea/**/dataSources/
+    **/.idea/**/dataSources.ids
+    **/.idea/**/dataSources.xml
+    **/.idea/**/dataSources.local.xml
+    **/.idea/**/sqlDataSources.xml
+    **/.idea/**/dynamic.xml
+
+    # Rider
+    # Rider auto-generates .iml files, and contentModel.xml
+    **/.idea/**/*.iml
+    **/.idea/**/contentModel.xml
+    **/.idea/**/modules.xml
+
+    *.suo
+    *.user
+    .vs/
+    [Bb]in/
+    [Oo]bj/
+    _UpgradeReport_Files/
+    [Pp]ackages/
+
+    Thumbs.db
+    Desktop.ini
+    .DS_Store
+  Dockerfile: |-
+    FROM mcr.microsoft.com/dotnet/sdk:9.0
+
+    WORKDIR /app
+
+    # Copy csproj and restore dependencies (cached layer)
+    COPY *.csproj ./
+    RUN dotnet restore
+
+    # Copy the rest of the source code
+    COPY . ./
+
+    # Expose ports for the application and Prometheus metrics
+    EXPOSE 80
+    EXPOSE 9091
+
+    # Entrypoint to run dotnet watch
+    ENTRYPOINT ["sh", "-c", "dotnet watch run --urls http://*:80"]
+  Program.cs: |
+    using System.Security.Claims;
+    using Microsoft.AspNetCore.Authentication.JwtBearer;
+    using Microsoft.EntityFrameworkCore;
+    using Microsoft.IdentityModel.Tokens;
+    using Prometheus;
+    using System.Text;
+    using AccountService.Database.Data;
+    using AccountService.Repository;
+    using AccountService.Services;
+    using UserAccountService.Repository;
+    using UserAccountService.Service;
+    using Microsoft.OpenApi.Models;
+
+    var builder = WebApplication.CreateBuilder(args);
+
+    // Add services to the container.
+    builder.Services.AddControllers();
+
+    // Register repositories and services
+    builder.Services.AddHttpContextAccessor();
+    builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
+    builder.Services.AddScoped<IAccountRepository, AccountRepository>();
+    builder.Services.AddSingleton<IEventPublisher, RabbitMqEventPublisher>();
+    builder.Services.AddScoped<IAuthService, AuthService>();
+    builder.Services.AddScoped<IAccountService, UserAccountService.Service.AccountService>();
+
+    var connectionString = string.Format("server={0};port={1};database={2};user={3};password={4};SslMode=Required",
+        builder.Configuration.GetValue<string>("MYSQL_HOST"),
+        builder.Configuration.GetValue<string>("MYSQL_PORT"),
+        builder.Configuration.GetValue<string>("MYSQL_DATABASE"),
+        builder.Configuration.GetValue<string>("MYSQL_USER"),
+        builder.Configuration.GetValue<string>("MYSQL_PASSWORD"));
+
+    builder.Services.AddDbContext<UserAccountDbContext>(options =>
+        options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString),
+            mySqlOptions => mySqlOptions.EnableStringComparisonTranslations()));
+
+    // Configure JWT Authentication
+    var jwtIssuer = builder.Configuration.GetValue<string>("JWT_ISSUER");
+    var jwtAudience = builder.Configuration.GetValue<string>("JWT_AUDIENCE");
+    var jwtKey = builder.Configuration.GetValue<string>("JWT_KEY") ??
+                 throw new InvalidOperationException("JWT Key must be configured");
+
+    Console.WriteLine($"JWT Configuration: Issuer={jwtIssuer}, Audience={jwtAudience}, Key={jwtKey.Substring(0, 10)}...");
+
+    builder.Services.AddAuthentication(options =>
+    {
+        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    }).AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = jwtIssuer,
+            ValidAudience = jwtAudience,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+            NameClaimType = ClaimTypes.NameIdentifier
+        };
+        options.Events = new JwtBearerEvents
+        {
+            OnAuthenticationFailed = context =>
+            {
+                var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
+                logger.LogError("Token validation failed: {ExceptionMessage}", context.Exception.Message);
+                return Task.CompletedTask;
+            }
+        };
+    });
+
+    // Add authorization policies
+    builder.Services.AddAuthorization(options =>
+    {
+        options.AddPolicy("ReadAccounts", policy =>
+            policy.RequireRole("service")
+                  .RequireClaim("scopes", "read:accounts"));
+    });
+
+    // Configure Swagger
+    builder.Services.AddSwaggerGen(c =>
+    {
+        c.SwaggerDoc("v1", new OpenApiInfo { Title = "UserAccountService API", Version = "v1" });
+        c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+        {
+            Description = "JWT Authorization header using the Bearer scheme. Example: \"Authorization: Bearer {token}\"",
+            Name = "Authorization",
+            In = ParameterLocation.Header,
+            Type = SecuritySchemeType.ApiKey,
+            Scheme = "Bearer"
+        });
+        c.AddSecurityRequirement(new OpenApiSecurityRequirement
+        {
+            {
+                new OpenApiSecurityScheme
+                {
+                    Reference = new OpenApiReference
+                    {
+                        Type = ReferenceType.SecurityScheme,
+                        Id = "Bearer"
+                    }
+                },
+                []
+            }
+        });
+    });
+
+    var app = builder.Build();
+
+    // Configure the HTTP request pipeline.
+    app.UseAuthentication();
+    app.UseAuthorization();
+    app.MapControllers();
+
+    app.UseSwagger();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "UserAccountService API v1");
+        c.RoutePrefix = string.Empty;
+    });
+
+    app.Run();
+  UserAccountService.csproj: |
+    <Project Sdk="Microsoft.NET.Sdk.Web">
+
+        <PropertyGroup>
+            <TargetFramework>net9.0</TargetFramework>
+            <Nullable>enable</Nullable>
+            <ImplicitUsings>enable</ImplicitUsings>
+            <UserSecretsId>01bb054c-9f89-4f42-a231-f9c8b820d4b4</UserSecretsId>
+            <RootNamespace>UserAccountService</RootNamespace>
+        </PropertyGroup>
+
+        <ItemGroup>
+            <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
+            <PackageReference Include="CoreData.Data.EntityFrameworkCore.Extensions" Version="1.0.0" />
+            <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.8" />
+            <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.0" />
+            <PackageReference Include="MySql.EntityFrameworkCore" Version="8.0.5" />
+            <PackageReference Include="Pomelo.EntityFrameworkCore.MySql" Version="9.0.0-preview.1" />
+            <PackageReference Include="Prometheus.Client" Version="5.2.0" />
+            <PackageReference Include="RabbitMQ.Client" Version="6.8.1" />
+            <PackageReference Include="Swashbuckle.AspNetCore" Version="8.1.1" />
+        </ItemGroup>
+
+    </Project>
+  UserAccountService.sln: "\uFEFF\n\x4D\x69\x63\x72\x6F\x73\x6F\x66\x74\x20\x56\x69\x73\x75\x61\x6C\x20\x53\x74\x75\x64\x69\x6F\x20\x53\x6F\x6C\x75\x74\x69\x6F\x6E\x20\x46\x69\x6C\x65\x2C\x20\x46\x6F\x72\x6D\x61\x74\x20\x56\x65\x72\x73\x69\x6F\x6E\x20\x31\x32\x2E\x30\x30\n\x50\x72\x6F\x6A\x65\x63\x74\x28\"\x7B\x46\x41\x45\x30\x34\x45\x43\x30\x2D\x33\x30\x31\x46\x2D\x31\x31\x44\x33\x2D\x42\x46\x34\x42\x2D\x30\x30\x43\x30\x34\x46\x37\x39\x45\x46\x42\x43\x7D\"\x29\x20\x3D\x20\"\x55\x73\x65\x72\x41\x63\x63\x6F\x75\x6E\x74\x53\x65\x72\x76\x69\x63\x65\"\x2C\x20\"\x55\x73\x65\x72\x41\x63\x63\x6F\x75\x6E\x74\x53\x65\x72\x76\x69\x63\x65\x2E\x63\x73\x70\x72\x6F\x6A\"\x2C\x20\"\x7B\x45\x32\x43\x45\x39\x44\x37\x46\x2D\x45\x46\x34\x32\x2D\x34\x35\x46\x35\x2D\x39\x33\x35\x42\x2D\x31\x31\x31\x33\x38\x42\x39\x46\x31\x43\x31\x34\x7D\"\n\x45\x6E\x64\x50\x72\x6F\x6A\x65\x63\x74\n\x47\x6C\x6F\x62\x61\x6C\n\t\x47\x6C\x6F\x62\x61\x6C\x53\x65\x63\x74\x69\x6F\x6E\x28\x53\x6F\x6C\x75\x74\x69\x6F\x6E\x43\x6F\x6E\x66\x69\x67\x75\x72\x61\x74\x69\x6F\x6E\x50\x6C\x61\x74\x66\x6F\x72\x6D\x73\x29\x20\x3D\x20\x70\x72\x65\x53\x6F\x6C\x75\x74\x69\x6F\x6E\n\t\t\x44\x65\x62\x75\x67\x7C\x41\x6E\x79\x20\x43\x50\x55\x20\x3D\x20\x44\x65\x62\x75\x67\x7C\x41\x6E\x79\x20\x43\x50\x55\n\t\t\x52\x65\x6C\x65\x61\x73\x65\x7C\x41\x6E\x79\x20\x43\x50\x55\x20\x3D\x20\x52\x65\x6C\x65\x61\x73\x65\x7C\x41\x6E\x79\x20\x43\x50\x55\n\t\x45\x6E\x64\x47\x6C\x6F\x62\x61\x6C\x53\x65\x63\x74\x69\x6F\x6E\n\t\x47\x6C\x6F\x62\x61\x6C\x53\x65\x63\x74\x69\x6F\x6E\x28\x50\x72\x6F\x6A\x65\x63\x74\x43\x6F\x6E\x66\x69\x67\x75\x72\x61\x74\x69\x6F\x6E\x50\x6C\x61\x74\x66\x6F\x72\x6D\x73\x29\x20\x3D\x20\x70\x6F\x73\x74\x53\x6F\x6C\x75\x74\x69\x6F\x6E\n\t\t\x7B\x45\x32\x43\x45\x39\x44\x37\x46\x2D\x45\x46\x34\x32\x2D\x34\x35\x46\x35\x2D\x39\x33\x35\x42\x2D\x31\x31\x31\x33\x38\x42\x39\x46\x31\x43\x31\x34\x7D\x2E\x44\x65\x62\x75\x67\x7C\x41\x6E\x79\x20\x43\x50\x55\x2E\x41\x63\x74\x69\x76\x65\x43\x66\x67\x20\x3D\x20\x44\x65\x62\x75\x67\x7C\x41\x6E\x79\x20\x43\x50\x55\n\t\t\x7B\x45\x32\x43\x45\x39\x44\x37\x46\x2D\x45\x46\x34\x32\x2D\x34\x35\x46\x35\x2D\x39\x33\x35\x42\x2D\x31\x31\x31\x33\x38\x42\x39\x46\x31\x43\x31\x34\x7D\x2E\x44\x65\x62\x75\x67\x7C\x41\x6E\x79\x20\x43\x50\x55\x2E\x42\x75\x69\x6C\x64\x2E\x30\x20\x3D\x20\x44\x65\x62\x75\x67\x7C\x41\x6E\x79\x20\x43\x50\x55\n\t\t\x7B\x45\x32\x43\x45\x39\x44\x37\x46\x2D\x45\x46\x34\x32\x2D\x34\x35\x46\x35\x2D\x39\x33\x35\x42\x2D\x31\x31\x31\x33\x38\x42\x39\x46\x31\x43\x31\x34\x7D\x2E\x52\x65\x6C\x65\x61\x73\x65\x7C\x41\x6E\x79\x20\x43\x50\x55\x2E\x41\x63\x74\x69\x76\x65\x43\x66\x67\x20\x3D\x20\x52\x65\x6C\x65\x61\x73\x65\x7C\x41\x6E\x79\x20\x43\x50\x55\n\t\t\x7B\x45\x32\x43\x45\x39\x44\x37\x46\x2D\x45\x46\x34\x32\x2D\x34\x35\x46\x35\x2D\x39\x33\x35\x42\x2D\x31\x31\x31\x33\x38\x42\x39\x46\x31\x43\x31\x34\x7D\x2E\x52\x65\x6C\x65\x61\x73\x65\x7C\x41\x6E\x79\x20\x43\x50\x55\x2E\x42\x75\x69\x6C\x64\x2E\x30\x20\x3D\x20\x52\x65\x6C\x65\x61\x73\x65\x7C\x41\x6E\x79\x20\x43\x50\x55\n\t\x45\x6E\x64\x47\x6C\x6F\x62\x61\x6C\x53\x65\x63\x74\x69\x6F\x6E\n\x45\x6E\x64\x47\x6C\x6F\x62\x61\x6C\n"
+  appsettings.Development.json: |
+    {
+      "Logging": {
+        "LogLevel": {
+          "Default": "Information",
+          "Microsoft.AspNetCore": "Warning"
+        }
+      }
+    }
+  appsettings.json: |
+    {
+      "Logging": {
+        "LogLevel": {
+          "Default": "Information",
+          "Microsoft.AspNetCore": "Warning"
+        }
+      },
+      "AllowedHosts": "*"
+    }
+kind: ConfigMap
+metadata:
+  labels:
+    io.kompose.service: user-account-service
+  name: user-account-service-cm0

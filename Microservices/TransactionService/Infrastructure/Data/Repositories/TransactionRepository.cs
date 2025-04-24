@@ -1,17 +1,15 @@
-using MySqlConnector;
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using TransactionService.Models;
 
 namespace TransactionService.Infrastructure.Data.Repositories;
 
-public class TransactionRepository(
-    TransactionDbContext context,
-    ILogger<TransactionRepository> logger,
-    IConfiguration configuration)
+public class TransactionRepository(TransactionDbContext context, ILogger<TransactionRepository> logger)
     : ITransactionRepository
 {
-    private readonly string _connectionString = configuration.GetConnectionString("DefaultConnection") ?? 
-                                                "Server=localhost;Database=transaction_db;User=root;Password=password;";
-
     public async Task<Transaction> CreateTransactionAsync(Transaction transaction)
     {
         try
@@ -36,52 +34,25 @@ public class TransactionRepository(
     {
         try
         {
-            var sanitizedTransferId = transferId.Replace("\n", "").Replace("\r", "");
+            var sanitizedTransferId = transferId?.Replace("\n", "").Replace("\r", "");
             logger.LogInformation("Getting transaction with transfer ID: {TransferId}", sanitizedTransferId);
 
-            await using var connection = new MySqlConnection(_connectionString);
-            await connection.OpenAsync();
+            var transaction = await context.Transactions
+                .AsQueryable() // Explicitly treat as IQueryable
+                .FirstOrDefaultAsync(t => t.TransferId == transferId);
 
-            await using var command = connection.CreateCommand();
-            command.CommandText = $"""
-                                   
-                                                   SELECT * FROM Transactions 
-                                                   WHERE TransferId = @TransferId
-                                   """;
-            command.Parameters.AddWithValue("@TransferId", transferId);
-
-            await using var reader = await command.ExecuteReaderAsync();
-            if (await reader.ReadAsync())
+            if (transaction == null)
             {
-                // Read each field properly based on its type
-                var transaction = new Transaction
-                {
-                    // For GUID, try different approaches based on how it's stored
-                    Id = ReadGuidFromReader(reader, "Id"),
-                    TransferId = reader.GetString("TransferId"),
-                    FromAccount = reader.GetString("FromAccount"),
-                    ToAccount = reader.GetString("ToAccount"),
-                    Amount = reader.GetDecimal("Amount"),
-                    Status = reader.GetString("Status"),
-                    CreatedAt = reader.GetDateTime("CreatedAt")
-                };
-
-                // Handle nullable field
-                if (!reader.IsDBNull(reader.GetOrdinal("UpdatedAt")))
-                {
-                    transaction.UpdatedAt = reader.GetDateTime("UpdatedAt");
-                }
-                
-                logger.LogInformation("Found transaction with ID: {Id}", transaction.Id);
-                return transaction;
+                logger.LogWarning("No transaction found with transfer ID: {TransferId}", sanitizedTransferId);
+                return null;
             }
-            
-            logger.LogWarning("No transaction found with transfer ID: {TransferId}", sanitizedTransferId);
-            return null;
+
+            logger.LogInformation("Found transaction with ID: {Id}", transaction.Id);
+            return transaction;
         }
         catch (Exception ex)
         {
-            var logSafeTransferId = transferId.Replace("\n", "").Replace("\r", ""); // Use different name to avoid conflict
+            var logSafeTransferId = transferId?.Replace("\n", "").Replace("\r", "");
             logger.LogError(ex, "Error getting transaction with transfer ID: {TransferId}. Error: {Message}", 
                 logSafeTransferId, ex.Message);
             throw;
@@ -92,53 +63,25 @@ public class TransactionRepository(
     {
         try
         {
-            logger.LogInformation("Getting transactions for the specified account.");
-            
-            var transactions = new List<Transaction>();
+            var sanitizedAccountId = accountId.Replace("\n", "").Replace("\r", "");
+            logger.LogInformation("Getting transactions for account: {AccountId}", sanitizedAccountId);
 
-            await using var connection = new MySqlConnection(_connectionString);
-            await connection.OpenAsync();
-
-            await using var command = connection.CreateCommand();
-            command.CommandText = $"""
-                                   
-                                                   SELECT * FROM Transactions 
-                                                   WHERE FromAccount = @AccountId OR ToAccount = @AccountId
-                                   """;
-            command.Parameters.AddWithValue("@AccountId", accountId);
-
-            await using var reader = await command.ExecuteReaderAsync();
-            while (await reader.ReadAsync())
+            if (!int.TryParse(accountId, out int accountIdInt))
             {
-                var transaction = new Transaction
-                {
-                    // Use the same helper method for GUID
-                    Id = ReadGuidFromReader(reader, "Id"),
-                    TransferId = reader.GetString("TransferId"),
-                    FromAccount = reader.GetString("FromAccount"),
-                    ToAccount = reader.GetString("ToAccount"),
-                    Amount = reader.GetDecimal("Amount"),
-                    Status = reader.GetString("Status"),
-                    CreatedAt = reader.GetDateTime("CreatedAt")
-                };
-
-                // Handle nullable field
-                if (!reader.IsDBNull(reader.GetOrdinal("UpdatedAt")))
-                {
-                    transaction.UpdatedAt = reader.GetDateTime("UpdatedAt");
-                }
-                
-                transactions.Add(transaction);
+                throw new ArgumentException("Account ID must be a valid integer.");
             }
-            
-            logger.LogInformation("Found {Count} transactions for the specified account.", 
-                transactions.Count);
+
+            var transactions = await context.Transactions
+                .AsQueryable()
+                .Where(t => t.FromAccount == accountIdInt.ToString() || t.ToAccount == accountIdInt.ToString())
+                .ToListAsync();
+
+            logger.LogInformation("Found {Count} transactions for account: {AccountId}", transactions.Count, sanitizedAccountId);
             return transactions;
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error getting transactions for the specified account. Error: {Message}", 
-                ex.Message);
+            logger.LogError(ex, "Error getting transactions for account: {AccountId}. Error: {Message}", accountId, ex.Message);
             throw;
         }
     }
@@ -149,66 +92,24 @@ public class TransactionRepository(
         {
             logger.LogInformation("Updating transaction {TransferId} status to {Status}", transferId, status);
 
-            await using var connection = new MySqlConnection(_connectionString);
-            await connection.OpenAsync();
-            
-            // First update the record
-            await using var updateCommand = connection.CreateCommand();
-            updateCommand.CommandText = $"""
-                                         
-                                                         UPDATE Transactions 
-                                                         SET Status = @Status, UpdatedAt = @UpdatedAt
-                                                         WHERE TransferId = @TransferId
-                                         """;
-            updateCommand.Parameters.AddWithValue("@Status", status);
-            updateCommand.Parameters.AddWithValue("@UpdatedAt", DateTime.UtcNow);
-            updateCommand.Parameters.AddWithValue("@TransferId", transferId);
-            
-            var rowsAffected = await updateCommand.ExecuteNonQueryAsync();
-            logger.LogInformation("Updated {RowsAffected} rows for transaction {TransferId}", 
-                rowsAffected, transferId);
-            
-            if (rowsAffected == 0)
+            var transaction = await context.Transactions
+                .AsQueryable() // Explicitly treat as IQueryable
+                .FirstOrDefaultAsync(t => t.TransferId == transferId);
+
+            if (transaction == null)
             {
                 logger.LogWarning("No transaction found with transfer ID: {TransferId}", transferId);
                 throw new KeyNotFoundException($"Transaction with ID {transferId} not found");
             }
-            
-            // Then retrieve the updated record
-            await using var selectCommand = connection.CreateCommand();
-            selectCommand.CommandText = $"""
-                                         
-                                                         SELECT * FROM Transactions 
-                                                         WHERE TransferId = @TransferId
-                                         """;
-            selectCommand.Parameters.AddWithValue("@TransferId", transferId);
 
-            await using var reader = await selectCommand.ExecuteReaderAsync();
-            if (await reader.ReadAsync())
-            {
-                var transaction = new Transaction
-                {
-                    Id = ReadGuidFromReader(reader, "Id"),
-                    TransferId = reader.GetString("TransferId"),
-                    FromAccount = reader.GetString("FromAccount"),
-                    ToAccount = reader.GetString("ToAccount"),
-                    Amount = reader.GetDecimal("Amount"),
-                    Status = reader.GetString("Status"),
-                    CreatedAt = reader.GetDateTime("CreatedAt")
-                };
+            transaction.Status = status;
+            transaction.UpdatedAt = DateTime.UtcNow;
 
-                // Handle nullable field
-                if (!reader.IsDBNull(reader.GetOrdinal("UpdatedAt")))
-                {
-                    transaction.UpdatedAt = reader.GetDateTime("UpdatedAt");
-                }
-                
-                logger.LogInformation("Retrieved updated transaction: {Id}", transaction.Id);
-                return transaction;
-            }
-            
-            // This should not happen since we checked rowsAffected > 0
-            throw new InvalidOperationException($"Could not retrieve transaction after updating: {transferId}");
+            context.Transactions.Update(transaction);
+            await context.SaveChangesAsync();
+
+            logger.LogInformation("Updated transaction: {Id}", transaction.Id);
+            return transaction;
         }
         catch (Exception ex)
         {
@@ -221,56 +122,5 @@ public class TransactionRepository(
     public async Task<bool> SaveChangesAsync()
     {
         return await context.SaveChangesAsync() > 0;
-    }
-
-    // Helper method to handle different possible GUID storage formats
-    private Guid ReadGuidFromReader(MySqlDataReader reader, string columnName)
-    {
-        try
-        {
-            var ordinal = reader.GetOrdinal(columnName);
-            
-            // Try to read as string and parse
-            if (!reader.IsDBNull(ordinal))
-            {
-                // Check the field type
-                var fieldType = reader.GetFieldType(ordinal);
-                logger.LogDebug("Field {Field} is of type {Type}", columnName, fieldType.Name);
-                
-                if (fieldType == typeof(Guid))
-                {
-                    return reader.GetGuid(ordinal);
-                }
-                else if (fieldType == typeof(string))
-                {
-                    var guidString = reader.GetString(ordinal);
-                    return Guid.Parse(guidString);
-                }
-                else if (fieldType == typeof(byte[]))
-                {
-                    byte[] bytes = (byte[])reader.GetValue(ordinal);
-                    return new Guid(bytes);
-                }
-                else
-                {
-                    // Try with ToString
-                    var guidString = reader.GetValue(ordinal).ToString();
-                    if (!string.IsNullOrEmpty(guidString))
-                    {
-                        return Guid.Parse(guidString);
-                    }
-                }
-            }
-            
-            // Default to empty GUID if all else fails
-            logger.LogWarning("Could not read GUID for {Column}, using empty GUID", columnName);
-            return Guid.Empty;
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error reading GUID from column {Column}", columnName);
-            // Return empty GUID in case of error - you might want to throw instead
-            return Guid.Empty;
-        }
     }
 }

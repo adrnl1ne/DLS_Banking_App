@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using AccountService.Models;
+using UserAccountService.Models;
 
 namespace AccountService.Database.Data;
 

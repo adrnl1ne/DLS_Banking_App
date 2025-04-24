@@ -5,19 +5,19 @@ using RabbitMQ.Client.Events;
 
 namespace TransactionService.Infrastructure.Messaging.RabbitMQ;
 
-public class RabbitMqClient : IRabbitMqClient, IDisposable
+public class RabbitMqClient : IRabbitMQClient, IDisposable
 {
     private readonly IConnection _connection;
     private readonly IModel _channel;
-    private readonly ILogger<RabbitMqClient> _logger;
+    private readonly ILogger<RabbitMQClient> _logger;
 
     // Constructor that accepts a configuration object
-    public RabbitMqClient(IConfiguration configuration, ILogger<RabbitMqClient> logger)
+    public RabbitMQClient(IConfiguration configuration, ILogger<RabbitMQClient> logger)
     {
         _logger = logger;
         
         var host = configuration["RabbitMQ:Host"] ?? "rabbitmq";
-        var port = configuration.GetValue("RabbitMQ:Port", 5672);
+        var port = configuration.GetValue<int>("RabbitMQ:Port", 5672);
         var username = configuration["RabbitMQ:Username"] ?? "guest";
         var password = configuration["RabbitMQ:Password"] ?? "guest";
         var virtualHost = configuration["RabbitMQ:VirtualHost"] ?? "/";
@@ -45,7 +45,7 @@ public class RabbitMqClient : IRabbitMqClient, IDisposable
     }
 
     // Constructor that accepts a RabbitMQConfiguration object
-    public RabbitMqClient(RabbitMqConfiguration config, ILogger<RabbitMqClient> logger)
+    public RabbitMQClient(RabbitMQConfiguration config, ILogger<RabbitMQClient> logger)
     {
         _logger = logger;
         
@@ -96,7 +96,7 @@ public class RabbitMqClient : IRabbitMqClient, IDisposable
         }
     }
 
-    // Method to publish string messages (used in new implementation)
+    // Method to publish string messages
     public void Publish(string queueName, string message)
     {
         try
@@ -161,7 +161,7 @@ public class RabbitMqClient : IRabbitMqClient, IDisposable
         }
     }
 
-    // New async consumption method from the updated implementation
+    // Async consumption method
     public async Task<string> ConsumeAsync(string queueName, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Setting up async consumption from queue {Queue}", queueName);
@@ -202,7 +202,7 @@ public class RabbitMqClient : IRabbitMqClient, IDisposable
             }
         };
 
-        _channel.BasicConsume(queue: queueName, autoAck: false, consumer: consumer);
+        consumerTag = _channel.BasicConsume(queue: queueName, autoAck: false, consumer: consumer);
 
         return await tcs.Task;
     }
@@ -211,10 +211,10 @@ public class RabbitMqClient : IRabbitMqClient, IDisposable
     {
         try
         {
-            _channel.Close();
-            _channel.Dispose();
-            _connection.Close();
-            _connection.Dispose();
+            _channel?.Close();
+            _channel?.Dispose();
+            _connection?.Close();
+            _connection?.Dispose();
             _logger.LogInformation("RabbitMQ connection closed");
         }
         catch (Exception ex)

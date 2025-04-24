@@ -2,6 +2,7 @@ using AccountService.Database.Data;
 using AccountService.Models;
 using AccountService.Repository;
 using Microsoft.EntityFrameworkCore;
+using UserAccountService.Models;
 
 namespace UserAccountService.Repository;
 

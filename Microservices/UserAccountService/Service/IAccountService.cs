@@ -5,7 +5,6 @@ namespace UserAccountService.Service;
 
 public interface IAccountService
 {
-    Task<ActionResult<IEnumerable<AccountResponse>>> GetAccountsAsync();
     Task<ActionResult<AccountResponse>> GetAccountAsync(int id);
     Task<ActionResult<AccountResponse>> CreateAccountAsync(AccountCreationRequest request);
 }

@@ -2,6 +2,6 @@ namespace UserAccountService.Service;
 
 public interface ICurrentUserService
 {
-    int UserId { get; }
+    int? UserId { get; }
     string Role { get; }
 }

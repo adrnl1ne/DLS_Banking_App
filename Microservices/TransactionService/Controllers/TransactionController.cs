@@ -1,6 +1,11 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics.Metrics;
 using System.Security.Claims;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using Prometheus;
 using TransactionService.Models;
 using TransactionService.Services;
@@ -16,12 +21,12 @@ public class TransactionController(ITransactionService transactionService, ILogg
     private static readonly Counter TransactionRequestsTotal = Metrics.CreateCounter(
         "transaction_requests_total",
         "Total number of transaction requests",
-        new CounterConfiguration { LabelNames = ["method"] }
+        new CounterConfiguration { LabelNames = new[] { "method" } }
     );
     private static readonly Counter TransactionErrorsTotal = Metrics.CreateCounter(
         "transaction_errors_total",
         "Total number of transaction errors",
-        new CounterConfiguration { LabelNames = ["method"] }
+        new CounterConfiguration { LabelNames = new[] { "method" } }
     );
 
     [HttpPost("transfer")]
@@ -122,15 +127,35 @@ public class TransactionController(ITransactionService transactionService, ILogg
                 return BadRequest("Account ID cannot be empty");
             }
 
-            var transactions = await transactionService.GetTransactionsByAccountAsync(accountId);
-
-            if (transactions == null)
+            // Extract the authenticated user's ID from the JWT token
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
             {
-                logger.LogWarning($"No transactions found for account: {accountId}");
-                return Ok(Array.Empty<TransactionResponse>());
+                TransactionErrorsTotal.WithLabels("GET").Inc();
+                return Unauthorized("User ID not found in token.");
             }
 
+            var transactions = await transactionService.GetTransactionsByAccountAsync(accountId, userId);
+
             return Ok(transactions);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            TransactionErrorsTotal.WithLabels("GET").Inc();
+            logger.LogWarning(ex, "Unauthorized access attempt during retrieval of transactions for account {AccountId}", accountId);
+            return StatusCode(403, ex.Message);
+        }
+        catch (ArgumentException ex)
+        {
+            TransactionErrorsTotal.WithLabels("GET").Inc();
+            logger.LogWarning(ex, "Invalid argument during retrieval of transactions for account {AccountId}", accountId);
+            return BadRequest(ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            TransactionErrorsTotal.WithLabels("GET").Inc();
+            logger.LogWarning(ex, "Invalid operation during retrieval of transactions for account {AccountId}", accountId);
+            return NotFound(ex.Message);
         }
         catch (Exception ex)
         {
