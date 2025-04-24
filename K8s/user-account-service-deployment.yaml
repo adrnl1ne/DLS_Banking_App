@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    kompose.cmd: kompose convert -f ../docker-compose.yml
+    kompose.cmd: kompose convert -f ../docker-compose.prod.yml
     kompose.version: 1.35.0 (HEAD)
   labels:
     io.kompose.service: user-account-service
@@ -12,12 +12,10 @@ spec:
   selector:
     matchLabels:
       io.kompose.service: user-account-service
-  strategy:
-    type: Recreate
   template:
     metadata:
       annotations:
-        kompose.cmd: kompose convert -f ../docker-compose.yml
+        kompose.cmd: kompose convert -f ../docker-compose.prod.yml
         kompose.version: 1.35.0 (HEAD)
       labels:
         io.kompose.service: user-account-service
@@ -70,12 +68,4 @@ spec:
           resources:
             limits:
               memory: "1073741824"
-          volumeMounts:
-            - mountPath: /app
-              name: user-account-service-cm0
       restartPolicy: Always
-      terminationGracePeriodSeconds: 30
-      volumes:
-        - configMap:
-            name: user-account-service-cm0
-          name: user-account-service-cm0

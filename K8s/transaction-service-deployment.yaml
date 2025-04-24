@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    kompose.cmd: kompose convert -f ../docker-compose.yml
+    kompose.cmd: kompose convert -f ../docker-compose.prod.yml
     kompose.version: 1.35.0 (HEAD)
   labels:
     io.kompose.service: transaction-service
@@ -12,12 +12,10 @@ spec:
   selector:
     matchLabels:
       io.kompose.service: transaction-service
-  strategy:
-    type: Recreate
   template:
     metadata:
       annotations:
-        kompose.cmd: kompose convert -f ../docker-compose.yml
+        kompose.cmd: kompose convert -f ../docker-compose.prod.yml
         kompose.version: 1.35.0 (HEAD)
       labels:
         io.kompose.service: transaction-service
@@ -76,11 +74,4 @@ spec:
           resources:
             limits:
               memory: "1073741824"
-          volumeMounts:
-            - mountPath: /app
-              name: transaction-service-cm0
       restartPolicy: Always
-      volumes:
-        - configMap:
-            name: transaction-service-cm0
-          name: transaction-service-cm0

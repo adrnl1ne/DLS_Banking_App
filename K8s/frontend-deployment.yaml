@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    kompose.cmd: kompose convert -f ../docker-compose.yml
+    kompose.cmd: kompose convert -f ../docker-compose.prod.yml
     kompose.version: 1.35.0 (HEAD)
   labels:
     io.kompose.service: frontend
@@ -12,12 +12,10 @@ spec:
   selector:
     matchLabels:
       io.kompose.service: frontend
-  strategy:
-    type: Recreate
   template:
     metadata:
       annotations:
-        kompose.cmd: kompose convert -f ../docker-compose.yml
+        kompose.cmd: kompose convert -f ../docker-compose.prod.yml
         kompose.version: 1.35.0 (HEAD)
       labels:
         io.kompose.service: frontend
@@ -50,16 +48,4 @@ spec:
           resources:
             limits:
               memory: "536870912"
-          volumeMounts:
-            - mountPath: /app
-              name: frontend-cm0
-            - mountPath: /app/node_modules
-              name: frontend-claim1
       restartPolicy: Always
-      volumes:
-        - configMap:
-            name: frontend-cm0
-          name: frontend-cm0
-        - name: frontend-claim1
-          persistentVolumeClaim:
-            claimName: frontend-claim1
