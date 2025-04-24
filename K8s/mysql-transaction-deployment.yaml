@@ -2,7 +2,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
+    app: mysql-transaction
     kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+    kompose.service.type: nodeport
     kompose.version: 1.35.0 (HEAD)
   labels:
     io.kompose.service: mysql-transaction
@@ -17,7 +19,9 @@ spec:
   template:
     metadata:
       annotations:
+        app: mysql-transaction
         kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+        kompose.service.type: nodeport
         kompose.version: 1.35.0 (HEAD)
       labels:
         io.kompose.service: mysql-transaction
@@ -25,9 +29,7 @@ spec:
       containers:
         - env:
             - name: MYSQL_DATABASE
-              value: transaction_db
             - name: MYSQL_ROOT_PASSWORD
-              value: password1!
           image: mysql:8.0
           livenessProbe:
             exec:
@@ -37,6 +39,7 @@ spec:
                 - -h
                 - localhost
             failureThreshold: 5
+            initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
           name: mysql-transaction

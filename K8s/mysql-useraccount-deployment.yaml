@@ -2,7 +2,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
+    app: mysql-useraccount
     kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+    kompose.service.type: nodeport
     kompose.version: 1.35.0 (HEAD)
   labels:
     io.kompose.service: mysql-useraccount
@@ -17,7 +19,9 @@ spec:
   template:
     metadata:
       annotations:
+        app: mysql-useraccount
         kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+        kompose.service.type: nodeport
         kompose.version: 1.35.0 (HEAD)
       labels:
         io.kompose.service: mysql-useraccount
@@ -25,9 +29,7 @@ spec:
       containers:
         - env:
             - name: MYSQL_DATABASE
-              value: useraccount_db
             - name: MYSQL_ROOT_PASSWORD
-              value: password1!
           image: mysql:8.0
           livenessProbe:
             exec:

@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   prometheus:
     image: prom/prometheus:latest
@@ -9,15 +11,7 @@ services:
     ports:
       - "9090:9090"
     healthcheck:
-      test:
-        [
-          "CMD",
-          "wget",
-          "--no-verbose",
-          "--tries=1",
-          "--spider",
-          "http://localhost:9090/-/healthy",
-        ]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -116,7 +110,8 @@ services:
   fraud-detection-service:
     build:
       context: ./Microservices/FraudDetectionService
-    image: fhallengreen/dls_banking_app-fraud-detection-service:latest
+      dockerfile: Dockerfile.dev
+    image: dls_banking_app-fraud-detection-service:dev
     mem_limit: 256m
     cpus: "0.2"
     container_name: fraud-detection-service
@@ -161,8 +156,7 @@ services:
       - esdata:/usr/share/elasticsearch/data
     stop_grace_period: 30s
     healthcheck:
-      test:
-        ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -170,8 +164,8 @@ services:
   user-account-service:
     build:
       context: ./Microservices/UserAccountService
-      dockerfile: Dockerfile
-    image: fhallengreen/dls_banking_app-user-account-service:latest
+      dockerfile: Dockerfile.dev
+    image: dls_banking_app-user-account-service:dev
     mem_limit: 1024m
     cpus: "1"
     container_name: user-account-service
@@ -180,7 +174,6 @@ services:
       - "9091:${PROMETHEUS_PORT}"
     volumes:
       - ./Microservices/UserAccountService:/app
-    stop_grace_period: 30s
     environment:
       - MYSQL_HOST=mysql-useraccount
       - MYSQL_PORT=3306
@@ -212,8 +205,8 @@ services:
   transaction-service:
     build:
       context: ./Microservices/TransactionService
-      dockerfile: Dockerfile
-    image: fhallengreen/dls_banking_app-transaction-service:latest
+      dockerfile: Dockerfile.dev
+    image: dls_banking_app-transaction-service:dev
     mem_limit: 1024m
     cpus: "1"
     container_name: transaction-service
@@ -256,7 +249,8 @@ services:
   frontend:
     build:
       context: ./frontend
-    image: fhallengreen/dls_banking_app-frontend:latest
+      dockerfile: Dockerfile.dev
+    image: dls_banking_app-frontend:dev
     mem_limit: 512m
     cpus: "0.3"
     container_name: frontend
@@ -273,15 +267,7 @@ services:
     depends_on:
       - fraud-detection-service
     healthcheck:
-      test:
-        [
-          "CMD",
-          "wget",
-          "--no-verbose",
-          "--tries=1",
-          "--spider",
-          "http://localhost:5173",
-        ]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5173"]
       interval: 10s
       timeout: 5s
       retries: 3

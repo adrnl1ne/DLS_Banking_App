@@ -2,7 +2,9 @@ apiVersion: v1
 kind: Service
 metadata:
   annotations:
+    app: mysql-transaction
     kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+    kompose.service.type: nodeport
     kompose.version: 1.35.0 (HEAD)
   labels:
     io.kompose.service: mysql-transaction
@@ -14,3 +16,4 @@ spec:
       targetPort: 3306
   selector:
     io.kompose.service: mysql-transaction
+  type: NodePort

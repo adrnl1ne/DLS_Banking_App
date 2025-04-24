@@ -2,7 +2,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
+    app: frontend
     kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+    kompose.service.type: nodeport
     kompose.version: 1.35.0 (HEAD)
   labels:
     io.kompose.service: frontend
@@ -15,7 +17,9 @@ spec:
   template:
     metadata:
       annotations:
+        app: frontend
         kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+        kompose.service.type: nodeport
         kompose.version: 1.35.0 (HEAD)
       labels:
         io.kompose.service: frontend
@@ -23,11 +27,8 @@ spec:
       containers:
         - env:
             - name: VITE_API_URL
-              value: http://localhost:3001
             - name: VITE_QUERY_SERVICE_URL
-              value: http://localhost:4000
             - name: VITE_USER_SERVICE_URL
-              value: http://localhost:5000
           image: fhallengreen/dls_banking_app-frontend:latest
           livenessProbe:
             exec:

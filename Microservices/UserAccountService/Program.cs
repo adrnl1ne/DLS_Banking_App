@@ -41,8 +41,6 @@ var jwtAudience = builder.Configuration.GetValue<string>("JWT_AUDIENCE");
 var jwtKey = builder.Configuration.GetValue<string>("JWT_KEY") ??
              throw new InvalidOperationException("JWT Key must be configured");
 
-Console.WriteLine($"JWT Configuration: Issuer={jwtIssuer}, Audience={jwtAudience}, Key={jwtKey.Substring(0, 10)}...");
-
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;

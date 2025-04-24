@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: banking-app-config
+  namespace: default
+data:
+  VITE_API_URL: "http://localhost:3001"
+  VITE_USER_SERVICE_URL: "http://localhost:5000"
+  VITE_QUERY_SERVICE_URL: "http://localhost:4000"
+  MYSQL_DATABASE_UA: "useraccount_db"
+  MYSQL_DATABASE_TA: "transaction_db"
+  JWT_ISSUER: "BankingApp"
+  JWT_AUDIENCE: "UserAccountAPI"
+  PROMETHEUS_PORT: "9091"
