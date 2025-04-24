@@ -1,4 +1,4 @@
-namespace TransactionService.API.Infrastructure.Messaging.RabbitMQ;
+namespace TransactionService.Infrastructure.Messaging.RabbitMQ;
 
 public class RabbitMQConfiguration
 {

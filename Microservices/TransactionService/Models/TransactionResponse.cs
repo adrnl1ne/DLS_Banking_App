@@ -1,26 +1,31 @@
 using System;
 
-namespace TransactionService.API.Models;
-
-public class TransactionResponse
+namespace TransactionService.Models
 {
-    public string TransferId { get; set; } = string.Empty;
-    public string FromAccount { get; set; } = string.Empty;
-    public string ToAccount { get; set; } = string.Empty;
-    public decimal Amount { get; set; }
-    public string Status { get; set; } = string.Empty;
-    public DateTime CreatedAt { get; set; }
-
-    public static TransactionResponse FromTransaction(Transaction transaction)
+    public class TransactionResponse
     {
-        return new TransactionResponse
+        public string TransferId { get; set; } = string.Empty;
+        public int UserId { get; set; }
+        public string FromAccount { get; set; } = string.Empty;
+        public string ToAccount { get; set; } = string.Empty;
+        public decimal Amount { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public DateTime CreatedAt { get; set; }
+        public DateTime? UpdatedAt { get; set; }
+
+        public static TransactionResponse FromTransaction(Transaction transaction)
         {
-            TransferId = transaction.TransferId,
-            FromAccount = transaction.FromAccount,
-            ToAccount = transaction.ToAccount,
-            Amount = transaction.Amount,
-            Status = transaction.Status,
-            CreatedAt = transaction.CreatedAt
-        };
+            return new TransactionResponse
+            {
+                TransferId = transaction.TransferId,
+                UserId = transaction.UserId,
+                FromAccount = transaction.FromAccount,
+                ToAccount = transaction.ToAccount,
+                Amount = transaction.Amount,
+                Status = transaction.Status,
+                CreatedAt = transaction.CreatedAt,
+                UpdatedAt = transaction.UpdatedAt
+            };
+        }
     }
 }

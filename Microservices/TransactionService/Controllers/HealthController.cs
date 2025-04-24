@@ -2,7 +2,7 @@ using System;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 
-namespace TransactionService.API.Controllers;
+namespace TransactionService.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]

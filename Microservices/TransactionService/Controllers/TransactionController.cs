@@ -1,63 +1,78 @@
 using System;
 using System.Collections.Generic;
-using System.Security.Cryptography;
+using System.Diagnostics.Metrics;
+using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
-using TransactionService.API.Models;
-using TransactionService.API.Services;
-using System.Security.Cryptography;
+using Prometheus;
+using TransactionService.Models;
+using TransactionService.Services;
 
-namespace TransactionService.API.Controllers;
+namespace TransactionService.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class TransactionController : ControllerBase
+public class TransactionController(ITransactionService transactionService, ILogger<TransactionController> logger)
+    : ControllerBase
 {
-    private readonly ITransactionService _transactionService;
-    private readonly ILogger<TransactionController> _logger;
-
-    public TransactionController(ITransactionService transactionService, ILogger<TransactionController> logger)
-    {
-        _transactionService = transactionService;
-        _logger = logger;
-    }
-
-    private string HashSensitiveData(string data)
-    {
-        if (string.IsNullOrEmpty(data))
-        {
-            return string.Empty;
-        }
-        
-        using var sha256 = SHA256.Create();
-        var hashedBytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(data));
-        return Convert.ToBase64String(hashedBytes);
-    }
+    // Prometheus metrics
+    private static readonly Counter TransactionRequestsTotal = Metrics.CreateCounter(
+        "transaction_requests_total",
+        "Total number of transaction requests",
+        new CounterConfiguration { LabelNames = new[] { "method" } }
+    );
+    private static readonly Counter TransactionErrorsTotal = Metrics.CreateCounter(
+        "transaction_errors_total",
+        "Total number of transaction errors",
+        new CounterConfiguration { LabelNames = new[] { "method" } }
+    );
 
     [HttpPost("transfer")]
     [Authorize]
     public async Task<ActionResult<TransactionResponse>> CreateTransfer([FromBody] TransactionRequest request)
     {
+        TransactionRequestsTotal.WithLabels("POST").Inc();
+
         try
         {
             if (request.Amount <= 0)
             {
+                TransactionErrorsTotal.WithLabels("POST").Inc();
                 return BadRequest("Amount must be greater than zero");
             }
-            
-            var sanitizedFromAccount = request.FromAccount?.Replace("\n", "").Replace("\r", "");
-            var sanitizedToAccount = request.ToAccount?.Replace("\n", "").Replace("\r", "");
-            var sanitizedAmount = request.Amount.ToString().Replace("\n", "").Replace("\r", "");
-            _logger.LogInformation($"Creating transfer from {sanitizedFromAccount} to {sanitizedToAccount} for {sanitizedAmount}");
-            
-            var result = await _transactionService.CreateTransferAsync(request);
+
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+            {
+                TransactionErrorsTotal.WithLabels("POST").Inc();
+                return Unauthorized("User ID not found in token.");
+            }
+
+            request.UserId = userId; // Set the user ID from the token
+
+            logger.LogInformation($"Creating transfer from account {request.FromAccount} to account {request.ToAccount} for amount {request.Amount}");
+
+            var result = await transactionService.CreateTransferAsync(request);
             return CreatedAtAction(nameof(GetTransaction), new { transferId = result.TransferId }, result);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            TransactionErrorsTotal.WithLabels("POST").Inc();
+            logger.LogWarning(ex, "Unauthorized access attempt during transfer creation");
+            return Unauthorized(ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            TransactionErrorsTotal.WithLabels("POST").Inc();
+            logger.LogWarning(ex, "Invalid operation during transfer creation");
+            return BadRequest(ex.Message);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating transfer");
+            TransactionErrorsTotal.WithLabels("POST").Inc();
+            logger.LogError(ex, "Error creating transfer");
             return StatusCode(500, "An error occurred while processing your request");
         }
     }
@@ -66,31 +81,32 @@ public class TransactionController : ControllerBase
     [Authorize]
     public async Task<ActionResult<TransactionResponse>> GetTransaction(string transferId)
     {
+        TransactionRequestsTotal.WithLabels("GET").Inc();
+
         try
         {
-            var sanitizedTransferId = transferId?.Replace("\n", "").Replace("\r", "");
-            _logger.LogInformation($"Getting transaction with ID: {sanitizedTransferId}");
-            
+            logger.LogInformation($"Getting transaction with ID: {transferId}");
+
             if (string.IsNullOrEmpty(transferId))
             {
+                TransactionErrorsTotal.WithLabels("GET").Inc();
                 return BadRequest("Transfer ID cannot be empty");
             }
-            
-            var transaction = await _transactionService.GetTransactionByTransferIdAsync(transferId);
-            
+
+            var transaction = await transactionService.GetTransactionByTransferIdAsync(transferId);
+
             if (transaction == null)
             {
-                sanitizedTransferId = transferId?.Replace("\n", "").Replace("\r", "");
-                _logger.LogWarning($"Transaction not found with ID: {sanitizedTransferId}");
+                logger.LogWarning($"Transaction not found with ID: {transferId}");
                 return NotFound($"Transaction with ID {transferId} not found");
             }
-            
+
             return Ok(transaction);
         }
         catch (Exception ex)
         {
-            var sanitizedTransferId = transferId?.Replace("\n", "").Replace("\r", "");
-            _logger.LogError(ex, $"Error retrieving transaction {sanitizedTransferId}");
+            TransactionErrorsTotal.WithLabels("GET").Inc();
+            logger.LogError(ex, $"Error retrieving transaction {transferId}");
             return StatusCode(500, $"An error occurred while retrieving the transaction: {ex.Message}");
         }
     }
@@ -99,30 +115,52 @@ public class TransactionController : ControllerBase
     [Authorize]
     public async Task<ActionResult<IEnumerable<TransactionResponse>>> GetTransactionsByAccount(string accountId)
     {
+        TransactionRequestsTotal.WithLabels("GET").Inc();
+
         try
         {
-            var hashedAccountId = HashSensitiveData(accountId);
-            _logger.LogInformation($"Getting transactions for account: {hashedAccountId}");
-            
+            logger.LogInformation($"Getting transactions for account: {accountId}");
+
             if (string.IsNullOrEmpty(accountId))
             {
+                TransactionErrorsTotal.WithLabels("GET").Inc();
                 return BadRequest("Account ID cannot be empty");
             }
-            
-            var transactions = await _transactionService.GetTransactionsByAccountAsync(accountId);
-            
-            if (transactions == null)
+
+            // Extract the authenticated user's ID from the JWT token
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
             {
-                _logger.LogWarning($"No transactions found for account: {hashedAccountId}");
-                return Ok(Array.Empty<TransactionResponse>());
+                TransactionErrorsTotal.WithLabels("GET").Inc();
+                return Unauthorized("User ID not found in token.");
             }
-            
+
+            var transactions = await transactionService.GetTransactionsByAccountAsync(accountId, userId);
+
             return Ok(transactions);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            TransactionErrorsTotal.WithLabels("GET").Inc();
+            logger.LogWarning(ex, "Unauthorized access attempt during retrieval of transactions for account {AccountId}", accountId);
+            return StatusCode(403, ex.Message);
+        }
+        catch (ArgumentException ex)
+        {
+            TransactionErrorsTotal.WithLabels("GET").Inc();
+            logger.LogWarning(ex, "Invalid argument during retrieval of transactions for account {AccountId}", accountId);
+            return BadRequest(ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            TransactionErrorsTotal.WithLabels("GET").Inc();
+            logger.LogWarning(ex, "Invalid operation during retrieval of transactions for account {AccountId}", accountId);
+            return NotFound(ex.Message);
         }
         catch (Exception ex)
         {
-            var hashedAccountId = HashSensitiveData(accountId);
-            _logger.LogError(ex, $"Error retrieving transactions for account {hashedAccountId}");
+            TransactionErrorsTotal.WithLabels("GET").Inc();
+            logger.LogError(ex, $"Error retrieving transactions for account {accountId}");
             return StatusCode(500, $"An error occurred while retrieving transactions: {ex.Message}");
         }
     }

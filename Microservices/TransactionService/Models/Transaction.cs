@@ -1,15 +1,17 @@
 using System;
 
-namespace TransactionService.API.Models;
-
-public class Transaction
+namespace TransactionService.Models
 {
-    public Guid Id { get; set; } = Guid.NewGuid();
-    public string TransferId { get; set; } = string.Empty;
-    public string FromAccount { get; set; } = string.Empty;
-    public string ToAccount { get; set; } = string.Empty;
-    public decimal Amount { get; set; }
-    public string Status { get; set; } = "pending"; // pending, approved, declined
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-    public DateTime? UpdatedAt { get; set; }
+    public class Transaction
+    {
+        public Guid Id { get; set; }
+        public required string TransferId { get; set; }
+        public int UserId { get; set; }
+        public required string FromAccount { get; set; }
+        public required string ToAccount { get; set; }
+        public decimal Amount { get; set; }
+        public required string Status { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public DateTime? UpdatedAt { get; set; }
+    }
 }
