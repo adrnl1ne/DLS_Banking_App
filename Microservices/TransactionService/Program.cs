@@ -1,14 +1,7 @@
-using System;
 using System.Net.Http.Headers;
 using System.Text;
-using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Polly;
@@ -16,7 +9,6 @@ using Prometheus;
 using TransactionService.Infrastructure.Data;
 using TransactionService.Infrastructure.Data.Repositories;
 using TransactionService.Infrastructure.Messaging.RabbitMQ;
-using TransactionService.Models;
 using TransactionService.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -78,7 +70,7 @@ builder.Services.AddDbContext<TransactionDbContext>(options =>
         mySqlOptions => mySqlOptions.EnableStringComparisonTranslations())
 );
 // Configure RabbitMQ
-var rabbitMQConfig = new RabbitMQConfiguration
+var rabbitMqConfig = new RabbitMqConfiguration
 {
     HostName = builder.Configuration["RABBITMQ_HOST"] ?? "rabbitmq",
     Port = int.Parse(builder.Configuration["RABBITMQ_PORT"] ?? "5672"),
@@ -86,8 +78,8 @@ var rabbitMQConfig = new RabbitMQConfiguration
     Password = builder.Configuration["RABBITMQ_PASSWORD"] ?? "guest",
     VirtualHost = builder.Configuration["RABBITMQ_VHOST"] ?? "/",
 };
-builder.Services.AddSingleton(rabbitMQConfig);
-builder.Services.AddSingleton<IRabbitMQClient, RabbitMqClient>();
+builder.Services.AddSingleton(rabbitMqConfig);
+builder.Services.AddSingleton<IRabbitMqClient, RabbitMqClient>();
 
 // Configure Authentication
 builder.Services.AddAuthentication(options =>
@@ -112,7 +104,7 @@ builder.Services.AddAuthentication(options =>
 
 // Configure HttpClient for User Account Service
 var serviceToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0cmFuc2FjdGlvbi1zZXJ2aWNlIiwicm9sZSI6InNlcnZpY2UiLCJqdGkiOiJjNGEwMzRjYy1iMDE4LTQxYTYtOTNmMi02MDc5MDQ1MWU1OWEiLCJpc3MiOiJCYW5raW5nQXBwIiwic2NvcGVzIjpbInJlYWQ6YWNjb3VudHMiLCJ1cGRhdGU6YWNjb3VudC1iYWxhbmNlIl0sImV4cCI6MTc2MTI0NjM0NSwiYXVkIjoiVXNlckFjY291bnRBUEkifQ.xiE7sJOYZWizg-cvk_yKya4-vfaXUV9BDTXaJx5QgJE"
-    ?? throw new InvalidOperationException("TRANSACTION_SERVICE_TOKEN is missing");
+    ;
 var userAccountServiceUrl = builder.Configuration["Services:UserAccountService"];
 Console.WriteLine($"Configuring HttpClient for UserAccountClientService: URL={userAccountServiceUrl}, Token={serviceToken}");
 if (string.IsNullOrWhiteSpace(userAccountServiceUrl) || !Uri.TryCreate(userAccountServiceUrl, UriKind.Absolute, out var uri))
@@ -124,8 +116,8 @@ builder.Services.AddHttpClient<UserAccountClientService>(client =>
     client.BaseAddress = uri;
     client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", serviceToken);
     client.Timeout = TimeSpan.FromSeconds(30);
-}).AddTransientHttpErrorPolicy(builder =>
-    builder.WaitAndRetryAsync(3, attempt => TimeSpan.FromSeconds(Math.Pow(2, attempt))));
+}).AddTransientHttpErrorPolicy(policyBuilder =>
+    policyBuilder.WaitAndRetryAsync(3, attempt => TimeSpan.FromSeconds(Math.Pow(2, attempt))));
 
 // Register repositories
 builder.Services.AddScoped<ITransactionRepository, TransactionRepository>();
@@ -137,7 +129,7 @@ builder.Services.AddScoped<ITransactionService, TransactionService.Services.Tran
 var transactionCounter = Metrics.CreateCounter(
     "transactions_total",
     "Total number of transactions",
-    new CounterConfiguration { LabelNames = new[] { "type", "status" } }
+    new CounterConfiguration { LabelNames = ["type", "status"] }
 );
 
 var transactionDurationHistogram = Metrics.CreateHistogram(
@@ -145,8 +137,8 @@ var transactionDurationHistogram = Metrics.CreateHistogram(
     "Transaction processing duration in seconds",
     new HistogramConfiguration
     {
-        LabelNames = new[] { "type" },
-        Buckets = new double[] { 0.1, 0.5, 1, 2, 5, 10 }
+        LabelNames = ["type"],
+        Buckets = [0.1, 0.5, 1, 2, 5, 10]
     }
 );
 

@@ -1,8 +1,4 @@
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using TransactionService.Models;
 
 namespace TransactionService.Infrastructure.Data.Repositories;
@@ -34,7 +30,7 @@ public class TransactionRepository(TransactionDbContext context, ILogger<Transac
     {
         try
         {
-            var sanitizedTransferId = transferId?.Replace("\n", "").Replace("\r", "");
+            var sanitizedTransferId = transferId.Replace("\n", "").Replace("\r", "");
             logger.LogInformation("Getting transaction with transfer ID: {TransferId}", sanitizedTransferId);
 
             var transaction = await context.Transactions
@@ -52,7 +48,7 @@ public class TransactionRepository(TransactionDbContext context, ILogger<Transac
         }
         catch (Exception ex)
         {
-            var logSafeTransferId = transferId?.Replace("\n", "").Replace("\r", "");
+            var logSafeTransferId = transferId.Replace("\n", "").Replace("\r", "");
             logger.LogError(ex, "Error getting transaction with transfer ID: {TransferId}. Error: {Message}", 
                 logSafeTransferId, ex.Message);
             throw;

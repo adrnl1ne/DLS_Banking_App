@@ -5,19 +5,19 @@ using RabbitMQ.Client.Events;
 
 namespace TransactionService.Infrastructure.Messaging.RabbitMQ;
 
-public class RabbitMqClient : IRabbitMQClient, IDisposable
+public class RabbitMqClient : IRabbitMqClient, IDisposable
 {
     private readonly IConnection _connection;
     private readonly IModel _channel;
-    private readonly ILogger<RabbitMQClient> _logger;
+    private readonly ILogger<RabbitMqClient> _logger;
 
     // Constructor that accepts a configuration object
-    public RabbitMQClient(IConfiguration configuration, ILogger<RabbitMQClient> logger)
+    public RabbitMqClient(IConfiguration configuration, ILogger<RabbitMqClient> logger)
     {
         _logger = logger;
         
         var host = configuration["RabbitMQ:Host"] ?? "rabbitmq";
-        var port = configuration.GetValue<int>("RabbitMQ:Port", 5672);
+        var port = configuration.GetValue("RabbitMQ:Port", 5672);
         var username = configuration["RabbitMQ:Username"] ?? "guest";
         var password = configuration["RabbitMQ:Password"] ?? "guest";
         var virtualHost = configuration["RabbitMQ:VirtualHost"] ?? "/";
@@ -45,7 +45,7 @@ public class RabbitMqClient : IRabbitMQClient, IDisposable
     }
 
     // Constructor that accepts a RabbitMQConfiguration object
-    public RabbitMQClient(RabbitMQConfiguration config, ILogger<RabbitMQClient> logger)
+    public RabbitMqClient(RabbitMqConfiguration config, ILogger<RabbitMqClient> logger)
     {
         _logger = logger;
         
@@ -202,7 +202,7 @@ public class RabbitMqClient : IRabbitMQClient, IDisposable
             }
         };
 
-        consumerTag = _channel.BasicConsume(queue: queueName, autoAck: false, consumer: consumer);
+        _channel.BasicConsume(queue: queueName, autoAck: false, consumer: consumer);
 
         return await tcs.Task;
     }
@@ -211,10 +211,10 @@ public class RabbitMqClient : IRabbitMQClient, IDisposable
     {
         try
         {
-            _channel?.Close();
-            _channel?.Dispose();
-            _connection?.Close();
-            _connection?.Dispose();
+            _channel.Close();
+            _channel.Dispose();
+            _connection.Close();
+            _connection.Dispose();
             _logger.LogInformation("RabbitMQ connection closed");
         }
         catch (Exception ex)
