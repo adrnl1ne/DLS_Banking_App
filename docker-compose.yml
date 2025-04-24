@@ -40,8 +40,8 @@ services:
     entrypoint: ["/bin/sh", "-c", "sleep 10 && /run.sh"]
 
   rabbitmq:
-    image: rabbitmq:3-management
-    mem_limit: 512m
+    image: rabbitmq:3
+    mem_limit: 1024m
     cpus: "0.3"
     container_name: rabbitmq
     ports:
@@ -58,7 +58,7 @@ services:
       interval: 10s
       timeout: 10s
       retries: 5
-      start_period: 120s
+      start_period: 60s
 
   redis:
     image: redis:6.2
