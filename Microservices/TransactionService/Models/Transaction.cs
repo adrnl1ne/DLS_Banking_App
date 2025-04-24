@@ -1,15 +1,19 @@
-namespace TransactionService.Models
+using System;
+
+namespace TransactionService.Models;
+
+public class Transaction
 {
-    public class Transaction
-    {
-        public Guid Id { get; init; }
-        public required string TransferId { get; init; }
-        public required int UserId { get; init; }
-        public required string FromAccount { get; init; }
-        public required string ToAccount { get; init; }
-        public required decimal Amount { get; init; }
-        public required string Status { get; set; }
-        public DateTime CreatedAt { get; init; }
-        public DateTime? UpdatedAt { get; set; }
-    }
+    public Guid Id { get; set; }
+    public string TransferId { get; set; } = string.Empty;
+    public string FromAccount { get; set; } = string.Empty;
+    public string ToAccount { get; set; } = string.Empty;
+    public decimal Amount { get; set; }
+    public string Currency { get; set; } = "USD";
+    public string Status { get; set; } = string.Empty;
+    public string TransactionType { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    public int UserId { get; set; }
 }

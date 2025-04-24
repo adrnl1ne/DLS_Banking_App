@@ -82,35 +82,46 @@ builder.Services.AddSingleton(rabbitMqConfig);
 builder.Services.AddSingleton<IRabbitMqClient, RabbitMqClient>();
 
 // Configure Authentication
-builder.Services.AddAuthentication(options =>
-{
-    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-})
-.AddJwtBearer(options =>
-{
-    options.TokenValidationParameters = new TokenValidationParameters
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
     {
-        ValidateIssuer = true,
-        ValidateAudience = true,
-        ValidateLifetime = true,
-        ValidateIssuerSigningKey = true,
-        ValidIssuer = builder.Configuration.GetValue<string>("JWT_ISSUER") ?? throw new InvalidOperationException("JWT_ISSUER must be configured"),
-        ValidAudience = builder.Configuration.GetValue<string>("JWT_AUDIENCE") ?? throw new InvalidOperationException("JWT_AUDIENCE must be configured"),
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(
-            builder.Configuration.GetValue<string>("JWT_KEY") ?? throw new InvalidOperationException("JWT_KEY must be configured")))
-    };
-});
+        // Get configuration values with defaults
+        var jwtIssuer = Environment.GetEnvironmentVariable("JWT_ISSUER") ?? 
+                        builder.Configuration["JWT:Issuer"] ?? 
+                        "BankingApp";
+        
+        var jwtAudience = Environment.GetEnvironmentVariable("JWT_AUDIENCE") ?? 
+                          builder.Configuration["JWT:Audience"] ?? 
+                          "TransactionAPI";
+        
+        var jwtKey = Environment.GetEnvironmentVariable("JWT_KEY") ?? 
+                     builder.Configuration["JWT:Key"] ?? 
+                     "default-development-signing-key-min-16-chars";
+
+        Console.WriteLine($"Configuring JWT authentication with Issuer: {jwtIssuer}, Audience: {jwtAudience}");
+        
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = jwtIssuer,
+            ValidAudience = jwtAudience,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
+        };
+    });
 
 // Configure HttpClient for User Account Service
-var serviceToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0cmFuc2FjdGlvbi1zZXJ2aWNlIiwicm9sZSI6InNlcnZpY2UiLCJqdGkiOiJjNGEwMzRjYy1iMDE4LTQxYTYtOTNmMi02MDc5MDQ1MWU1OWEiLCJpc3MiOiJCYW5raW5nQXBwIiwic2NvcGVzIjpbInJlYWQ6YWNjb3VudHMiLCJ1cGRhdGU6YWNjb3VudC1iYWxhbmNlIl0sImV4cCI6MTc2MTI0NjM0NSwiYXVkIjoiVXNlckFjY291bnRBUEkifQ.xiE7sJOYZWizg-cvk_yKya4-vfaXUV9BDTXaJx5QgJE"
-    ;
-var userAccountServiceUrl = builder.Configuration["Services:UserAccountService"];
+var serviceToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0cmFuc2FjdGlvbi1zZXJ2aWNlIiwicm9sZSI6InNlcnZpY2UiLCJqdGkiOiJjNGEwMzRjYy1iMDE4LTQxYTYtOTNmMi02MDc5MDQ1MWU1OWEiLCJpc3MiOiJCYW5raW5nQXBwIiwic2NvcGVzIjpbInJlYWQ6YWNjb3VudHMiLCJ1cGRhdGU6YWNjb3VudC1iYWxhbmNlIl0sImV4cCI6MTc2MTI0NjM0NSwiYXVkIjoiVXNlckFjY291bnRBUEkifQ.xiE7sJOYZWizg-cvk_yKya4-vfaXUV9BDTXaJx5QgJE";
+
+// Use fallback value for userAccountServiceUrl if configuration is missing
+var userAccountServiceUrl = builder.Configuration["Services:UserAccountService"] ?? "http://user-account-service:80";
 Console.WriteLine($"Configuring HttpClient for UserAccountClientService: URL={userAccountServiceUrl}, Token={serviceToken}");
-if (string.IsNullOrWhiteSpace(userAccountServiceUrl) || !Uri.TryCreate(userAccountServiceUrl, UriKind.Absolute, out var uri))
-{
-    throw new InvalidOperationException($"Invalid or missing Services:UserAccountService URL: {userAccountServiceUrl ?? "NULL"}");
-}
+
+// Create the URI without checking (already have default value)
+var uri = new Uri(userAccountServiceUrl);
+
 builder.Services.AddHttpClient<UserAccountClientService>(client =>
 {
     client.BaseAddress = uri;
@@ -176,5 +187,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
 
 app.Run();

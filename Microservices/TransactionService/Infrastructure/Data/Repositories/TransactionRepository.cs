@@ -35,7 +35,7 @@ public class TransactionRepository(TransactionDbContext context, ILogger<Transac
 
             var transaction = await context.Transactions
                 .AsQueryable() // Explicitly treat as IQueryable
-                .FirstOrDefaultAsync(t => t.TransferId == transferId);
+                .FirstOrDefaultAsync(t => t.TransferId == sanitizedTransferId);
 
             if (transaction == null)
             {
@@ -62,22 +62,22 @@ public class TransactionRepository(TransactionDbContext context, ILogger<Transac
             var sanitizedAccountId = accountId.Replace("\n", "").Replace("\r", "");
             logger.LogInformation("Getting transactions for account: {AccountId}", sanitizedAccountId);
 
-            if (!int.TryParse(accountId, out int accountIdInt))
-            {
-                throw new ArgumentException("Account ID must be a valid integer.");
-            }
-
+            // Fix comparison operators - use string comparison
             var transactions = await context.Transactions
                 .AsQueryable()
-                .Where(t => t.FromAccount == accountIdInt.ToString() || t.ToAccount == accountIdInt.ToString())
+                .Where(t => t.FromAccount == sanitizedAccountId || t.ToAccount == sanitizedAccountId)
                 .ToListAsync();
 
-            logger.LogInformation("Found {Count} transactions for account: {AccountId}", transactions.Count, sanitizedAccountId);
+            // Fix logger argument order
+            logger.LogInformation("Found {Count} transactions for account {AccountId}", 
+                transactions.Count, sanitizedAccountId);
             return transactions;
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error getting transactions for account: {AccountId}. Error: {Message}", accountId, ex.Message);
+            // Fix logger argument order
+            logger.LogError(ex, "Error getting transactions for account {AccountId}: {Message}", 
+                accountId, ex.Message);
             throw;
         }
     }

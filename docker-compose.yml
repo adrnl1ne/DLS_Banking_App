@@ -40,7 +40,7 @@ services:
     entrypoint: ["/bin/sh", "-c", "sleep 10 && /run.sh"]
 
   rabbitmq:
-    image: rabbitmq:3
+    image: rabbitmq:3-management
     mem_limit: 1024m
     cpus: "0.3"
     container_name: rabbitmq
@@ -52,9 +52,10 @@ services:
       - RABBITMQ_DEFAULT_PASS=${RABBITMQ_DEFAULT_PASS}
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf
     user: "rabbitmq:rabbitmq"
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      test: ["CMD", "rabbitmqctl", "status"]
       interval: 10s
       timeout: 10s
       retries: 5
