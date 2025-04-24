@@ -52,12 +52,13 @@ services:
       - RABBITMQ_DEFAULT_PASS=${RABBITMQ_DEFAULT_PASS}
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
+    user: "rabbitmq:rabbitmq"
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
       interval: 10s
-      timeout: 5s
+      timeout: 10s
       retries: 5
-      start_period: 30s
+      start_period: 120s
 
   redis:
     image: redis:6.2
