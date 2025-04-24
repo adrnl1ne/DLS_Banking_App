@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    app: fraud-detection-service
+    kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+    kompose.service.type: nodeport
+    kompose.version: 1.35.0 (HEAD)
+  labels:
+    io.kompose.service: fraud-detection-service
+  name: fraud-detection-service
+spec:
+  ports:
+    - name: "8000"
+      port: 8000
+      targetPort: 8000
+    - name: "8001"
+      port: 8001
+      targetPort: 8001
+  selector:
+    io.kompose.service: fraud-detection-service
+  type: NodePort

@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    app: mysql-useraccount
+    kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+    kompose.service.type: nodeport
+    kompose.version: 1.35.0 (HEAD)
+  labels:
+    io.kompose.service: mysql-useraccount
+  name: mysql-useraccount
+spec:
+  ports:
+    - name: "3307"
+      port: 3307
+      targetPort: 3306
+  selector:
+    io.kompose.service: mysql-useraccount
+  type: NodePort

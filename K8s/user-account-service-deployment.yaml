@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    app: user-account-service
+    kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+    kompose.service.type: nodeport
+    kompose.version: 1.35.0 (HEAD)
+  labels:
+    io.kompose.service: user-account-service
+  name: user-account-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: user-account-service
+  template:
+    metadata:
+      annotations:
+        app: user-account-service
+        kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+        kompose.service.type: nodeport
+        kompose.version: 1.35.0 (HEAD)
+      labels:
+        io.kompose.service: user-account-service
+    spec:
+      containers:
+        - env:
+            - name: JWT_AUDIENCE
+            - name: JWT_ISSUER
+            - name: JWT_KEY
+            - name: MYSQL_DATABASE
+            - name: MYSQL_HOST
+              value: mysql-useraccount
+            - name: MYSQL_PASSWORD
+            - name: MYSQL_PORT
+              value: "3306"
+            - name: MYSQL_USER
+            - name: PROMETHEUS_PORT
+              value: "9091"
+            - name: RABBITMQ_HOST
+              value: rabbitmq
+            - name: RABBITMQ_PASSWORD
+            - name: RABBITMQ_PORT
+              value: "5672"
+            - name: RABBITMQ_USERNAME
+          image: fhallengreen/dls_banking_app-user-account-service:latest
+          livenessProbe:
+            exec:
+              command:
+                - curl
+                - -f
+                - http://localhost:80/health
+            failureThreshold: 3
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+          name: user-account-service
+          ports:
+            - containerPort: 80
+              protocol: TCP
+            - containerPort: 9091
+              protocol: TCP
+          resources:
+            limits:
+              memory: "1073741824"
+      restartPolicy: Always

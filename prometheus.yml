@@ -5,3 +5,7 @@ scrape_configs:
   - job_name: "fraud_detection_service"
     static_configs:
       - targets: ["fraud-detection-service:8001"]
+      
+  - job_name: "transaction_service"
+    static_configs:
+      - targets: ["transaction-service:80"]

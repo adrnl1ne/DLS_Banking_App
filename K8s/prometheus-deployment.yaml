@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    app: prometheus
+    kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+    kompose.service.type: nodeport
+    kompose.version: 1.35.0 (HEAD)
+  labels:
+    io.kompose.service: prometheus
+  name: prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: prometheus
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        app: prometheus
+        kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+        kompose.service.type: nodeport
+        kompose.version: 1.35.0 (HEAD)
+      labels:
+        io.kompose.service: prometheus
+    spec:
+      containers:
+        - image: prom/prometheus:latest
+          livenessProbe:
+            exec:
+              command:
+                - wget
+                - --no-verbose
+                - --tries=1
+                - --spider
+                - http://localhost:9090/-/healthy
+            failureThreshold: 3
+            periodSeconds: 10
+            timeoutSeconds: 5
+          name: prometheus
+          ports:
+            - containerPort: 9090
+              protocol: TCP
+          resources:
+            limits:
+              memory: "268435456"
+          volumeMounts:
+            - mountPath: /etc/prometheus/prometheus.yml
+              name: prometheus-cm0
+              subPath: prometheus.yml
+      restartPolicy: Always
+      volumes:
+        - configMap:
+            items:
+              - key: prometheus.yml
+                path: prometheus.yml
+            name: prometheus-cm0
+          name: prometheus-cm0
