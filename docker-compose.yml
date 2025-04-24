@@ -77,7 +77,6 @@ services:
     image: mysql:8.0
     mem_limit: 512m
     cpus: "0.3"
-    restart: unless-stopped
     environment:
       - MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD_UA}
       - MYSQL_DATABASE=${MYSQL_DATABASE_UA}
@@ -99,7 +98,6 @@ services:
     image: mysql:8.0
     mem_limit: 512m
     cpus: "0.3"
-    restart: unless-stopped
     environment:
       - MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD_TA}
       - MYSQL_DATABASE=${MYSQL_DATABASE_TA}
@@ -118,17 +116,23 @@ services:
   fraud-detection-service:
     build:
       context: ./Microservices/FraudDetectionService
+    image: fhallengreen/dls_banking_app-fraud-detection-service:latest
     mem_limit: 256m
     cpus: "0.2"
     container_name: fraud-detection-service
-    restart: on-failure
     ports:
       - "8000:8000"
       - "8001:8001"
     volumes:
       - ./Microservices/FraudDetectionService:/app
     command:
-      ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+      - uvicorn
+      - main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --reload
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -145,7 +149,7 @@ services:
 
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:7.17.19
-    mem_limit: 512m
+    mem_limit: 1g
     cpus: "0.3"
     container_name: elasticsearch
     environment:
@@ -167,6 +171,7 @@ services:
     build:
       context: ./Microservices/UserAccountService
       dockerfile: Dockerfile
+    image: fhallengreen/dls_banking_app-user-account-service:latest
     mem_limit: 1024m
     cpus: "1"
     container_name: user-account-service
@@ -198,12 +203,17 @@ services:
       prometheus:
         condition: service_healthy
     healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
       start_period: 60s
 
   transaction-service:
     build:
       context: ./Microservices/TransactionService
       dockerfile: Dockerfile
+    image: fhallengreen/dls_banking_app-transaction-service:latest
     mem_limit: 1024m
     cpus: "1"
     container_name: transaction-service
@@ -237,15 +247,20 @@ services:
       prometheus:
         condition: service_healthy
     healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
       start_period: 60s
 
   frontend:
     build:
       context: ./frontend
+    image: fhallengreen/dls_banking_app-frontend:latest
     mem_limit: 512m
     cpus: "0.3"
     container_name: frontend
-    restart: on-failure
+    restart: always
     ports:
       - "3001:5173"
     volumes:
@@ -275,6 +290,6 @@ services:
 volumes:
   grafana-data:
   esdata:
-  mysql-useraccount-data: 
+  mysql-useraccount-data:
   mysql-transaction-data:
   rabbitmq-data:

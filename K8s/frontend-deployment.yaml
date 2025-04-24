@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    kompose.cmd: kompose convert -f ../docker-compose.yml
+    kompose.version: 1.35.0 (HEAD)
+  labels:
+    io.kompose.service: frontend
+  name: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: frontend
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        kompose.cmd: kompose convert -f ../docker-compose.yml
+        kompose.version: 1.35.0 (HEAD)
+      labels:
+        io.kompose.service: frontend
+    spec:
+      containers:
+        - env:
+            - name: VITE_API_URL
+              value: http://localhost:3001
+            - name: VITE_QUERY_SERVICE_URL
+              value: http://localhost:4000
+            - name: VITE_USER_SERVICE_URL
+              value: http://localhost:5000
+          image: fhallengreen/dls_banking_app-frontend:latest
+          livenessProbe:
+            exec:
+              command:
+                - wget
+                - --no-verbose
+                - --tries=1
+                - --spider
+                - http://localhost:5173
+            failureThreshold: 3
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          name: frontend
+          ports:
+            - containerPort: 5173
+              protocol: TCP
+          resources:
+            limits:
+              memory: "536870912"
+          volumeMounts:
+            - mountPath: /app
+              name: frontend-cm0
+            - mountPath: /app/node_modules
+              name: frontend-claim1
+      restartPolicy: Always
+      volumes:
+        - configMap:
+            name: frontend-cm0
+          name: frontend-cm0
+        - name: frontend-claim1
+          persistentVolumeClaim:
+            claimName: frontend-claim1

@@ -1,0 +1,10 @@
+apiVersion: v1
+data:
+  prometheus.yml: "global:\n  scrape_interval: 5s\n\nscrape_configs:\n  - job_name: \"fraud_detection_service\"\n    static_configs:\n      - targets: [\"fraud-detection-service:8001\"]\n      \n  - job_name: \"transaction_service\"\n    static_configs:\n      - targets: [\"transaction-service:80\"]\n"
+kind: ConfigMap
+metadata:
+  annotations:
+    use-subpath: "true"
+  labels:
+    io.kompose.service: prometheus
+  name: prometheus-cm0
