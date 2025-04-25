@@ -1,0 +1,11 @@
+﻿obj/**
+bin/**
+*.csproj.nuget.*
+*.assets.json
+*.nuget.cache
+*.AssemblyInfo.cs
+*.rider.project.restore.info
+*.dll
+*.pdb
+*.deps.json
+*.runtimeconfig.json
