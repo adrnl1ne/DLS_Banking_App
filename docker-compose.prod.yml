@@ -17,6 +17,7 @@ services:
     labels:
       app: prometheus
       kompose.service.type: nodeport
+      kompose.image-pull-policy: Always
 
   grafana:
     image: grafana/grafana:latest
@@ -38,6 +39,7 @@ services:
     labels:
       app: grafana
       kompose.service.type: nodeport
+      kompose.image-pull-policy: Always
 
   rabbitmq:
     image: rabbitmq:3-management
@@ -62,6 +64,7 @@ services:
     labels:
       app: rabbitmq
       kompose.service.type: nodeport
+      kompose.image-pull-policy: Always
 
   redis:
     image: redis:6.2
@@ -77,7 +80,8 @@ services:
       retries: 5
     labels:
       app: redis
-      kompose.service.type: nodeport
+      kompose.service.type: clusterip
+      kompose.image-pull-policy: Always
 
   mysql-useraccount:
     container_name: mysql-useraccount
@@ -102,7 +106,8 @@ services:
       start_period: 30s
     labels:
       app: mysql-useraccount
-      kompose.service.type: nodeport
+      kompose.service.type: clusterip
+      kompose.image-pull-policy: Always
 
   mysql-transaction:
     container_name: mysql-transaction
@@ -127,7 +132,8 @@ services:
       start_period: 30s
     labels:
       app: mysql-transaction
-      kompose.service.type: nodeport
+      kompose.service.type: clusterip
+      kompose.image-pull-policy: Always
 
   fraud-detection-service:
     image: fhallengreen/dls_banking_app-fraud-detection-service:latest
@@ -160,6 +166,7 @@ services:
     labels:
       app: fraud-detection-service
       kompose.service.type: nodeport
+      kompose.image-pull-policy: Always
 
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:7.17.19
@@ -181,7 +188,8 @@ services:
       retries: 5
     labels:
       app: elasticsearch
-      kompose.service.type: nodeport
+      kompose.service.type: clusterip
+      kompose.image-pull-policy: Always
 
   user-account-service:
     image: fhallengreen/dls_banking_app-user-account-service:latest
@@ -222,6 +230,7 @@ services:
     labels:
       app: user-account-service
       kompose.service.type: nodeport
+      kompose.image-pull-policy: Always
 
   transaction-service:
     image: fhallengreen/dls_banking_app-transaction-service:latest
@@ -265,6 +274,7 @@ services:
     labels:
       app: transaction-service
       kompose.service.type: nodeport
+      kompose.image-pull-policy: Always
 
   frontend:
     image: fhallengreen/dls_banking_app-frontend:latest
@@ -290,6 +300,7 @@ services:
     labels:
       app: frontend
       kompose.service.type: nodeport
+      kompose.image-pull-policy: Always
 
 volumes:
   grafana-data:

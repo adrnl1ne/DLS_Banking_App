@@ -4,6 +4,7 @@ metadata:
   annotations:
     app: transaction-service
     kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+    kompose.image-pull-policy: Always
     kompose.service.type: nodeport
     kompose.version: 1.35.0 (HEAD)
   labels:
@@ -13,10 +14,12 @@ spec:
   ports:
     - name: "8003"
       port: 8003
-      targetPort: 80
+      targetPort: 8080
+      nodePort: 31134
     - name: "9092"
       port: 9092
       targetPort: 9091
+      nodePort: 32200
   selector:
-    io.kompose.service: transaction-service
+    app: transaction-service
   type: NodePort

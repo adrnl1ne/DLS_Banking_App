@@ -4,6 +4,7 @@ metadata:
   annotations:
     app: fraud-detection-service
     kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+    kompose.image-pull-policy: Always
     kompose.service.type: nodeport
     kompose.version: 1.35.0 (HEAD)
   labels:
@@ -18,5 +19,5 @@ spec:
       port: 8001
       targetPort: 8001
   selector:
-    io.kompose.service: fraud-detection-service
+    app: fraud-detection-service
   type: NodePort
