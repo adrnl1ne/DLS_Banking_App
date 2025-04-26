@@ -7,7 +7,8 @@ namespace TransactionService.Services
     public interface ITransactionService
     {
         Task<TransactionResponse> CreateTransferAsync(TransactionRequest request);
-        Task<TransactionResponse> GetTransactionByTransferIdAsync(string transferId);
+        Task<TransactionResponse?> GetTransactionByTransferIdAsync(string transferId);
         Task<IEnumerable<TransactionResponse>> GetTransactionsByAccountAsync(string accountId, int authenticatedUserId);
+        void ProcessFraudResult(string transferId, bool isFraud);
     }
 }

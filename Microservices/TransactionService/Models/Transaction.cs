@@ -15,5 +15,5 @@ public class Transaction
     public string? Description { get; set; }
     public int? UserId { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-    public DateTime? UpdatedAt { get; set; } // Make nullable to handle NULL values in DB
+    public DateTime? UpdatedAt { get; set; }
 }
