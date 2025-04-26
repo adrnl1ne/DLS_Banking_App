@@ -37,18 +37,16 @@ public class UserAccountClientService
         return await response.Content.ReadFromJsonAsync<Account>();
     }
 
-    public async Task UpdateBalanceAsync(int accountId, decimal newBalance)
+    // Update the method signature to accept the AccountBalanceRequest model instead of just a decimal
+    public async Task UpdateBalanceAsync(int accountId, AccountBalanceRequest balanceRequest)
     {
         try
         {
-            _logger.LogInformation("Updating account {AccountId} balance to {NewBalance}", accountId, newBalance);
+            _logger.LogInformation("Updating account {AccountId} balance to {NewBalance} with type {TransactionType}", 
+                accountId, balanceRequest.Amount, balanceRequest.TransactionType);
             
-            // Create a proper AccountBalanceRequest based on the service's expected format
-            var balanceRequest = new
-            {
-                Amount = newBalance,
-                TransactionId = Guid.NewGuid().ToString() // Generate a unique ID for idempotency
-            };
+            _logger.LogInformation("Sending balance update request: {Request}", 
+                JsonSerializer.Serialize(balanceRequest));
             
             // Serialize with proper content type
             var content = new StringContent(
@@ -67,12 +65,31 @@ public class UserAccountClientService
                 throw new InvalidOperationException($"Failed to update balance for account {accountId}. Status: {response.StatusCode}, Error: {errorContent}");
             }
             
-            _logger.LogInformation("Successfully updated account {AccountId} balance to {NewBalance}", accountId, newBalance);
+            _logger.LogInformation("Successfully updated account {AccountId} balance to {NewBalance}", 
+                accountId, balanceRequest.Amount);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating balance for account {AccountId} to {NewBalance}", accountId, newBalance);
+            _logger.LogError(ex, "Error updating balance for account {AccountId} to {NewBalance}", 
+                accountId, balanceRequest.Amount);
             throw;
         }
+    }
+
+    // For backward compatibility, you can keep the old method and have it call the new one
+    public async Task UpdateBalanceAsync(int accountId, decimal newBalance)
+    {
+        var request = new AccountBalanceRequest
+        {
+            Amount = newBalance,
+            TransactionId = Guid.NewGuid().ToString(),
+            TransactionType = "Deposit", // Default to deposit, but this won't work in all cases
+            Request = new AccountBalanceRequest.RequestDetails
+            {
+                Description = "Balance update from Transaction Service"
+            }
+        };
+
+        await UpdateBalanceAsync(accountId, request);
     }
 }

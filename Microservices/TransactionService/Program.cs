@@ -69,30 +69,6 @@ builder.Services.AddDbContext<TransactionDbContext>(options =>
     options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString),
         mySqlOptions => mySqlOptions.EnableStringComparisonTranslations())
 );
-// Configure RabbitMQ
-var rabbitMqConfig = new RabbitMqConfiguration
-{
-    HostName = builder.Configuration["RABBITMQ_HOST"] ?? "rabbitmq",
-    Port = int.Parse(builder.Configuration["RABBITMQ_PORT"] ?? "5672"),
-    UserName = builder.Configuration["RABBITMQ_USERNAME"] ?? "guest",
-    Password = builder.Configuration["RABBITMQ_PASSWORD"] ?? "guest",
-    VirtualHost = builder.Configuration["RABBITMQ_VHOST"] ?? "/",
-};
-builder.Services.AddSingleton(rabbitMqConfig);
-builder.Services.AddSingleton<IRabbitMqClient>(sp =>
-{
-    try
-    {
-        var logger = sp.GetRequiredService<ILogger<RabbitMqClient>>();
-        return new RabbitMqClient(logger);
-    }
-    catch (Exception ex)
-    {
-        var logger = sp.GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, "Failed to initialize RabbitMqClient. Creating in degraded mode.");
-        return new RabbitMqClient(sp.GetRequiredService<ILogger<RabbitMqClient>>());
-    }
-});
 
 // Configure Authentication
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -169,6 +145,13 @@ var transactionDurationHistogram = Metrics.CreateHistogram(
 // Register metrics
 builder.Services.AddSingleton(transactionCounter);
 builder.Services.AddSingleton(transactionDurationHistogram);
+
+// Find where services are registered and add:
+builder.Services.AddSingleton<IRabbitMqClient, RabbitMqClient>(sp => 
+{
+    var logger = sp.GetRequiredService<ILogger<RabbitMqClient>>();
+    return new RabbitMqClient(logger);
+});
 
 var app = builder.Build();
 

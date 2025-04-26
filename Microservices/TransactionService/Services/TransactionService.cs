@@ -176,19 +176,32 @@ namespace TransactionService.Services
                     
                     // Update account balances
                     _logger.LogInformation("Updating balances for transaction {TransferId}", transferId);
-                    var balanceRequest = new AccountBalanceRequest
+                    // For the fromAccount (source), use Withdrawal
+                    var fromBalanceRequest = new AccountBalanceRequest
                     {
                         Amount = fromAccount.Amount - transaction.Amount,
-                        TransactionId = transaction.TransferId + "-from"
+                        TransactionId = transaction.TransferId + "-withdrawal",
+                        TransactionType = "Withdrawal", // This account is having money withdrawn
+                        Request = new AccountBalanceRequest.RequestDetails
+                        {
+                            Description = $"Transfer to account {toAccountId}"
+                        }
                     };
+
+                    // For the toAccount (destination), use Deposit
                     var toBalanceRequest = new AccountBalanceRequest
                     {
                         Amount = toAccount.Amount + transaction.Amount,
-                        TransactionId = transaction.TransferId + "-to"
+                        TransactionId = transaction.TransferId + "-deposit",
+                        TransactionType = "Deposit", // This account is having money deposited
+                        Request = new AccountBalanceRequest.RequestDetails
+                        {
+                            Description = $"Transfer from account {fromAccountId}"
+                        }
                     };
 
-                    await _userAccountClient.UpdateBalanceAsync(fromAccountId, fromAccount.Amount - transaction.Amount);
-                    await _userAccountClient.UpdateBalanceAsync(toAccountId, toAccount.Amount + transaction.Amount);
+                    await _userAccountClient.UpdateBalanceAsync(fromAccountId, fromBalanceRequest);
+                    await _userAccountClient.UpdateBalanceAsync(toAccountId, toBalanceRequest);
 
                     // Complete all transactions
                     transaction.Status = "completed";

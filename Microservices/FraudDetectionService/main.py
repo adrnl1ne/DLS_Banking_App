@@ -32,6 +32,7 @@ messages_processed = Counter("messages_processed", "Total number of messages pro
 fraud_detections = Counter("fraud_detections", "Number of fraud cases detected")
 processing_errors = Counter("processing_errors", "Number of errors during message processing")
 duplicate_messages = Counter("duplicate_messages", "Number of duplicate messages skipped")
+duplicate_fraud_checks = Counter("duplicate_fraud_checks", "Number of duplicate fraud check requests")
 
 # Redis client for idempotence and transaction storage
 redis_client = redis.Redis(host="redis", port=6379, db=0, decode_responses=True)
@@ -65,7 +66,24 @@ def get_rabbitmq_connection(max_retries=30, initial_delay=1, max_delay=30):
             time.sleep(sleep_time)
             delay = min(delay * 2, max_delay)
 
-duplicate_fraud_checks = Counter("duplicate_fraud_checks", "Number of duplicate fraud check requests")
+# Global channel and connection objects
+rabbitmq_connection = None
+rabbitmq_channel = None
+
+def get_channel():
+    """Get or create a channel for publishing"""
+    global rabbitmq_connection, rabbitmq_channel
+    
+    if rabbitmq_connection is None or not rabbitmq_connection.is_open:
+        rabbitmq_connection = get_rabbitmq_connection()
+        rabbitmq_channel = rabbitmq_connection.channel()
+        
+        # Declare all queues we'll be using
+        rabbitmq_channel.queue_declare(queue="FraudResult")
+        rabbitmq_channel.queue_declare(queue="TransactionServiceQueue")
+        rabbitmq_channel.queue_declare(queue="FraudEvents")
+        
+    return rabbitmq_channel
 
 def callback(ch, method, properties, body):
     try:
@@ -117,16 +135,17 @@ def callback(ch, method, properties, body):
         # Log the result to console only
         logging.info(f"Transfer {transfer_id}: Amount=${amount}, Fraud={is_fraud}, Status={status}")
 
-        # Publish to existing queues
-        connection = get_rabbitmq_connection()
-        channel = connection.channel()
-        channel.queue_declare(queue="FraudResult")
+        # Use the shared channel to publish results
+        channel = get_channel()
+        
+        # Publish to FraudResult queue (for monitoring/reporting)
         channel.basic_publish(
             exchange="",
             routing_key="FraudResult",
             body=json.dumps(result),
         )
-        channel.queue_declare(queue="TransactionServiceQueue")
+        
+        # Publish to TransactionServiceQueue (for transaction processing)
         channel.basic_publish(
             exchange="",
             routing_key="TransactionServiceQueue",
@@ -134,7 +153,6 @@ def callback(ch, method, properties, body):
         )
 
         # Publish to QueryService via FraudEvents queue
-        channel.queue_declare(queue="FraudEvents")
         channel.basic_publish(
             exchange="",
             routing_key="FraudEvents",
@@ -148,7 +166,8 @@ def callback(ch, method, properties, body):
             }),
         )
 
-        connection.close()
+        # IMPORTANT: Don't close the connection here!
+        # connection.close()  <- This line was causing the issue
 
         # Acknowledge the message
         ch.basic_ack(delivery_tag=method.delivery_tag)
@@ -165,8 +184,16 @@ def start_consuming():
         try:
             connection = get_rabbitmq_connection()
             channel = connection.channel()
-            channel.queue_declare(queue="CheckFraud")
-            channel.basic_consume(queue="CheckFraud", on_message_callback=callback)
+            
+            # Make sure the queue exists
+            channel.queue_declare(queue="CheckFraud", durable=False, exclusive=False, auto_delete=False)
+            
+            # Set prefetch count to 1 for fair dispatch
+            channel.basic_qos(prefetch_count=1)
+            
+            # Start consuming
+            channel.basic_consume(queue="CheckFraud", on_message_callback=callback, auto_ack=False)
+            
             logging.info("Fraud Detection Service started. Waiting for messages...")
             print("Fraud Detection Service started. Waiting for messages...")
             channel.start_consuming()
