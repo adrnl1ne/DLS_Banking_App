@@ -78,7 +78,7 @@ public class UserAccountClientService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error updating balance for account {AccountId} to {NewBalance}", 
-                accountId, balanceRequest.Amount);
+                HashSensitiveData(accountId.ToString()), balanceRequest.Amount);
             throw;
         }
     }
