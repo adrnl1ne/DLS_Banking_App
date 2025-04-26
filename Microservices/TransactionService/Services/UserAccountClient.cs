@@ -2,6 +2,8 @@ using System;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -41,40 +43,31 @@ public class UserAccountClientService
         {
             _logger.LogInformation("Updating account {AccountId} balance to {NewBalance}", accountId, newBalance);
             
-            // Try these different endpoint formats (one of them should work)
-            // Option 1: Using query string - current implementation
-            var response1 = await _httpClient.PutAsync($"/api/Account/{accountId}/balance?newBalance={newBalance}", null);
-            
-            if (response1.IsSuccessStatusCode)
+            // Create a proper AccountBalanceRequest based on the service's expected format
+            var balanceRequest = new
             {
-                _logger.LogInformation("Successfully updated account {AccountId} balance using endpoint format 1", accountId);
-                return;
+                Amount = newBalance,
+                TransactionId = Guid.NewGuid().ToString() // Generate a unique ID for idempotency
+            };
+            
+            // Serialize with proper content type
+            var content = new StringContent(
+                JsonSerializer.Serialize(balanceRequest),
+                Encoding.UTF8,
+                "application/json");
+                
+            // Make the API call
+            var response = await _httpClient.PutAsync($"/api/Account/{accountId}/balance", content);
+            
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorContent = await response.Content.ReadAsStringAsync();
+                _logger.LogError("Failed to update balance for account {AccountId}. Status: {Status}, Error: {Error}", 
+                    accountId, response.StatusCode, errorContent);
+                throw new InvalidOperationException($"Failed to update balance for account {accountId}. Status: {response.StatusCode}, Error: {errorContent}");
             }
             
-            // Option 2: Using request body
-            var content = JsonContent.Create(new { Balance = newBalance });
-            var response2 = await _httpClient.PutAsync($"/api/Account/{accountId}/balance", content);
-            
-            if (response2.IsSuccessStatusCode)
-            {
-                _logger.LogInformation("Successfully updated account {AccountId} balance using endpoint format 2", accountId);
-                return;
-            }
-            
-            // Option 3: Direct update
-            var response3 = await _httpClient.PutAsync($"/api/Account/{accountId}", JsonContent.Create(new { 
-                Balance = newBalance 
-            }));
-            
-            if (response3.IsSuccessStatusCode)
-            {
-                _logger.LogInformation("Successfully updated account {AccountId} balance using endpoint format 3", accountId);
-                return;
-            }
-            
-            // If we get here, none of the formats worked
-            _logger.LogError("Failed to update account {AccountId} balance. All endpoint formats failed.", accountId);
-            throw new InvalidOperationException($"Failed to update balance for account {accountId}. All endpoint formats failed.");
+            _logger.LogInformation("Successfully updated account {AccountId} balance to {NewBalance}", accountId, newBalance);
         }
         catch (Exception ex)
         {

@@ -45,49 +45,6 @@ namespace TransactionService.Infrastructure.Messaging.RabbitMQ
             }
         }
 
-        public void Publish(string queue, string message)
-        {
-            if (!_initialized)
-            {
-                _logger.LogWarning("RabbitMQ client not initialized. Message to {Queue} not sent: {Message}", queue, message);
-                return;
-            }
-
-            try
-            {
-                // First try to declare queue as non-durable to match existing configuration
-                try
-                {
-                    _channel.QueueDeclare(queue: queue, 
-                                         durable: false, 
-                                         exclusive: false, 
-                                         autoDelete: false);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Could not declare queue {Queue} as non-durable. Will try passive declaration.", queue);
-                    // Try passive declaration to use existing queue with its current settings
-                    _channel.QueueDeclarePassive(queue);
-                }
-
-                var body = Encoding.UTF8.GetBytes(message);
-                var properties = _channel.CreateBasicProperties();
-                properties.Persistent = true; // Make message persistent even if queue isn't durable
-                
-                _channel.BasicPublish(exchange: "", 
-                                      routingKey: queue, 
-                                      basicProperties: properties, 
-                                      body: body);
-
-                _logger.LogInformation("Published message to {Queue}: {Message}", queue, message);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to publish message to {Queue}", queue);
-                // Don't throw, allow the application to continue
-            }
-        }
-
         public void Subscribe(string queue, Action<string> callback)
         {
             if (!_initialized)
@@ -98,21 +55,12 @@ namespace TransactionService.Infrastructure.Messaging.RabbitMQ
 
             try
             {
-                // First try passive declaration to use existing queue with its current settings
-                try
-                {
-                    _channel.QueueDeclarePassive(queue);
-                    _logger.LogInformation("Found existing queue: {Queue}", queue);
-                }
-                catch
-                {
-                    // If the queue doesn't exist, create it as non-durable
-                    _channel.QueueDeclare(queue: queue, 
-                                         durable: false, 
-                                         exclusive: false, 
-                                         autoDelete: false);
-                    _logger.LogInformation("Created new queue: {Queue}", queue);
-                }
+                // Always create queue (not passive) with durable=false
+                _channel.QueueDeclare(queue: queue, 
+                                    durable: false, 
+                                    exclusive: false, 
+                                    autoDelete: false);
+                _logger.LogInformation("Created/connected to queue: {Queue}", queue);
 
                 var consumer = new EventingBasicConsumer(_channel);
                 consumer.Received += (model, ea) =>
@@ -140,7 +88,39 @@ namespace TransactionService.Infrastructure.Messaging.RabbitMQ
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to subscribe to {Queue}", queue);
-                // Don't throw, operate in degraded mode
+            }
+        }
+
+        public void Publish(string queue, string message)
+        {
+            if (!_initialized)
+            {
+                _logger.LogWarning("RabbitMQ client not initialized. Message to {Queue} not sent: {Message}", queue, message);
+                return;
+            }
+
+            try
+            {
+                // Always create the queue if it doesn't exist
+                _channel.QueueDeclare(queue: queue, 
+                                    durable: false, 
+                                    exclusive: false, 
+                                    autoDelete: false);
+
+                var body = Encoding.UTF8.GetBytes(message);
+                var properties = _channel.CreateBasicProperties();
+                properties.Persistent = true;
+                
+                _channel.BasicPublish(exchange: "", 
+                                    routingKey: queue, 
+                                    basicProperties: properties, 
+                                    body: body);
+
+                _logger.LogInformation("Published message to {Queue}: {Message}", queue, message);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to publish message to {Queue}", queue);
             }
         }
 

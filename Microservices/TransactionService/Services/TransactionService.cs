@@ -176,6 +176,17 @@ namespace TransactionService.Services
                     
                     // Update account balances
                     _logger.LogInformation("Updating balances for transaction {TransferId}", transferId);
+                    var balanceRequest = new AccountBalanceRequest
+                    {
+                        Amount = fromAccount.Amount - transaction.Amount,
+                        TransactionId = transaction.TransferId + "-from"
+                    };
+                    var toBalanceRequest = new AccountBalanceRequest
+                    {
+                        Amount = toAccount.Amount + transaction.Amount,
+                        TransactionId = transaction.TransferId + "-to"
+                    };
+
                     await _userAccountClient.UpdateBalanceAsync(fromAccountId, fromAccount.Amount - transaction.Amount);
                     await _userAccountClient.UpdateBalanceAsync(toAccountId, toAccount.Amount + transaction.Amount);
 
