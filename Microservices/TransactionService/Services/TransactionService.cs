@@ -265,28 +265,31 @@ namespace TransactionService.Services
         {
             try
             {
+                // Sanitize accountId to prevent log forging
+                var sanitizedAccountId = accountId.Replace("\n", "").Replace("\r", "");
+
                 // Validate accountId format
-                if (!int.TryParse(accountId, out int accountIdInt))
+                if (!int.TryParse(sanitizedAccountId, out int accountIdInt))
                 {
-                    _logger.LogWarning("Invalid account ID format: {AccountId}", accountId);
+                    _logger.LogWarning("Invalid account ID format: {AccountId}", sanitizedAccountId);
                     throw new ArgumentException("Account ID must be a valid integer.");
                 }
 
                 // Call UserAccountService to get account details
-                _logger.LogInformation("Fetching account {AccountId} from UserAccountService", accountId);
+                _logger.LogInformation("Fetching account {AccountId} from UserAccountService", sanitizedAccountId);
                 var account = await _userAccountClient.GetAccountAsync(accountIdInt);
 
                 if (account == null)
                 {
-                    _logger.LogWarning("Account {AccountId} not found in UserAccountService", accountId);
-                    throw new InvalidOperationException($"Account {accountId} not found.");
+                    _logger.LogWarning("Account {AccountId} not found in UserAccountService", sanitizedAccountId);
+                    throw new InvalidOperationException($"Account {sanitizedAccountId} not found.");
                 }
 
                 // Validate that the authenticated user owns the account
                 if (account.UserId != authenticatedUserId)
                 {
                     _logger.LogWarning("User {UserId} is not authorized to access transactions for account {AccountId}", 
-                        authenticatedUserId, accountId);
+                        authenticatedUserId, sanitizedAccountId);
                     throw new UnauthorizedAccessException("You are not authorized to access transactions for this account.");
                 }
 
