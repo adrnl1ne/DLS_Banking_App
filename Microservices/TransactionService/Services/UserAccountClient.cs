@@ -68,7 +68,7 @@ public class UserAccountClientService
             {
                 var errorContent = await response.Content.ReadAsStringAsync();
                 _logger.LogError("Failed to update balance for account {AccountId}. Status: {Status}, Error: {Error}", 
-                    accountId, response.StatusCode, errorContent);
+                    HashSensitiveData(accountId.ToString()), response.StatusCode, errorContent);
                 throw new InvalidOperationException($"Failed to update balance for account {accountId}. Status: {response.StatusCode}, Error: {errorContent}");
             }
             
