@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using TransactionService.Infrastructure.Logging;
 
 namespace TransactionService.Infrastructure.Messaging.RabbitMQ;
 
@@ -82,7 +83,13 @@ public class RabbitMqClient : IRabbitMqClient, IDisposable
                 
                 // Publish with the persistent flag
                 _channel.BasicPublish(exchange: "", routingKey: queueName, basicProperties: properties, body: body);
-                _logger.LogInformation("Published message to {QueueName}: {Message}", queueName, message);
+                // SECURE - Redact or summarize the message content instead of logging it all
+                _logger.LogInformation("Published message to {QueueName} with length: {MessageLength}", 
+                    queueName, message?.Length ?? 0);
+
+                // If you need message content, sanitize it:
+                _logger.LogDebug("Published message to {QueueName}: {Message}", 
+                    queueName, LogSanitizer.SanitizeLogMessage(message));
             }
         }
         catch (Exception ex)

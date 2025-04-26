@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Prometheus;
 using TransactionService.Infrastructure.Data.Repositories;
+using TransactionService.Infrastructure.Logging;
 using TransactionService.Infrastructure.Messaging.RabbitMQ;
 using TransactionService.Models;
 
@@ -51,8 +52,11 @@ namespace TransactionService.Services
         {
             try
             {
-                _logger.LogInformation("Creating transfer from {FromAccount} to {ToAccount} for {Amount}", 
-                    request.FromAccount, request.ToAccount, request.Amount);
+                // SECURE - Use LogSanitizer to mask sensitive information
+                _logger.LogInformation("Creating transfer from account {FromAccount} to account {ToAccount} for {Amount}", 
+                    LogSanitizer.MaskAccountId(int.Parse(request.FromAccount)), 
+                    LogSanitizer.MaskAccountId(int.Parse(request.ToAccount)), 
+                    LogSanitizer.MaskAmount(request.Amount));
 
                 // Parse account IDs to integers
                 if (!int.TryParse(request.FromAccount, out int fromAccountId) || 
@@ -148,7 +152,8 @@ namespace TransactionService.Services
                     }
 
                     // Prepare and send the fraud check message AFTER registering for the result
-                    _logger.LogInformation("Sending transaction {TransferId} to fraud check", transferId);
+                    _logger.LogInformation("Sending transaction {TransferId} to fraud check", 
+                        LogSanitizer.MaskTransferId(transferId));
                     var fraudMessage = new
                     {
                         transferId = transaction.TransferId,
@@ -322,9 +327,14 @@ namespace TransactionService.Services
                 }
                 catch (Exception ex)
                 {
-                    // If anything fails after creating the transaction, update status to failed
-                    _logger.LogError(ex, "Error processing transaction {TransferId}", transferId);
-                    
+                    // SECURE - Use sanitized exception message and masked IDs
+                    _logger.LogError("Error processing transaction {TransferId}: {ErrorMessage}", 
+                        LogSanitizer.MaskTransferId(transferId),
+                        LogSanitizer.SanitizeErrorMessage(ex.Message));
+
+                    // For detailed diagnostics (if needed), log with trace level
+                    _logger.LogTrace(ex, "Full exception details for diagnostics");
+
                     try
                     {
                         var failedTransaction = await _repository.GetTransactionByTransferIdAsync(transferId);
