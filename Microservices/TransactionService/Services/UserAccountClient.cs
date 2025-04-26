@@ -37,8 +37,7 @@ public class UserAccountClientService
     {
         try
         {
-            // Log with masked account ID
-            _logger.LogInformation("Getting account details for {AccountId}", LogSanitizer.MaskAccountId(id));
+            _logger.LogInformation("Getting account details for account ID {AccountId}", id);
             
             var response = await _httpClient.GetAsync($"/api/Account/{id}");
             response.EnsureSuccessStatusCode();
@@ -48,8 +47,7 @@ public class UserAccountClientService
         }
         catch (Exception ex)
         {
-            // Log error with masked account ID
-            _logger.LogError(ex, "Error retrieving account {AccountId}", LogSanitizer.MaskAccountId(id));
+            _logger.LogError(ex, "Error retrieving account {AccountId}", id);
             throw;
         }
     }

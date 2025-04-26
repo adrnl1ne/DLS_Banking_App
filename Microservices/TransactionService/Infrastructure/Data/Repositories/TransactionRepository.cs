@@ -27,39 +27,32 @@ namespace TransactionService.Infrastructure.Data.Repositories
 
         public async Task<Transaction> CreateTransactionAsync(Transaction transaction)
         {
-            // Secure logging - mask sensitive details
-            _logger.LogInformation("Creating new transaction with ID: {TransactionId}", 
-                LogSanitizer.MaskTransferId(transaction.TransferId));
-
-            await _context.Transactions.AddAsync(transaction);
+            // Store ClientIp temporarily if needed for logging
+            var clientIp = transaction.ClientIp;
+            
+            // Save transaction
+            var result = await _context.Transactions.AddAsync(transaction);
             await _context.SaveChangesAsync();
 
-            // Use secure logger for full transaction details
-            await _secureLogger.LogTransactionEventAsync(
-                transaction.Id,
-                "status_change",
-                $"Transaction created with status: {transaction.Status} - From account {transaction.FromAccount} to account {transaction.ToAccount} for {transaction.Amount}");
-
+            // Log the IP address securely without storing it in the database
+            if (!string.IsNullOrEmpty(clientIp))
+            {
+                await _secureLogger.LogTransactionEventAsync(transaction.Id, "ClientInfo", 
+                    $"Request originated from IP: {clientIp}");
+            }
+            
+            // Return the full transaction object, not just the ID
             return transaction;
         }
 
         public async Task<Transaction?> GetTransactionByIdAsync(string id)
         {
-            // Sanitize ID for logging
-            _logger.LogInformation("Getting transaction with ID: {TransactionId}", 
-                LogSanitizer.MaskTransferId(id));
-
-            return await _context.Transactions.FindAsync(id);
+            return await _context.Transactions.FirstOrDefaultAsync(t => t.Id == id);
         }
 
         public async Task<Transaction?> GetTransactionByTransferIdAsync(string transferId)
         {
-            // Sanitize ID for logging
-            _logger.LogInformation("Getting transaction with transfer ID: {TransferId}", 
-                LogSanitizer.MaskTransferId(transferId));
-
-            return await _context.Transactions
-                .FirstOrDefaultAsync(t => t.TransferId == transferId);
+            return await _context.Transactions.FirstOrDefaultAsync(t => t.TransferId == transferId);
         }
 
         public async Task<IEnumerable<Transaction>> GetTransactionsByUserIdAsync(int userId)
@@ -99,7 +92,8 @@ namespace TransactionService.Infrastructure.Data.Repositories
 
             transaction.Status = status;
             transaction.UpdatedAt = DateTime.UtcNow;
-            transaction.LastModifiedBy = "system"; // Now this property exists
+            // Set this for use in the application but it won't be saved to DB
+            transaction.LastModifiedBy = "system";
             
             await _context.SaveChangesAsync();
 

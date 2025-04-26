@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Prometheus;
 using TransactionService.Infrastructure.Data.Repositories;
@@ -200,9 +201,23 @@ namespace TransactionService.Services
                     withdrawalTransaction.Status = "completed";
                     depositTransaction.Status = "completed";
                     
-                    await _repository.UpdateTransactionStatusAsync(transferId, "completed");
-                    await _repository.UpdateTransactionStatusAsync(transferId + "-withdrawal", "completed");
-                    await _repository.UpdateTransactionStatusAsync(transferId + "-deposit", "completed");
+                    // First get the original transaction by transfer ID
+                    var originalTransaction = await _repository.GetTransactionByTransferIdAsync(transferId);
+                    if (originalTransaction != null) {
+                        await _repository.UpdateTransactionStatusAsync(originalTransaction.Id, "completed");
+                    }
+
+                    // Get and update the withdrawal transaction
+                    var retrievedWithdrawalTx = await _repository.GetTransactionByTransferIdAsync(transferId + "-withdrawal");
+                    if (retrievedWithdrawalTx != null) {
+                        await _repository.UpdateTransactionStatusAsync(retrievedWithdrawalTx.Id, "completed");
+                    }
+
+                    // Get and update the deposit transaction
+                    var retrievedDepositTx = await _repository.GetTransactionByTransferIdAsync(transferId + "-deposit");
+                    if (retrievedDepositTx != null) {
+                        await _repository.UpdateTransactionStatusAsync(retrievedDepositTx.Id, "completed");
+                    }
                     
                     _logger.LogInformation("Transaction {TransferId} completed successfully", transferId);
 
@@ -218,7 +233,13 @@ namespace TransactionService.Services
                     
                     try
                     {
-                        await _repository.UpdateTransactionStatusAsync(transferId, "failed");
+                        var failedTransaction = await _repository.GetTransactionByTransferIdAsync(transferId);
+                        if (failedTransaction != null) {
+                            await _repository.UpdateTransactionStatusAsync(failedTransaction.Id, "failed");
+                        }
+                        else {
+                            _logger.LogWarning("Could not find transaction with transfer ID {TransferId} to mark as failed", transferId);
+                        }
                     }
                     catch (Exception updateEx)
                     {
@@ -310,12 +331,55 @@ namespace TransactionService.Services
                 }
                 else
                 {
-                    _logger.LogWarning("Received fraud result for unknown transfer: {TransferId}", transferId);
+                    // If no pending check, process it directly
+                    _ = ProcessFraudResultAsync(transferId, isFraud);
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing fraud result for transfer {TransferId}", transferId);
+                _logger.LogError(ex, "Error processing fraud result for {TransferId}", transferId);
+            }
+        }
+
+        // Add new method to handle fraud result processing
+        private async Task ProcessFraudResultAsync(string transferId, bool isFraud)
+        {
+            try
+            {
+                string status = isFraud ? "declined" : "completed";
+                _logger.LogInformation("Processing fraud result: Transaction {TransferId} marked as {Status}", transferId, status);
+                
+                // Look up the main transaction
+                var mainTransaction = await _repository.GetTransactionByTransferIdAsync(transferId);
+                if (mainTransaction != null)
+                {
+                    await _repository.UpdateTransactionStatusAsync(mainTransaction.Id, status);
+                    _logger.LogInformation("Updated main transaction {Id} status to {Status}", mainTransaction.Id, status);
+                }
+                else
+                {
+                    _logger.LogWarning("Main transaction with transfer ID {TransferId} not found", transferId);
+                }
+                
+                // Look up withdrawal transaction
+                var withdrawalTx = await _repository.GetTransactionByTransferIdAsync($"{transferId}-withdrawal");
+                if (withdrawalTx != null)
+                {
+                    await _repository.UpdateTransactionStatusAsync(withdrawalTx.Id, status);
+                    _logger.LogInformation("Updated withdrawal transaction {Id} status to {Status}", withdrawalTx.Id, status);
+                }
+                
+                // Look up deposit transaction
+                var depositTx = await _repository.GetTransactionByTransferIdAsync($"{transferId}-deposit");
+                if (depositTx != null)
+                {
+                    await _repository.UpdateTransactionStatusAsync(depositTx.Id, status);
+                    _logger.LogInformation("Updated deposit transaction {Id} status to {Status}", depositTx.Id, status);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing fraud result update for {TransferId}", transferId);
             }
         }
 
@@ -324,10 +388,43 @@ namespace TransactionService.Services
         {
             try
             {
-                var result = JsonSerializer.Deserialize<FraudResult>(message);
+                // Better error handling for JSON deserialization
+                FraudResult? result = null;
+                
+                try 
+                {
+                    // Try to deserialize using standard options
+                    result = JsonSerializer.Deserialize<FraudResult>(message);
+                }
+                catch (JsonException jsonEx)
+                {
+                    _logger.LogWarning("JSON deserialization failed: {Error}. Trying custom parsing.", jsonEx.Message);
+                    
+                    // If standard deserialization fails, try to extract fields directly
+                    if (message.Contains("transferId") && message.Contains("isFraud"))
+                    {
+                        // Simple string-based parsing as fallback
+                        string transferId = ExtractJsonField(message, "transferId");
+                        bool isFraud = ExtractJsonField(message, "isFraud").Equals("true", StringComparison.OrdinalIgnoreCase);
+                        string status = ExtractJsonField(message, "status");
+                        
+                        if (!string.IsNullOrEmpty(transferId))
+                        {
+                            result = new FraudResult
+                            {
+                                TransferId = transferId,
+                                IsFraud = isFraud,
+                                Status = !string.IsNullOrEmpty(status) ? status : (isFraud ? "declined" : "approved")
+                            };
+                            
+                            _logger.LogInformation("Successfully parsed fraud result using fallback method");
+                        }
+                    }
+                }
+                
                 if (result == null || string.IsNullOrEmpty(result.TransferId))
                 {
-                    _logger.LogWarning("Received invalid fraud result message: {Message}", message);
+                    _logger.LogWarning("Received invalid or unparsable fraud result message: {Message}", message);
                     return;
                 }
 
@@ -338,6 +435,15 @@ namespace TransactionService.Services
             {
                 _logger.LogError(ex, "Error processing fraud result message: {Message}", message);
             }
+        }
+
+        // Add this helper method for JSON field extraction
+        private string ExtractJsonField(string json, string fieldName)
+        {
+            // Simple helper to extract values from JSON when deserialization fails
+            string pattern = $"\"{fieldName}\"\\s*:\\s*\"?([^\",]*)\"?";
+            var match = Regex.Match(json, pattern);
+            return match.Success ? match.Groups[1].Value : string.Empty;
         }
     }
 }

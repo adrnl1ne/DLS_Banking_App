@@ -16,7 +16,7 @@ namespace TransactionService.Models
             return new TransactionResponse
             {
                 TransferId = transaction.TransferId,
-                UserId = transaction.UserId ?? 0,
+                UserId = transaction.UserId,
                 FromAccount = transaction.FromAccount,
                 ToAccount = transaction.ToAccount,
                 Amount = transaction.Amount,

@@ -1,6 +1,8 @@
+// Minimum required imports
 using System.Net.Http.Headers;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -18,7 +20,7 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddControllers();
 
-// Configure Swagger
+// Configure Swagger with authentication support
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -33,6 +35,7 @@ builder.Services.AddSwaggerGen(c =>
         }
     });
     
+    // Add JWT authentication to Swagger UI
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Description = "JWT Authorization header using the Bearer scheme. Example: \"Authorization: Bearer {token}\"",
@@ -73,91 +76,108 @@ builder.Services.AddDbContext<TransactionDbContext>(options =>
 );
 
 // Configure Authentication
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
+builder.Services.AddAuthentication(options => {
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    // Get configuration values with defaults
+    var jwtIssuer = Environment.GetEnvironmentVariable("JWT_ISSUER") ?? 
+                    builder.Configuration["JWT:Issuer"] ?? 
+                    "BankingApp";
+    
+    var jwtAudience = Environment.GetEnvironmentVariable("JWT_AUDIENCE") ?? 
+                      builder.Configuration["JWT:Audience"] ?? 
+                      "UserAccountAPI";
+    
+    var jwtKey = Environment.GetEnvironmentVariable("JWT_KEY") ?? 
+                 builder.Configuration["JWT:Key"] ?? 
+                 "default-development-signing-key-min-16-chars";
+
+    Console.WriteLine($"Configuring JWT authentication with Issuer: {jwtIssuer}, Audience: {jwtAudience}");
+    
+    options.TokenValidationParameters = new TokenValidationParameters
     {
-        // Get configuration values with defaults
-        var jwtIssuer = Environment.GetEnvironmentVariable("JWT_ISSUER") ?? 
-                        builder.Configuration["JWT:Issuer"] ?? 
-                        "BankingApp";
-        
-        var jwtAudience = Environment.GetEnvironmentVariable("JWT_AUDIENCE") ?? 
-                          builder.Configuration["JWT:Audience"] ?? 
-                          "TransactionAPI";
-        
-        var jwtKey = Environment.GetEnvironmentVariable("JWT_KEY") ?? 
-                     builder.Configuration["JWT:Key"] ?? 
-                     "default-development-signing-key-min-16-chars";
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = jwtIssuer,
+        ValidAudience = jwtAudience,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
+    };
+});
 
-        Console.WriteLine($"Configuring JWT authentication with Issuer: {jwtIssuer}, Audience: {jwtAudience}");
-        
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateLifetime = true,
-            ValidateIssuerSigningKey = true,
-            ValidIssuer = jwtIssuer,
-            ValidAudience = jwtAudience,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
-        };
-    });
-
-// Configure HttpClient for User Account Service
+builder.Services.AddAuthorization();
 
 // Setup Environment Variables support
 builder.Configuration.AddEnvironmentVariables();
 
-// Add logging filter
-builder.Logging.AddSensitiveDataFilter();
+// Add CORS policy
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+    });
+});
 
 // Add secure transaction logger
-builder.Services.AddScoped<TransactionService.Infrastructure.Logging.ISecureTransactionLogger, 
-                          TransactionService.Infrastructure.Logging.SecureTransactionLogger>();
+builder.Services.AddScoped<ISecureTransactionLogger, SecureTransactionLogger>();
 
-// Replace the token configuration (which is currently exposing the token in the logs)
+// Configure UserAccountClientService with proper token handling
 builder.Services.AddHttpClient<UserAccountClientService>((services, client) => {
     var configuration = services.GetRequiredService<IConfiguration>();
     var logger = services.GetRequiredService<ILogger<UserAccountClientService>>();
     
-    // Get token from configuration
     var serviceToken = Environment.GetEnvironmentVariable("TRANSACTION_SERVICE_TOKEN") ?? 
-                  configuration["ServiceAuthentication:Token"] ?? 
-                  throw new InvalidOperationException("TransactionService token not configured");
-        
-    client.BaseAddress = new Uri(configuration["Services:UserAccountService"] ?? "http://user-account-service:80");
-    client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", serviceToken);
+                  configuration["ServiceAuthentication:Token"];
     
-    // Don't log the token
-    logger.LogInformation("UserAccountClientService configured with BaseAddress: {BaseAddress}", client.BaseAddress);
+    var baseAddress = configuration["Services:UserAccountService"] ?? "http://user-account-service";
+    client.BaseAddress = new Uri(baseAddress);
+    
+    if (!string.IsNullOrEmpty(serviceToken))
+    {
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", serviceToken);
+    }
+    
+    logger.LogInformation("UserAccountClientService initialized with BaseAddress: {BaseAddress}", client.BaseAddress);
 });
 
-// Production logging configuration
-if (!builder.Environment.IsDevelopment())
-{
-    builder.Logging.AddFilter("Microsoft", LogLevel.Warning);
-    builder.Logging.AddFilter("System", LogLevel.Warning);
-}
+// Register other required services
+builder.Services.AddScoped<ITransactionRepository, TransactionRepository>();
+builder.Services.AddSingleton<IRabbitMqClient, RabbitMqClient>();
+builder.Services.AddSingleton<Counter>(Metrics.CreateCounter("transactions_total", "The total number of transactions"));
+builder.Services.AddSingleton<Histogram>(Metrics.CreateHistogram("transaction_amount", "Transaction amounts"));
+builder.Services.AddScoped<ITransactionService, TransactionService.Services.TransactionService>();
 
 var app = builder.Build();
 
-// Add middleware in the correct order
+// Configure the HTTP request pipeline
 if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Docker"))
 {
     app.UseDeveloperExceptionPage();
-    app.UseSwagger();
-    app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Transaction API v1"));
 }
 
-// Add a direct health check endpoint
-app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
+// CRITICAL: Set up Swagger UI before authentication middleware
+app.UseSwagger();
+app.UseSwaggerUI(c => 
+{
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Transaction API v1");
+    c.RoutePrefix = string.Empty; // Serve at root path
+    c.DocExpansion(Swashbuckle.AspNetCore.SwaggerUI.DocExpansion.None); // Don't expand by default
+});
 
-// Configure routing and authorization
-app.UseRouting();
-app.UseMetricServer(); // For Prometheus metrics
-app.UseCors(x => x.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
-app.UseAuthentication();
-app.UseAuthorization();
-app.MapControllers();
+// The middleware ordering is critical for proper functioning
+app.UseRouting();                // First set up routing
+app.UseCors("AllowAll");         // Then CORS
+app.UseMetricServer();           // Then metrics before auth
+app.UseAuthentication();         // Then authentication
+app.UseAuthorization();          // Then authorization
+app.MapControllers();            // Finally map controllers
 
 app.Run();
