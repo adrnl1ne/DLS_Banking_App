@@ -16,6 +16,13 @@ public class UserAccountClientService
     private readonly HttpClient _httpClient;
     private readonly ILogger<UserAccountClientService> _logger;
 
+    private static string HashSensitiveData(string data)
+    {
+        using var sha256 = SHA256.Create();
+        var hashedBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(data));
+        return Convert.ToBase64String(hashedBytes);
+    }
+
     public UserAccountClientService(HttpClient httpClient, IConfiguration configuration, ILogger<UserAccountClientService> logger)
     {
         _httpClient = httpClient;
@@ -43,7 +50,7 @@ public class UserAccountClientService
         try
         {
             _logger.LogInformation("Updating account {AccountId} balance to {NewBalance} with type {TransactionType}", 
-                accountId, balanceRequest.Amount, balanceRequest.TransactionType);
+                HashSensitiveData(accountId.ToString()), balanceRequest.Amount, balanceRequest.TransactionType);
             
             _logger.LogInformation("Sending balance update request: {Request}", 
                 JsonSerializer.Serialize(balanceRequest));
@@ -66,7 +73,7 @@ public class UserAccountClientService
             }
             
             _logger.LogInformation("Successfully updated account {AccountId} balance to {NewBalance}", 
-                accountId, balanceRequest.Amount);
+                HashSensitiveData(accountId.ToString()), balanceRequest.Amount);
         }
         catch (Exception ex)
         {
