@@ -4,6 +4,7 @@ metadata:
   annotations:
     app: transaction-service
     kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+    kompose.image-pull-policy: Always
     kompose.service.type: nodeport
     kompose.version: 1.35.0 (HEAD)
   labels:
@@ -13,58 +14,99 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-      io.kompose.service: transaction-service
+      app: transaction-service
   template:
     metadata:
       annotations:
         app: transaction-service
         kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+        kompose.image-pull-policy: Always
         kompose.service.type: nodeport
         kompose.version: 1.35.0 (HEAD)
       labels:
-        io.kompose.service: transaction-service
+        app: transaction-service
     spec:
       containers:
         - env:
             - name: ASPNETCORE_ENVIRONMENT
               value: Development
-            - name: JWT_AUDIENCE
-            - name: JWT_ISSUER
-            - name: JWT_KEY
-            - name: MYSQL_DATABASE
+            - name: Logging__LogLevel__Default
+              value: Debug
             - name: MYSQL_HOST
               value: mysql-transaction
-            - name: MYSQL_PASSWORD
             - name: MYSQL_PORT
               value: "3306"
+            - name: MYSQL_DATABASE
+              valueFrom:
+                configMapKeyRef:
+                  name: banking-app-config
+                  key: MYSQL_DATABASE_TA
             - name: MYSQL_USER
-            - name: PROMETHEUS_PORT
-              value: "9091"
+              valueFrom:
+                secretKeyRef:
+                  name: banking-app-secret
+                  key: MYSQL_USER
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: banking-app-secret
+                  key: MYSQL_PASSWORD_TA
             - name: RABBITMQ_HOST
               value: rabbitmq
-            - name: RABBITMQ_PASSWORD
             - name: RABBITMQ_PORT
               value: "5672"
             - name: RABBITMQ_USERNAME
-            - name: Services__UserAccountService
-              value: http://user-account-service:80
+              valueFrom:
+                secretKeyRef:
+                  name: banking-app-secret
+                  key: RABBITMQ_DEFAULT_USER
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: banking-app-secret
+                  key: RABBITMQ_DEFAULT_PASS
+            - name: JWT_ISSUER
+              valueFrom:
+                configMapKeyRef:
+                  name: banking-app-config
+                  key: JWT_ISSUER
+            - name: JWT_AUDIENCE
+              valueFrom:
+                configMapKeyRef:
+                  name: banking-app-config
+                  key: JWT_AUDIENCE
+            - name: JWT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: banking-app-secret
+                  key: JWT_KEY
+            - name: PROMETHEUS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: banking-app-config
+                  key: PROMETHEUS_PORT
             - name: TRANSACTION_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: banking-app-secret
+                  key: TRANSACTION_SERVICE_TOKEN
+            - name: Services__UserAccountService
+              value: http://user-account-service:8002
           image: fhallengreen/dls_banking_app-transaction-service:latest
+          imagePullPolicy: Always
           livenessProbe:
-            exec:
-              command:
-                - curl
-                - -f
-                - http://localhost:80/health
-            failureThreshold: 3
-            initialDelaySeconds: 60
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 120
             periodSeconds: 10
             timeoutSeconds: 5
+            failureThreshold: 5
           name: transaction-service
           ports:
-            - containerPort: 80
+            - containerPort: 8080
               protocol: TCP
-            - containerPort: 9091
+            - containerPort: 9092
               protocol: TCP
           resources:
             limits:

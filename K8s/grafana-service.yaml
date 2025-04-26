@@ -4,6 +4,7 @@ metadata:
   annotations:
     app: grafana
     kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+    kompose.image-pull-policy: Always
     kompose.service.type: nodeport
     kompose.version: 1.35.0 (HEAD)
   labels:
@@ -15,5 +16,5 @@ spec:
       port: 3000
       targetPort: 3000
   selector:
-    io.kompose.service: grafana
+    app: grafana
   type: NodePort

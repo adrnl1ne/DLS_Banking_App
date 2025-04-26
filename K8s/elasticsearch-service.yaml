@@ -4,7 +4,8 @@ metadata:
   annotations:
     app: elasticsearch
     kompose.cmd: kompose convert -f ../docker-compose.prod.yml
-    kompose.service.type: nodeport
+    kompose.image-pull-policy: Always
+    kompose.service.type: clusterip
     kompose.version: 1.35.0 (HEAD)
   labels:
     io.kompose.service: elasticsearch
@@ -15,5 +16,5 @@ spec:
       port: 9200
       targetPort: 9200
   selector:
-    io.kompose.service: elasticsearch
-  type: NodePort
+    app: elasticsearch
+  type: ClusterIP

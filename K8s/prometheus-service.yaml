@@ -4,6 +4,7 @@ metadata:
   annotations:
     app: prometheus
     kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+    kompose.image-pull-policy: Always
     kompose.service.type: nodeport
     kompose.version: 1.35.0 (HEAD)
   labels:
@@ -15,5 +16,5 @@ spec:
       port: 9090
       targetPort: 9090
   selector:
-    io.kompose.service: prometheus
+    app: prometheus
   type: NodePort

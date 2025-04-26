@@ -4,6 +4,7 @@ metadata:
   annotations:
     app: prometheus
     kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+    kompose.image-pull-policy: Always
     kompose.service.type: nodeport
     kompose.version: 1.35.0 (HEAD)
   labels:
@@ -13,48 +14,33 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-      io.kompose.service: prometheus
-  strategy:
-    type: Recreate
+      app: prometheus
   template:
     metadata:
       annotations:
         app: prometheus
         kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+        kompose.image-pull-policy: Always
         kompose.service.type: nodeport
         kompose.version: 1.35.0 (HEAD)
       labels:
-        io.kompose.service: prometheus
+        app: prometheus
     spec:
       containers:
         - image: prom/prometheus:latest
-          livenessProbe:
-            exec:
-              command:
-                - wget
-                - --no-verbose
-                - --tries=1
-                - --spider
-                - http://localhost:9090/-/healthy
-            failureThreshold: 3
-            periodSeconds: 10
-            timeoutSeconds: 5
+          imagePullPolicy: Always
           name: prometheus
           ports:
             - containerPort: 9090
               protocol: TCP
+          volumeMounts:
+            - name: prometheus-config
+              mountPath: /etc/prometheus
           resources:
             limits:
               memory: "268435456"
-          volumeMounts:
-            - mountPath: /etc/prometheus/prometheus.yml
-              name: prometheus-cm0
-              subPath: prometheus.yml
-      restartPolicy: Always
       volumes:
-        - configMap:
-            items:
-              - key: prometheus.yml
-                path: prometheus.yml
-            name: prometheus-cm0
-          name: prometheus-cm0
+        - name: prometheus-config
+          configMap:
+            name: prometheus-config
+      restartPolicy: Always
