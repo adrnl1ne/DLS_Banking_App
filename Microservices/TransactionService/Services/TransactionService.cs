@@ -267,29 +267,30 @@ namespace TransactionService.Services
             {
                 // Sanitize accountId to prevent log forging
                 var sanitizedAccountId = accountId.Replace("\n", "").Replace("\r", "");
+                var hashedAccountId = HashSensitiveData(sanitizedAccountId);
 
                 // Validate accountId format
                 if (!int.TryParse(sanitizedAccountId, out int accountIdInt))
                 {
-                    _logger.LogWarning("Invalid account ID format: {AccountId}", sanitizedAccountId);
+                    _logger.LogWarning("Invalid account ID format: {AccountId}", hashedAccountId);
                     throw new ArgumentException("Account ID must be a valid integer.");
                 }
 
                 // Call UserAccountService to get account details
-                _logger.LogInformation("Fetching account {AccountId} from UserAccountService", sanitizedAccountId);
+                _logger.LogInformation("Fetching account {AccountId} from UserAccountService", hashedAccountId);
                 var account = await _userAccountClient.GetAccountAsync(accountIdInt);
 
                 if (account == null)
                 {
-                    _logger.LogWarning("Account {AccountId} not found in UserAccountService", sanitizedAccountId);
-                    throw new InvalidOperationException($"Account {sanitizedAccountId} not found.");
+                    _logger.LogWarning("Account {AccountId} not found in UserAccountService", hashedAccountId);
+                    throw new InvalidOperationException($"Account {hashedAccountId} not found.");
                 }
 
                 // Validate that the authenticated user owns the account
                 if (account.UserId != authenticatedUserId)
                 {
                     _logger.LogWarning("User {UserId} is not authorized to access transactions for account {AccountId}", 
-                        authenticatedUserId, sanitizedAccountId);
+                        authenticatedUserId, hashedAccountId);
                     throw new UnauthorizedAccessException("You are not authorized to access transactions for this account.");
                 }
 
@@ -355,4 +356,10 @@ namespace TransactionService.Services
             }
         }
     }
+        private string HashSensitiveData(string data)
+        {
+            using var sha256 = SHA256.Create();
+            var hashedBytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(data));
+            return Convert.ToBase64String(hashedBytes);
+        }
 }
