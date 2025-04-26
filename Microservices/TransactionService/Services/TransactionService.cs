@@ -81,8 +81,7 @@ namespace TransactionService.Services
                 var fromAccount = await _userAccountClient.GetAccountAsync(fromAccountId);
                 if (fromAccount == null)
                 {
-                    var obfuscatedAccountId = HashAccountId(fromAccountId);
-                    _logger.LogWarning("Source account {AccountId} not found", obfuscatedAccountId);
+                    _logger.LogWarning("Source account not found for the provided account ID.");
                     throw new InvalidOperationException($"Source account {fromAccountId} not found");
                 }
 
