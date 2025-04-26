@@ -84,8 +84,9 @@ public class TransactionRepository(TransactionDbContext context, ILogger<Transac
         }
         catch (Exception ex)
         {
+            var hashedAccountId = Convert.ToBase64String(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(accountId.Replace("\n", "").Replace("\r", ""))));
             logger.LogError(ex, "Error getting transactions for account {AccountId}: {Message}", 
-                accountId, ex.Message);
+                hashedAccountId, ex.Message);
             throw;
         }
     }
