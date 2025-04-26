@@ -6,6 +6,8 @@ using Prometheus;
 using TransactionService.Infrastructure.Data.Repositories;
 using TransactionService.Infrastructure.Messaging.RabbitMQ;
 using TransactionService.Models;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace TransactionService.Services
 {
@@ -105,7 +107,7 @@ namespace TransactionService.Services
                 var toAccount = await _userAccountClient.GetAccountAsync(toAccountId);
                 if (toAccount == null)
                 {
-                    _logger.LogWarning("Destination account {AccountId} not found", toAccountId);
+                    _logger.LogWarning("Destination account {AccountId} not found", HashSensitiveData(toAccountId));
                     throw new InvalidOperationException($"Destination account {toAccountId} not found");
                 }
 
@@ -369,4 +371,13 @@ namespace TransactionService.Services
             var hashedBytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(data));
             return Convert.ToBase64String(hashedBytes);
         }
-}
+        private string HashSensitiveData(string input)
+        {
+            using (var sha256 = SHA256.Create())
+            {
+                var bytes = Encoding.UTF8.GetBytes(input);
+                var hash = sha256.ComputeHash(bytes);
+                return Convert.ToBase64String(hash);
+            }
+        }
+    }
