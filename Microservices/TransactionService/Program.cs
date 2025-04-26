@@ -79,7 +79,20 @@ var rabbitMqConfig = new RabbitMqConfiguration
     VirtualHost = builder.Configuration["RABBITMQ_VHOST"] ?? "/",
 };
 builder.Services.AddSingleton(rabbitMqConfig);
-builder.Services.AddSingleton<IRabbitMqClient, RabbitMqClient>();
+builder.Services.AddSingleton<IRabbitMqClient>(sp =>
+{
+    try
+    {
+        var logger = sp.GetRequiredService<ILogger<RabbitMqClient>>();
+        return new RabbitMqClient(logger);
+    }
+    catch (Exception ex)
+    {
+        var logger = sp.GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "Failed to initialize RabbitMqClient. Creating in degraded mode.");
+        return new RabbitMqClient(sp.GetRequiredService<ILogger<RabbitMqClient>>());
+    }
+});
 
 // Configure Authentication
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)

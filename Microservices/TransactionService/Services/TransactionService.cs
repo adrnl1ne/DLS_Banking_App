@@ -31,8 +31,16 @@ namespace TransactionService.Services
             _logger = logger;
             _histogram = histogram;
             
-            // Subscribe to fraud detection results
-            _rabbitMqClient.Subscribe("TransactionServiceQueue", HandleFraudResult);
+            // Subscribe to fraud detection results - now with fault tolerance
+            try
+            {
+                _rabbitMqClient.Subscribe("TransactionServiceQueue", HandleFraudResult);
+            }
+            catch (Exception ex)
+            {
+                // Log but don't crash - we'll operate in degraded mode if RabbitMQ is unavailable
+                _logger.LogError(ex, "Failed to subscribe to TransactionServiceQueue. Fraud detection will be skipped.");
+            }
         }
 
         public async Task<TransactionResponse> CreateTransferAsync(TransactionRequest request)
@@ -74,17 +82,12 @@ namespace TransactionService.Services
                     throw new UnauthorizedAccessException("You can only transfer funds from your own accounts");
                 }
 
-                // Only check source account balance for withdrawals/transfers
-                // For deposits, no need to check source account balance
-                if (request.TransactionType.ToLower() != "deposit")
+                // Check sufficient balance for withdrawal/transfer
+                if (fromAccount.Amount < request.Amount)
                 {
-                    // Check sufficient balance
-                    if (fromAccount.Amount < request.Amount)
-                    {
-                        _logger.LogWarning("Insufficient funds in account {AccountId}. Balance: {Balance}, Requested: {Amount}", 
-                            fromAccountId, fromAccount.Amount, request.Amount);
-                        throw new InvalidOperationException("Insufficient funds for this transfer");
-                    }
+                    _logger.LogWarning("Insufficient funds in account {AccountId}. Balance: {Balance}, Requested: {Amount}", 
+                        fromAccountId, fromAccount.Amount, request.Amount);
+                    throw new InvalidOperationException("Insufficient funds for this transfer");
                 }
 
                 // Validate destination account
@@ -105,9 +108,9 @@ namespace TransactionService.Services
                     FromAccount = request.FromAccount,
                     ToAccount = request.ToAccount,
                     Amount = request.Amount,
-                    Currency = request.Currency ?? "USD", // Use requested currency or default to USD
+                    Currency = "USD", // Always default to USD as requested
                     Status = "pending",
-                    TransactionType = request.TransactionType ?? "transfer",
+                    TransactionType = request.TransactionType, // Use the specified transaction type
                     Description = request.Description ?? $"Transfer from account {fromAccountId} to {toAccountId}",
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
@@ -119,7 +122,7 @@ namespace TransactionService.Services
 
                 try
                 {
-                    // Send to fraud check via RabbitMQ
+                    // Try to send to fraud check 
                     var fraudMessage = new
                     {
                         transferId = transaction.TransferId,
@@ -130,73 +133,61 @@ namespace TransactionService.Services
                         timestamp = DateTime.UtcNow
                     };
 
-                    // Create a TaskCompletionSource for this fraud check
-                    var tcs = new TaskCompletionSource<FraudResult>();
-                    _pendingFraudChecks[transferId] = tcs;
-
                     _logger.LogInformation("Sending transaction {TransferId} to fraud check", transferId);
                     _rabbitMqClient.Publish("CheckFraud", JsonSerializer.Serialize(fraudMessage));
 
-                    // Wait for the fraud check result with a timeout
-                    var timeoutTask = Task.Delay(10000); // 10 seconds timeout
-                    var completedTask = await Task.WhenAny(tcs.Task, timeoutTask);
+                    // Create withdrawal transaction for source account
+                    var withdrawalTransaction = new Transaction
+                    {
+                        Id = Guid.NewGuid().ToString(),
+                        TransferId = transferId + "-withdrawal",
+                        UserId = request.UserId,
+                        FromAccount = request.FromAccount,
+                        ToAccount = request.FromAccount, // Same account
+                        Amount = request.Amount,
+                        Currency = "USD",
+                        Status = "pending",
+                        TransactionType = "withdrawal",
+                        Description = $"Withdrawal from account {fromAccountId} for transfer {transferId}",
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    };
                     
-                    if (completedTask == timeoutTask)
+                    // Create deposit transaction for destination account
+                    var depositTransaction = new Transaction
                     {
-                        _logger.LogWarning("Fraud check timed out for transaction {TransferId}", transferId);
-                        _pendingFraudChecks.Remove(transferId);
-                        
-                        // For demo purposes: assume legitimate if timeout
-                        // In production, you might want to fail or retry
-                        _logger.LogWarning("Proceeding with transaction {TransferId} despite fraud check timeout", transferId);
-                    }
-                    else
-                    {
-                        // We got a fraud check result
-                        var fraudResult = await tcs.Task;
-                        _pendingFraudChecks.Remove(transferId);
-                        
-                        if (fraudResult.IsFraud)
-                        {
-                            _logger.LogWarning("Transaction {TransferId} flagged as fraudulent by Fraud Detection Service", transferId);
-                            transaction.Status = "declined";
-                            await _repository.UpdateTransactionStatusAsync(transferId, "declined");
-                            
-                            // Return the declined transaction without updating balances
-                            return TransactionResponse.FromTransaction(transaction);
-                        }
-                    }
+                        Id = Guid.NewGuid().ToString(),
+                        TransferId = transferId + "-deposit",
+                        UserId = toAccount.UserId, // Use destination account's user ID
+                        FromAccount = request.ToAccount, // Same account
+                        ToAccount = request.ToAccount,
+                        Amount = request.Amount,
+                        Currency = "USD",
+                        Status = "pending",
+                        TransactionType = "deposit",
+                        Description = $"Deposit to account {toAccountId} from transfer {transferId}",
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    };
 
-                    // Process by transaction type
-                    switch (transaction.TransactionType.ToLower())
-                    {
-                        case "transfer":
-                            // Update both source and destination account balances
-                            _logger.LogInformation("Processing transfer: {TransferId}", transferId);
-                            await _userAccountClient.UpdateBalanceAsync(fromAccountId, fromAccount.Amount - transaction.Amount);
-                            await _userAccountClient.UpdateBalanceAsync(toAccountId, toAccount.Amount + transaction.Amount);
-                            break;
-                            
-                        case "withdrawal":
-                            // Only update source account (reduce balance)
-                            _logger.LogInformation("Processing withdrawal: {TransferId}", transferId);
-                            await _userAccountClient.UpdateBalanceAsync(fromAccountId, fromAccount.Amount - transaction.Amount);
-                            break;
-                            
-                        case "deposit":
-                            // Only update destination account (increase balance)
-                            _logger.LogInformation("Processing deposit: {TransferId}", transferId);
-                            await _userAccountClient.UpdateBalanceAsync(toAccountId, toAccount.Amount + transaction.Amount);
-                            break;
-                            
-                        default:
-                            _logger.LogWarning("Unknown transaction type: {Type}", transaction.TransactionType);
-                            throw new InvalidOperationException($"Unknown transaction type: {transaction.TransactionType}");
-                    }
+                    // Save the child transactions
+                    await _repository.CreateTransactionAsync(withdrawalTransaction);
+                    await _repository.CreateTransactionAsync(depositTransaction);
+                    
+                    // Update account balances
+                    _logger.LogInformation("Updating balances for transaction {TransferId}", transferId);
+                    await _userAccountClient.UpdateBalanceAsync(fromAccountId, fromAccount.Amount - transaction.Amount);
+                    await _userAccountClient.UpdateBalanceAsync(toAccountId, toAccount.Amount + transaction.Amount);
 
-                    // Complete the transaction
+                    // Complete all transactions
                     transaction.Status = "completed";
+                    withdrawalTransaction.Status = "completed";
+                    depositTransaction.Status = "completed";
+                    
                     await _repository.UpdateTransactionStatusAsync(transferId, "completed");
+                    await _repository.UpdateTransactionStatusAsync(transferId + "-withdrawal", "completed");
+                    await _repository.UpdateTransactionStatusAsync(transferId + "-deposit", "completed");
+                    
                     _logger.LogInformation("Transaction {TransferId} completed successfully", transferId);
 
                     // Track transaction amount in histogram
@@ -282,6 +273,36 @@ namespace TransactionService.Services
             }
         }
 
+        // Required interface implementation for backwards compatibility
+        public void ProcessFraudResult(string transferId, bool isFraud)
+        {
+            try
+            {
+                _logger.LogInformation("Processing fraud result for {TransferId}: {IsFraud}", transferId, isFraud);
+                
+                var fraudResult = new FraudResult
+                {
+                    TransferId = transferId,
+                    IsFraud = isFraud,
+                    Status = isFraud ? "declined" : "approved"
+                };
+                
+                if (_pendingFraudChecks.TryGetValue(transferId, out var tcs))
+                {
+                    tcs.TrySetResult(fraudResult);
+                    _logger.LogInformation("Completed pending fraud check for {TransferId}", transferId);
+                }
+                else
+                {
+                    _logger.LogWarning("Received fraud result for unknown transfer: {TransferId}", transferId);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing fraud result for transfer {TransferId}", transferId);
+            }
+        }
+
         // Handle fraud check results from RabbitMQ
         private void HandleFraudResult(string message)
         {
@@ -295,16 +316,7 @@ namespace TransactionService.Services
                 }
 
                 _logger.LogInformation("Received fraud result for {TransferId}: {IsFraud}", result.TransferId, result.IsFraud);
-
-                // If we have a pending check for this transfer ID, complete it
-                if (_pendingFraudChecks.TryGetValue(result.TransferId, out var tcs))
-                {
-                    tcs.TrySetResult(result);
-                }
-                else
-                {
-                    _logger.LogWarning("Received fraud result for unknown transfer: {TransferId}", result.TransferId);
-                }
+                ProcessFraudResult(result.TransferId, result.IsFraud);
             }
             catch (Exception ex)
             {

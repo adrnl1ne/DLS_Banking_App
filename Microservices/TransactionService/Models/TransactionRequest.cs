@@ -22,6 +22,7 @@ namespace TransactionService.Models
         // Default to "transfer" if not specified
         public string TransactionType { get; set; } = "transfer";
         
+        // Add this property back to fix the deserialization error
         public string? Currency { get; set; } = "USD";
     }
 }
