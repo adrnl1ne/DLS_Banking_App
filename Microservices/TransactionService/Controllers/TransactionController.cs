@@ -120,7 +120,8 @@ public class TransactionController(ITransactionService transactionService, ILogg
         {
             // Sanitize accountId to prevent log forging
             accountId = accountId.Replace("\n", "").Replace("\r", "");
-            logger.LogInformation($"Getting transactions for account: {accountId}");
+            var maskedAccountId = MaskSensitiveData(accountId);
+            logger.LogInformation($"Getting transactions for account: {maskedAccountId}");
 
             if (string.IsNullOrEmpty(accountId))
             {
@@ -164,5 +165,13 @@ public class TransactionController(ITransactionService transactionService, ILogg
             logger.LogError(ex, $"Error retrieving transactions for account {accountId}");
             return StatusCode(500, $"An error occurred while retrieving transactions: {ex.Message}");
         }
+    }
+    private string MaskSensitiveData(string data)
+    {
+        if (string.IsNullOrEmpty(data) || data.Length <= 4)
+        {
+            return "****";
+        }
+        return new string('*', data.Length - 4) + data[^4..];
     }
 }
