@@ -129,6 +129,39 @@ public class AccountService(
         }
     }
 
+    public async Task<ActionResult<List<AccountResponse>>> GetUserAccountsAsync(string userId)
+    {
+        if (string.IsNullOrEmpty(userId))
+        {
+            logger.LogWarning("User ID is null or empty");
+            throw new ArgumentException("User ID is required.", nameof(userId));
+        }
+
+        // Convert userId string to int for repository call
+        if (!int.TryParse(userId, out int userIdInt))
+        {
+            logger.LogWarning("Invalid user ID format: {UserId}", userId);
+            throw new FormatException("User ID must be an integer.");
+        }
+
+        // Use the account repository to fetch accounts
+        var accounts = await accountRepository.GetAccountsByUserIdAsync(userIdInt);
+        
+        if (!accounts.Any())
+        {
+            logger.LogInformation("No accounts found for user {UserId}", userId);
+        }
+
+        // Map domain entities to DTOs
+        return accounts.Select(a => new AccountResponse 
+        { 
+            Id = a.Id, 
+            Name = a.Name, 
+            Amount = a.Amount,
+            UserId = a.UserId
+        }).ToList();
+    }
+
     public async Task<ActionResult<AccountResponse>> CreateAccountAsync(AccountCreationRequest request)
     {
         RequestsTotal.WithLabels("CreateAccount").Inc();
@@ -334,8 +367,7 @@ public class AccountService(
             if (string.IsNullOrEmpty(request.TransactionType) ||
                 (request.TransactionType != "Deposit" && request.TransactionType != "Withdrawal"))
             {
-                logger.LogWarning("Invalid TransactionType {TransactionType} for balance update on account {AccountId}",
-                    request.TransactionType, id);
+                logger.LogWarning("Invalid TransactionType");
                 ErrorsTotal.WithLabels("UpdateBalance").Inc();
                 throw new InvalidOperationException("TransactionType must be 'Deposit' or 'Withdrawal'.");
             }
@@ -352,8 +384,7 @@ public class AccountService(
             var redisKey = $"account:transaction:{request.TransactionId}";
             if (await redisDb.KeyExistsAsync(redisKey))
             {
-                logger.LogInformation("Duplicate transaction detected.",
-                    request.TransactionId, id);
+                logger.LogInformation("Duplicate transaction detected");
                 IdempotentRequestsTotal.Inc();
                 SuccessesTotal.WithLabels("UpdateBalance").Inc();
                 return new AccountResponse

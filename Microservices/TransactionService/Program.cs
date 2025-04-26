@@ -10,9 +10,8 @@ using Polly;
 using Prometheus;
 using TransactionService.Infrastructure.Data;
 using TransactionService.Infrastructure.Data.Repositories;
-using TransactionService.Infrastructure.Logging;
 using TransactionService.Infrastructure.Messaging.RabbitMQ;
-using TransactionService.Infrastructure.Security;
+using TransactionService.Models;
 using TransactionService.Services;
 
 var builder = WebApplication.CreateBuilder(args);

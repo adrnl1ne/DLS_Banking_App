@@ -25,6 +25,17 @@ builder.Services.AddLogging(logging =>
 // Add services to the container.
 builder.Services.AddControllers();
 
+// Add CORS configuration
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        policy.WithOrigins("http://localhost:3001")
+              .AllowAnyHeader()
+              .AllowAnyMethod();
+    });
+});
+
 // Register repositories and services
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
@@ -43,6 +54,7 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
         var port = builder.Configuration.GetValue<string>("REDIS_PORT") ?? "6379";
         redisConnectionString = $"{host}:{port}";
     }
+
     return ConnectionMultiplexer.Connect(redisConnectionString);
 });
 
@@ -50,7 +62,7 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
 builder.Services.AddStackExchangeRedisCache(options =>
 {
     options.Configuration = builder.Configuration.GetConnectionString("Redis") ??
-        $"{builder.Configuration.GetValue<string>("REDIS_HOST", "redis")}:{builder.Configuration.GetValue<string>("REDIS_PORT", "6379")}";
+                            $"{builder.Configuration.GetValue<string>("REDIS_HOST", "redis")}:{builder.Configuration.GetValue<string>("REDIS_PORT", "6379")}";
     options.InstanceName = "UserAccountService_";
 });
 
@@ -102,14 +114,14 @@ builder.Services.AddAuthentication(options =>
 });
 
 // Add authorization policies
-builder.Services.AddAuthorization(options =>
-{
-    options.AddPolicy("ReadAccounts", policy =>
+builder.Services.AddAuthorizationBuilder()
+    // Add authorization policies
+    .AddPolicy("ReadAccounts", policy =>
         policy.RequireRole("service")
-              .RequireClaim("scopes", "read:accounts"));
-    options.AddPolicy("ServiceOnly", policy =>
+            .RequireClaim("scopes", "read:accounts"))
+    // Add authorization policies
+    .AddPolicy("ServiceOnly", policy =>
         policy.RequireRole("service"));
-});
 
 // Configure Swagger
 builder.Services.AddSwaggerGen(c =>
@@ -143,11 +155,11 @@ builder.Services.AddSwaggerGen(c =>
 // Configure CORS
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", builder =>
+    options.AddPolicy("AllowAll", corsPolicyBuilder =>
     {
-        builder.AllowAnyOrigin()
-               .AllowAnyMethod()
-               .AllowAnyHeader();
+        corsPolicyBuilder.AllowAnyOrigin()
+            .AllowAnyMethod()
+            .AllowAnyHeader();
     });
 });
 
@@ -155,6 +167,10 @@ var app = builder.Build();
 app.UseMetricServer();
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Add CORS middleware
+app.UseCors();
+
 app.MapControllers();
 app.UseSwagger();
 app.UseSwaggerUI(c =>
