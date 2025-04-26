@@ -2,15 +2,7 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardFooter } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Separator } from '../components/ui/separator';
-import { getUserAccounts, Account as ApiAccount, createAccount } from '../api/accountApi';
-
-interface Account extends ApiAccount {
-  type: string;
-  accountNumber: string;
-  openDate: string;
-  interestRate?: number;
-  status: 'active' | 'inactive';
-}
+import { getUserAccounts, Account } from '../api/accountApi';
 
 const Accounts = () => {
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -22,19 +14,8 @@ const Accounts = () => {
       try {
         setIsLoading(true);
         const data = await getUserAccounts();
-
-        console.log(data);
         
-        // Transform API accounts to the format we need for display
-        const enhancedAccounts = data.map(account => ({
-          ...account,
-          type: account.name.includes('Savings') ? 'Savings' : 'Checking',
-          accountNumber: `**** ${Math.floor(1000 + Math.random() * 9000)}`,
-          openDate: new Date().toISOString().split('T')[0],
-          status: 'active' as const
-        }));
-        
-        setAccounts(enhancedAccounts);
+        setAccounts(data);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load accounts');
       } finally {
@@ -45,24 +26,24 @@ const Accounts = () => {
     fetchAccounts();
   }, []);
 
-  const handleCreateAccount = async () => {
-    try {
-      const newAccount = await createAccount({ name: 'New Account' });
+  // const handleCreateAccount = async () => {
+  //   try {
+  //     const newAccount = await createAccount({ name: 'New Account' });
       
-      // Add display properties to the new account
-      const enhancedAccount: Account = {
-        ...newAccount,
-        type: 'Checking',
-        accountNumber: `**** ${Math.floor(1000 + Math.random() * 9000)}`,
-        openDate: new Date().toISOString().split('T')[0],
-        status: 'active'
-      };
+  //     // Add display properties to the new account
+  //     const enhancedAccount: Account = {
+  //       ...newAccount,
+  //       type: 'Checking',
+  //       accountNumber: `**** ${Math.floor(1000 + Math.random() * 9000)}`,
+  //       openDate: new Date().toISOString().split('T')[0],
+  //       status: 'active'
+  //     };
       
-      setAccounts([...accounts, enhancedAccount]);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create account');
-    }
-  };
+  //     setAccounts([...accounts, enhancedAccount]);
+  //   } catch (err) {
+  //     setError(err instanceof Error ? err.message : 'Failed to create account');
+  //   }
+  // };
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -75,7 +56,7 @@ const Accounts = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">My Accounts</h1>
-        <Button onClick={handleCreateAccount}>
+        <Button>
           Open New Account
         </Button>
       </div>
@@ -105,7 +86,7 @@ const Accounts = () => {
                 <div className="flex flex-col md:flex-row justify-between md:items-start mb-6">
                   <div>
                     <h2 className="text-xl font-semibold">{account.name}</h2>
-                    <p className="text-muted-foreground">{account.type} • {account.accountNumber}</p>
+                    {/* <p className="text-muted-foreground">{account.type} • {account.accountNumber}</p> */}
                   </div>
                   <div className="md:text-right mt-2 md:mt-0">
                     <div className="text-2xl font-bold">{formatCurrency(account.amount)}</div>
@@ -113,12 +94,12 @@ const Accounts = () => {
                   </div>
                 </div>
                 
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                  <div>
+                {/* <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm"> */}
+                  {/* <div>
                     <span className="block text-muted-foreground mb-1">Open Date</span>
                     <span>{account.openDate}</span>
-                  </div>
-                  <div>
+                  </div> */}
+                  {/* <div>
                     <span className="block text-muted-foreground mb-1">Status</span>
                     <span className={
                       account.status === 'active' ? 'text-green-600' : 'text-red-600'
@@ -132,7 +113,7 @@ const Accounts = () => {
                       <span>{account.interestRate}%</span>
                     </div>
                   )}
-                </div>
+                </div> */}
               </CardContent>
               
               <Separator />
