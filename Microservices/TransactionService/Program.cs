@@ -112,7 +112,8 @@ builder.Configuration.AddEnvironmentVariables();
 builder.Logging.AddSensitiveDataFilter();
 
 // Add secure transaction logger
-builder.Services.AddScoped<ISecureTransactionLogger, SecureTransactionLogger>();
+builder.Services.AddScoped<TransactionService.Infrastructure.Logging.ISecureTransactionLogger, 
+                          TransactionService.Infrastructure.Logging.SecureTransactionLogger>();
 
 // Replace the token configuration (which is currently exposing the token in the logs)
 builder.Services.AddHttpClient<UserAccountClientService>((services, client) => {
@@ -137,5 +138,7 @@ if (!builder.Environment.IsDevelopment())
     builder.Logging.AddFilter("Microsoft", LogLevel.Warning);
     builder.Logging.AddFilter("System", LogLevel.Warning);
 }
+
+var app = builder.Build();
 
 app.Run();

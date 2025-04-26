@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -72,6 +73,18 @@ namespace TransactionService.Infrastructure.Data.Repositories
                 .ToListAsync();
         }
 
+        public async Task<IEnumerable<Transaction>> GetTransactionsByAccountAsync(string accountId)
+        {
+            // Mask account ID for logging
+            _logger.LogInformation("Getting transactions for account: {AccountId}", 
+                LogSanitizer.MaskTransferId(accountId));
+
+            // Get transactions where the account is either the source or the destination
+            return await _context.Transactions
+                .Where(t => t.FromAccount == accountId || t.ToAccount == accountId)
+                .ToListAsync();
+        }
+
         public async Task<Transaction> UpdateTransactionStatusAsync(string id, string status)
         {
             // Secure logging
@@ -86,7 +99,7 @@ namespace TransactionService.Infrastructure.Data.Repositories
 
             transaction.Status = status;
             transaction.UpdatedAt = DateTime.UtcNow;
-            transaction.LastModifiedBy = "system"; // Record who made the change
+            transaction.LastModifiedBy = "system"; // Now this property exists
             
             await _context.SaveChangesAsync();
 
@@ -127,6 +140,11 @@ namespace TransactionService.Infrastructure.Data.Repositories
         {
             // Use the secure logger instead of directly adding logs
             await _secureLogger.LogTransactionEventAsync(transactionId, logType, message);
+        }
+
+        public async Task<int> SaveChangesAsync()
+        {
+            return await _context.SaveChangesAsync();
         }
     }
 }

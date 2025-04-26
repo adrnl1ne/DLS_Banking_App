@@ -16,4 +16,7 @@ public class Transaction
     public int? UserId { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }
+    public string? LastModifiedBy { get; set; }
+    public string? ClientIp { get; set; }
+    public string? FraudCheckResult { get; set; }
 }

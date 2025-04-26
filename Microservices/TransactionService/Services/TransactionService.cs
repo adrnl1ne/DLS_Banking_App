@@ -177,27 +177,19 @@ namespace TransactionService.Services
                     // Update account balances
                     _logger.LogInformation("Updating balances for transaction {TransferId}", transferId);
                     // For the fromAccount (source), use Withdrawal
-                    var fromBalanceRequest = new AccountBalanceRequest
+                    var fromBalanceRequest = new Models.AccountBalanceRequest
                     {
                         Amount = fromAccount.Amount - transaction.Amount,
                         TransactionId = transaction.TransferId + "-withdrawal",
-                        TransactionType = "Withdrawal", // This account is having money withdrawn
-                        Request = new AccountBalanceRequest.RequestDetails
-                        {
-                            Description = $"Transfer to account {toAccountId}"
-                        }
+                        TransactionType = "Withdrawal" // This account is being debited
                     };
 
                     // For the toAccount (destination), use Deposit
-                    var toBalanceRequest = new AccountBalanceRequest
+                    var toBalanceRequest = new Models.AccountBalanceRequest
                     {
                         Amount = toAccount.Amount + transaction.Amount,
                         TransactionId = transaction.TransferId + "-deposit",
-                        TransactionType = "Deposit", // This account is having money deposited
-                        Request = new AccountBalanceRequest.RequestDetails
-                        {
-                            Description = $"Transfer from account {fromAccountId}"
-                        }
+                        TransactionType = "Deposit" // This account is being credited
                     };
 
                     await _userAccountClient.UpdateBalanceAsync(fromAccountId, fromBalanceRequest);

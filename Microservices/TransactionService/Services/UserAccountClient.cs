@@ -54,28 +54,19 @@ public class UserAccountClientService
         }
     }
 
-    public async Task UpdateBalanceAsync(int accountId, decimal newBalance)
+    public async Task UpdateBalanceAsync(int accountId, AccountBalanceRequest balanceRequest)
     {
         try
         {
-            // Log with masked account ID and amount
-            _logger.LogInformation("Updating account {AccountId}", LogSanitizer.MaskAccountId(accountId));
-            
-            // Create a proper request object
-            var balanceRequest = new
-            {
-                Amount = newBalance,
-                TransactionId = Guid.NewGuid().ToString(),
-                TransactionType = "Transfer",
-                Request = new { }
-            };
-            
+            _logger.LogInformation("Updating account {AccountId} balance with type {TransactionType}", 
+                LogSanitizer.MaskAccountId(accountId), balanceRequest.TransactionType);
+                
             // Serialize with proper content type
             var content = new StringContent(
                 JsonSerializer.Serialize(balanceRequest),
                 Encoding.UTF8,
                 "application/json");
-                
+                    
             // Make the API call
             var response = await _httpClient.PutAsync($"/api/Account/{accountId}/balance", content);
             
@@ -86,7 +77,7 @@ public class UserAccountClientService
                 throw new InvalidOperationException($"Failed to update balance for account {LogSanitizer.MaskAccountId(accountId)}. Status: {response.StatusCode}");
             }
             
-            _logger.LogInformation("Successfully updated account {AccountId}", 
+            _logger.LogInformation("Successfully updated account {AccountId} balance", 
                 LogSanitizer.MaskAccountId(accountId));
         }
         catch (Exception ex)

@@ -7,18 +7,15 @@ using TransactionService.Infrastructure.Data;
 
 namespace TransactionService.Infrastructure.Logging
 {
-    public interface ISecureTransactionLogger
-    {
-        Task LogTransactionEventAsync(string transactionId, string logType, string message);
-    }
-
+    // Make sure the interface is defined in ISecureTransactionLogger.cs, not here
+    
     public class SecureTransactionLogger : ISecureTransactionLogger
     {
-        private readonly ILogger<SecureTransactionLogger> _logger;
+        private readonly ILogger<SecureTransactionLogger> _logger; // Note: capital S in SecureTransactionLogger
         private readonly TransactionDbContext _dbContext;
 
         public SecureTransactionLogger(
-            ILogger<SecureTransactionLogger> logger,
+            ILogger<SecureTransactionLogger> logger, // Fix the case here - capital S!
             TransactionDbContext dbContext)
         {
             _logger = logger;
