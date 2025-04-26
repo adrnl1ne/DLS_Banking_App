@@ -31,7 +31,6 @@ services:
       - grafana-data:/var/lib/grafana
       - ./Microservices/Grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
       - ./Microservices/Grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
-      - ./Microservices/Grafana/dashboards:/etc/grafana/provisioning/dashboards/dashboards
     entrypoint: ["/bin/sh", "-c", "sleep 10 && /run.sh"]
 
   rabbitmq:

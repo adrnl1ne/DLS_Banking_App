@@ -220,7 +220,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "beild41izdjpcc"
+        "uid": "prometheus-ds"
       },
       "fieldConfig": {
         "defaults": {
