@@ -20,21 +20,23 @@ public class AccountService(
     IConnectionMultiplexer redis)
     : IAccountService
 {
-    // Prometheus metrics
     private static readonly Counter RequestsTotal = Metrics.CreateCounter(
         "account_service_requests_total",
         "Total number of requests to AccountService",
         new CounterConfiguration { LabelNames = new[] { "method" } }
     );
+
     private static readonly Counter IdempotentRequestsTotal = Metrics.CreateCounter(
         "account_service_idempotent_requests_total",
         "Total number of idempotent balance update requests"
     );
+
     private static readonly Counter ErrorsTotal = Metrics.CreateCounter(
         "account_service_errors_total",
         "Total number of errors in AccountService",
         new CounterConfiguration { LabelNames = new[] { "method" } }
     );
+
     private static readonly Counter SuccessesTotal = Metrics.CreateCounter(
         "account_service_successes_total",
         "Total number of successful operations in AccountService",
@@ -329,6 +331,15 @@ public class AccountService(
                 throw new InvalidOperationException("TransactionId is required.");
             }
 
+            if (string.IsNullOrEmpty(request.TransactionType) ||
+                (request.TransactionType != "Deposit" && request.TransactionType != "Withdrawal"))
+            {
+                logger.LogWarning("Invalid TransactionType {TransactionType} for balance update on account {AccountId}",
+                    request.TransactionType, id);
+                ErrorsTotal.WithLabels("UpdateBalance").Inc();
+                throw new InvalidOperationException("TransactionType must be 'Deposit' or 'Withdrawal'.");
+            }
+
             var account = await context.Accounts.FindAsync(id);
             if (account == null)
             {
@@ -341,7 +352,8 @@ public class AccountService(
             var redisKey = $"account:transaction:{request.TransactionId}";
             if (await redisDb.KeyExistsAsync(redisKey))
             {
-                logger.LogInformation("Duplicate transaction {TransactionId} for account {AccountId}", request.TransactionId, id);
+                logger.LogInformation("Duplicate transaction detected.",
+                    request.TransactionId, id);
                 IdempotentRequestsTotal.Inc();
                 SuccessesTotal.WithLabels("UpdateBalance").Inc();
                 return new AccountResponse
@@ -376,13 +388,27 @@ public class AccountService(
                 logger.LogWarning("Invalid balance update: Amount {Amount} cannot be negative for account {AccountId}",
                     request.Amount, id);
                 ErrorsTotal.WithLabels("UpdateBalance").Inc();
+                throw new InvalidOperationException("Amount cannot be negative.");
+            }
+
+            // Calculate new balance based on TransactionType
+            decimal newBalance = request.TransactionType == "Deposit"
+                ? account.Amount + request.Amount
+                : account.Amount - request.Amount;
+
+            if (newBalance < 0)
+            {
+                logger.LogWarning(
+                    "Invalid balance update: New balance {NewBalance} cannot be negative for account {AccountId}",
+                    newBalance, id);
+                ErrorsTotal.WithLabels("UpdateBalance").Inc();
                 throw new InvalidOperationException("Balance cannot be negative.");
             }
 
             await using var transaction = await context.Database.BeginTransactionAsync();
             try
             {
-                account.Amount = request.Amount;
+                account.Amount = newBalance;
                 await context.SaveChangesAsync();
 
                 await redisDb.StringSetAsync(redisKey, "processed", TimeSpan.FromDays(7));
@@ -404,6 +430,7 @@ public class AccountService(
                 userId = account.UserId,
                 amount = account.Amount,
                 transactionId = request.TransactionId,
+                transactionType = request.TransactionType,
                 timestamp = DateTime.UtcNow.ToString("o")
             };
             try
