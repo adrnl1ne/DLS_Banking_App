@@ -115,6 +115,8 @@ public class TransactionController(ITransactionService transactionService, ILogg
 
         try
         {
+            // Sanitize accountId to prevent log forging
+            accountId = accountId.Replace("\n", "").Replace("\r", "");
             logger.LogInformation($"Getting transactions for account: {accountId}");
 
             if (string.IsNullOrEmpty(accountId))
