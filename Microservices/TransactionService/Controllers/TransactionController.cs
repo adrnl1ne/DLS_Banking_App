@@ -120,8 +120,8 @@ public class TransactionController(ITransactionService transactionService, ILogg
         {
             // Sanitize accountId to prevent log forging
             accountId = accountId.Replace("\n", "").Replace("\r", "");
-            var maskedAccountId = MaskSensitiveData(accountId);
-            logger.LogInformation($"Getting transactions for account: {maskedAccountId}");
+            var hashedAccountId = HashSensitiveData(accountId);
+            logger.LogInformation($"Getting transactions for account with hashed ID: {hashedAccountId}");
 
             if (string.IsNullOrEmpty(accountId))
             {
@@ -166,12 +166,14 @@ public class TransactionController(ITransactionService transactionService, ILogg
             return StatusCode(500, $"An error occurred while retrieving transactions: {ex.Message}");
         }
     }
-    private string MaskSensitiveData(string data)
+    private string HashSensitiveData(string data)
     {
-        if (string.IsNullOrEmpty(data) || data.Length <= 4)
+        if (string.IsNullOrEmpty(data))
         {
-            return "****";
+            return string.Empty;
         }
-        return new string('*', data.Length - 4) + data[^4..];
+        using var sha256 = SHA256.Create();
+        var hashedBytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(data));
+        return Convert.ToBase64String(hashedBytes);
     }
 }
