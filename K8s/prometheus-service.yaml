@@ -2,7 +2,9 @@ apiVersion: v1
 kind: Service
 metadata:
   annotations:
-    kompose.cmd: kompose convert -f ../docker-compose.yml
+    app: prometheus
+    kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+    kompose.service.type: nodeport
     kompose.version: 1.35.0 (HEAD)
   labels:
     io.kompose.service: prometheus
@@ -14,3 +16,4 @@ spec:
       targetPort: 9090
   selector:
     io.kompose.service: prometheus
+  type: NodePort

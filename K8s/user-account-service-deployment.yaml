@@ -2,7 +2,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    kompose.cmd: kompose convert -f ../docker-compose.yml
+    app: user-account-service
+    kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+    kompose.service.type: nodeport
     kompose.version: 1.35.0 (HEAD)
   labels:
     io.kompose.service: user-account-service
@@ -12,12 +14,12 @@ spec:
   selector:
     matchLabels:
       io.kompose.service: user-account-service
-  strategy:
-    type: Recreate
   template:
     metadata:
       annotations:
-        kompose.cmd: kompose convert -f ../docker-compose.yml
+        app: user-account-service
+        kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+        kompose.service.type: nodeport
         kompose.version: 1.35.0 (HEAD)
       labels:
         io.kompose.service: user-account-service
@@ -25,31 +27,23 @@ spec:
       containers:
         - env:
             - name: JWT_AUDIENCE
-              value: UserAccountAPI
             - name: JWT_ISSUER
-              value: BankingApp
             - name: JWT_KEY
-              value: bcdae8cd5aa9e33539156c046f496a6d083180d2fdd8a19140e85b6a2f6cf4e5cf3dbef80150f781fcb6b1a4b8e4e2307cb14c16a137895fe14bc1df88d667731b8cc50b550466ec8d3e349fee6558e4cd0b2bd626fc8b2e3c24c4202588903ba47f4a552d22b9c4f8f4ddafc8f612e6202cbc08c626496911e4413e30600bf4
             - name: MYSQL_DATABASE
-              value: useraccount_db
             - name: MYSQL_HOST
               value: mysql-useraccount
             - name: MYSQL_PASSWORD
-              value: password1!
             - name: MYSQL_PORT
               value: "3306"
             - name: MYSQL_USER
-              value: root
             - name: PROMETHEUS_PORT
               value: "9091"
             - name: RABBITMQ_HOST
               value: rabbitmq
             - name: RABBITMQ_PASSWORD
-              value: guest
             - name: RABBITMQ_PORT
               value: "5672"
             - name: RABBITMQ_USERNAME
-              value: guest
           image: fhallengreen/dls_banking_app-user-account-service:latest
           livenessProbe:
             exec:
@@ -70,12 +64,4 @@ spec:
           resources:
             limits:
               memory: "1073741824"
-          volumeMounts:
-            - mountPath: /app
-              name: user-account-service-cm0
       restartPolicy: Always
-      terminationGracePeriodSeconds: 30
-      volumes:
-        - configMap:
-            name: user-account-service-cm0
-          name: user-account-service-cm0

@@ -2,7 +2,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    kompose.cmd: kompose convert -f ../docker-compose.yml
+    app: fraud-detection-service
+    kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+    kompose.service.type: nodeport
     kompose.version: 1.35.0 (HEAD)
   labels:
     io.kompose.service: fraud-detection-service
@@ -12,12 +14,12 @@ spec:
   selector:
     matchLabels:
       io.kompose.service: fraud-detection-service
-  strategy:
-    type: Recreate
   template:
     metadata:
       annotations:
-        kompose.cmd: kompose convert -f ../docker-compose.yml
+        app: fraud-detection-service
+        kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+        kompose.service.type: nodeport
         kompose.version: 1.35.0 (HEAD)
       labels:
         io.kompose.service: fraud-detection-service
@@ -30,7 +32,6 @@ spec:
             - 0.0.0.0
             - --port
             - "8000"
-            - --reload
           image: fhallengreen/dls_banking_app-fraud-detection-service:latest
           livenessProbe:
             exec:

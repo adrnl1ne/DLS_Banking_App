@@ -2,7 +2,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    kompose.cmd: kompose convert -f ../docker-compose.yml
+    app: grafana
+    kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+    kompose.service.type: nodeport
     kompose.version: 1.35.0 (HEAD)
   labels:
     io.kompose.service: grafana
@@ -17,7 +19,9 @@ spec:
   template:
     metadata:
       annotations:
-        kompose.cmd: kompose convert -f ../docker-compose.yml
+        app: grafana
+        kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+        kompose.service.type: nodeport
         kompose.version: 1.35.0 (HEAD)
       labels:
         io.kompose.service: grafana
@@ -29,9 +33,7 @@ spec:
             - sleep 10 && /run.sh
           env:
             - name: GF_SECURITY_ADMIN_PASSWORD
-              value: admin
             - name: GF_SECURITY_ADMIN_USER
-              value: admin
           image: grafana/grafana:latest
           name: grafana
           ports:

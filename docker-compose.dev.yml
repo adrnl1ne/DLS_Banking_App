@@ -1,0 +1,284 @@
+version: '3.8'
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    mem_limit: 256m
+    cpus: "0.2"
+    container_name: prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  grafana:
+    image: grafana/grafana:latest
+    mem_limit: 128m
+    cpus: "0.2"
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GF_SECURITY_ADMIN_USER}
+      - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD}
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    volumes:
+      - grafana-data:/var/lib/grafana
+    entrypoint: ["/bin/sh", "-c", "sleep 10 && /run.sh"]
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    mem_limit: 1024m
+    cpus: "0.3"
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_DEFAULT_USER}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_DEFAULT_PASS}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf
+    user: "rabbitmq:rabbitmq"
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  redis:
+    image: redis:6.2
+    mem_limit: 64m
+    cpus: "0.1"
+    container_name: redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mysql-useraccount:
+    container_name: mysql-useraccount
+    image: mysql:8.0
+    mem_limit: 512m
+    cpus: "0.3"
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD_UA}
+      - MYSQL_DATABASE=${MYSQL_DATABASE_UA}
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql-useraccount-data:/var/lib/mysql
+      - ./Microservices/UserAccountService/Database/01-init-schema.sql:/docker-entrypoint-initdb.d/01-init-schema.sql
+      - ./Microservices/UserAccountService/Database/02-init-test-data.sql:/docker-entrypoint-initdb.d/02-init-test-data.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  mysql-transaction:
+    container_name: mysql-transaction
+    image: mysql:8.0
+    mem_limit: 512m
+    cpus: "0.3"
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD_TA}
+      - MYSQL_DATABASE=${MYSQL_DATABASE_TA}
+    ports:
+      - "3308:3306"
+    volumes:
+      - mysql-transaction-data:/var/lib/mysql
+      - ./Microservices/TransactionService/Database/01-init-schema.sql:/docker-entrypoint-initdb.d/01-init-schema.sql
+      - ./Microservices/TransactionService/Database/02-init-test-data.sql:/docker-entrypoint-initdb.d/02-init-test-data.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  fraud-detection-service:
+    build:
+      context: ./Microservices/FraudDetectionService
+      dockerfile: Dockerfile.dev
+    image: dls_banking_app-fraud-detection-service:dev
+    mem_limit: 256m
+    cpus: "0.2"
+    container_name: fraud-detection-service
+    ports:
+      - "8000:8000"
+      - "8001:8001"
+    volumes:
+      - ./Microservices/FraudDetectionService:/app
+    command:
+      - uvicorn
+      - main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --reload
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.19
+    mem_limit: 1g
+    cpus: "0.3"
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  user-account-service:
+    build:
+      context: ./Microservices/UserAccountService
+      dockerfile: Dockerfile.dev
+    image: dls_banking_app-user-account-service:dev
+    mem_limit: 1024m
+    cpus: "1"
+    container_name: user-account-service
+    ports:
+      - "8002:80"
+      - "9091:${PROMETHEUS_PORT}"
+    volumes:
+      - ./Microservices/UserAccountService:/app
+    environment:
+      - MYSQL_HOST=mysql-useraccount
+      - MYSQL_PORT=3306
+      - MYSQL_DATABASE=${MYSQL_DATABASE_UA}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD_UA}
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USERNAME=${RABBITMQ_DEFAULT_USER}
+      - RABBITMQ_PASSWORD=${RABBITMQ_DEFAULT_PASS}
+      - JWT_ISSUER=${JWT_ISSUER}
+      - JWT_AUDIENCE=${JWT_AUDIENCE}
+      - JWT_KEY=${JWT_KEY}
+      - PROMETHEUS_PORT=${PROMETHEUS_PORT}
+    depends_on:
+      mysql-useraccount:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  transaction-service:
+    build:
+      context: ./Microservices/TransactionService
+      dockerfile: Dockerfile.dev
+    image: dls_banking_app-transaction-service:dev
+    mem_limit: 1024m
+    cpus: "1"
+    container_name: transaction-service
+    ports:
+      - "8003:80"
+      - "9092:${PROMETHEUS_PORT}"
+    volumes:
+      - ./Microservices/TransactionService:/app
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - MYSQL_HOST=mysql-transaction
+      - MYSQL_PORT=3306
+      - MYSQL_DATABASE=${MYSQL_DATABASE_TA}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD_TA}
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USERNAME=${RABBITMQ_DEFAULT_USER}
+      - RABBITMQ_PASSWORD=${RABBITMQ_DEFAULT_PASS}
+      - JWT_ISSUER=${JWT_ISSUER}
+      - JWT_AUDIENCE=${JWT_AUDIENCE}
+      - JWT_KEY=${JWT_KEY}
+      - PROMETHEUS_PORT=${PROMETHEUS_PORT}
+      - TRANSACTION_SERVICE_TOKEN=${TRANSACTION_SERVICE_TOKEN}
+      - Services__UserAccountService=http://user-account-service:80
+    depends_on:
+      mysql-transaction:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    image: dls_banking_app-frontend:dev
+    mem_limit: 512m
+    cpus: "0.3"
+    container_name: frontend
+    restart: always
+    ports:
+      - "3001:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=${VITE_API_URL}
+      - VITE_USER_SERVICE_URL=${VITE_USER_SERVICE_URL}
+      - VITE_QUERY_SERVICE_URL=${VITE_QUERY_SERVICE_URL}
+    depends_on:
+      - fraud-detection-service
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5173"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  grafana-data:
+  esdata:
+  mysql-useraccount-data:
+  mysql-transaction-data:
+  rabbitmq-data:

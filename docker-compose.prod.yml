@@ -1,3 +1,4 @@
+version: '3.8'
 services:
   prometheus:
     image: prom/prometheus:latest
@@ -9,18 +10,13 @@ services:
     ports:
       - "9090:9090"
     healthcheck:
-      test:
-        [
-          "CMD",
-          "wget",
-          "--no-verbose",
-          "--tries=1",
-          "--spider",
-          "http://localhost:9090/-/healthy",
-        ]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
       interval: 10s
       timeout: 5s
       retries: 3
+    labels:
+      app: prometheus
+      kompose.service.type: nodeport
 
   grafana:
     image: grafana/grafana:latest
@@ -30,36 +26,42 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_USER=${GF_SECURITY_ADMIN_USER}
-      - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD}
+      # Sourced from banking-app-secret in Kubernetes
+      - GF_SECURITY_ADMIN_USER
+      - GF_SECURITY_ADMIN_PASSWORD
     depends_on:
       prometheus:
         condition: service_healthy
     volumes:
       - grafana-data:/var/lib/grafana
     entrypoint: ["/bin/sh", "-c", "sleep 10 && /run.sh"]
+    labels:
+      app: grafana
+      kompose.service.type: nodeport
 
   rabbitmq:
     image: rabbitmq:3-management
-    mem_limit: 1024m
+    mem_limit: 512m
     cpus: "0.3"
     container_name: rabbitmq
     ports:
       - "5672:5672"
       - "15672:15672"
     environment:
-      - RABBITMQ_DEFAULT_USER=${RABBITMQ_DEFAULT_USER}
-      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_DEFAULT_PASS}
+      # Sourced from banking-app-secret in Kubernetes
+      - RABBITMQ_DEFAULT_USER
+      - RABBITMQ_DEFAULT_PASS
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
-      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf
-    user: "rabbitmq:rabbitmq"
     healthcheck:
-      test: ["CMD", "rabbitmqctl", "status"]
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
       interval: 10s
-      timeout: 10s
+      timeout: 5s
       retries: 5
-      start_period: 120s
+      start_period: 30s
+    labels:
+      app: rabbitmq
+      kompose.service.type: nodeport
 
   redis:
     image: redis:6.2
@@ -73,6 +75,9 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    labels:
+      app: redis
+      kompose.service.type: nodeport
 
   mysql-useraccount:
     container_name: mysql-useraccount
@@ -80,8 +85,9 @@ services:
     mem_limit: 512m
     cpus: "0.3"
     environment:
-      - MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD_UA}
-      - MYSQL_DATABASE=${MYSQL_DATABASE_UA}
+      # Sourced from banking-app-secret (MYSQL_PASSWORD_UA) and banking-app-config (MYSQL_DATABASE_UA) in Kubernetes
+      - MYSQL_ROOT_PASSWORD
+      - MYSQL_DATABASE
     ports:
       - "3307:3306"
     volumes:
@@ -94,6 +100,9 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    labels:
+      app: mysql-useraccount
+      kompose.service.type: nodeport
 
   mysql-transaction:
     container_name: mysql-transaction
@@ -101,8 +110,9 @@ services:
     mem_limit: 512m
     cpus: "0.3"
     environment:
-      - MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD_TA}
-      - MYSQL_DATABASE=${MYSQL_DATABASE_TA}
+      # Sourced from banking-app-secret (MYSQL_PASSWORD_TA) and banking-app-config (MYSQL_DATABASE_TA) in Kubernetes
+      - MYSQL_ROOT_PASSWORD
+      - MYSQL_DATABASE
     ports:
       - "3308:3306"
     volumes:
@@ -115,10 +125,11 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    labels:
+      app: mysql-transaction
+      kompose.service.type: nodeport
 
   fraud-detection-service:
-    build:
-      context: ./Microservices/FraudDetectionService
     image: fhallengreen/dls_banking_app-fraud-detection-service:latest
     mem_limit: 256m
     cpus: "0.2"
@@ -126,8 +137,6 @@ services:
     ports:
       - "8000:8000"
       - "8001:8001"
-    volumes:
-      - ./Microservices/FraudDetectionService:/app
     command:
       - uvicorn
       - main:app
@@ -135,7 +144,6 @@ services:
       - 0.0.0.0
       - --port
       - "8000"
-      - --reload
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -149,6 +157,9 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+    labels:
+      app: fraud-detection-service
+      kompose.service.type: nodeport
 
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:7.17.19
@@ -164,40 +175,37 @@ services:
       - esdata:/usr/share/elasticsearch/data
     stop_grace_period: 30s
     healthcheck:
-      test:
-        ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
+    labels:
+      app: elasticsearch
+      kompose.service.type: nodeport
 
   user-account-service:
-    build:
-      context: ./Microservices/UserAccountService
-      dockerfile: Dockerfile
     image: fhallengreen/dls_banking_app-user-account-service:latest
     mem_limit: 1024m
     cpus: "1"
     container_name: user-account-service
     ports:
       - "8002:80"
-      - "9091:${PROMETHEUS_PORT}"
-    volumes:
-      - ./Microservices/UserAccountService:/app
-    stop_grace_period: 30s
+      - "9091:9091"
     environment:
       - MYSQL_HOST=mysql-useraccount
       - MYSQL_PORT=3306
-      - MYSQL_DATABASE=${MYSQL_DATABASE_UA}
-      - MYSQL_USER=${MYSQL_USER}
-      - MYSQL_PASSWORD=${MYSQL_PASSWORD_UA}
+      # Sourced from banking-app-config (MYSQL_DATABASE_UA, JWT_ISSUER, JWT_AUDIENCE) and banking-app-secret (MYSQL_USER, MYSQL_PASSWORD_UA, RABBITMQ_DEFAULT_USER, RABBITMQ_DEFAULT_PASS, JWT_KEY) in Kubernetes
+      - MYSQL_DATABASE
+      - MYSQL_USER
+      - MYSQL_PASSWORD
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_PORT=5672
-      - RABBITMQ_USERNAME=${RABBITMQ_DEFAULT_USER}
-      - RABBITMQ_PASSWORD=${RABBITMQ_DEFAULT_PASS}
-      - JWT_ISSUER=${JWT_ISSUER}
-      - JWT_AUDIENCE=${JWT_AUDIENCE}
-      - JWT_KEY=${JWT_KEY}
-      - PROMETHEUS_PORT=${PROMETHEUS_PORT}
+      - RABBITMQ_USERNAME
+      - RABBITMQ_PASSWORD
+      - JWT_ISSUER
+      - JWT_AUDIENCE
+      - JWT_KEY
+      - PROMETHEUS_PORT=9091
     depends_on:
       mysql-useraccount:
         condition: service_healthy
@@ -211,36 +219,35 @@ services:
       timeout: 5s
       retries: 3
       start_period: 60s
+    labels:
+      app: user-account-service
+      kompose.service.type: nodeport
 
   transaction-service:
-    build:
-      context: ./Microservices/TransactionService
-      dockerfile: Dockerfile
     image: fhallengreen/dls_banking_app-transaction-service:latest
     mem_limit: 1024m
     cpus: "1"
     container_name: transaction-service
     ports:
       - "8003:80"
-      - "9092:${PROMETHEUS_PORT}"
-    volumes:
-      - ./Microservices/TransactionService:/app
+      - "9092:9091"
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - MYSQL_HOST=mysql-transaction
       - MYSQL_PORT=3306
-      - MYSQL_DATABASE=${MYSQL_DATABASE_TA}
-      - MYSQL_USER=${MYSQL_USER}
-      - MYSQL_PASSWORD=${MYSQL_PASSWORD_TA}
+      # Sourced from banking-app-config (MYSQL_DATABASE_TA, JWT_ISSUER, JWT_AUDIENCE) and banking-app-secret (MYSQL_USER, MYSQL_PASSWORD_TA, RABBITMQ_DEFAULT_USER, RABBITMQ_DEFAULT_PASS, JWT_KEY, TRANSACTION_SERVICE_TOKEN) in Kubernetes
+      - MYSQL_DATABASE
+      - MYSQL_USER
+      - MYSQL_PASSWORD
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_PORT=5672
-      - RABBITMQ_USERNAME=${RABBITMQ_DEFAULT_USER}
-      - RABBITMQ_PASSWORD=${RABBITMQ_DEFAULT_PASS}
-      - JWT_ISSUER=${JWT_ISSUER}
-      - JWT_AUDIENCE=${JWT_AUDIENCE}
-      - JWT_KEY=${JWT_KEY}
-      - PROMETHEUS_PORT=${PROMETHEUS_PORT}
-      - TRANSACTION_SERVICE_TOKEN=${TRANSACTION_SERVICE_TOKEN}
+      - RABBITMQ_USERNAME
+      - RABBITMQ_PASSWORD
+      - JWT_ISSUER
+      - JWT_AUDIENCE
+      - JWT_KEY
+      - PROMETHEUS_PORT=9091
+      - TRANSACTION_SERVICE_TOKEN
       - Services__UserAccountService=http://user-account-service:80
     depends_on:
       mysql-transaction:
@@ -255,10 +262,11 @@ services:
       timeout: 5s
       retries: 3
       start_period: 60s
+    labels:
+      app: transaction-service
+      kompose.service.type: nodeport
 
   frontend:
-    build:
-      context: ./frontend
     image: fhallengreen/dls_banking_app-frontend:latest
     mem_limit: 512m
     cpus: "0.3"
@@ -266,29 +274,22 @@ services:
     restart: always
     ports:
       - "3001:5173"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
     environment:
-      - VITE_API_URL=${VITE_API_URL}
-      - VITE_USER_SERVICE_URL=${VITE_USER_SERVICE_URL}
-      - VITE_QUERY_SERVICE_URL=${VITE_QUERY_SERVICE_URL}
+      # Sourced from banking-app-config in Kubernetes
+      - VITE_API_URL
+      - VITE_USER_SERVICE_URL
+      - VITE_QUERY_SERVICE_URL
     depends_on:
       - fraud-detection-service
     healthcheck:
-      test:
-        [
-          "CMD",
-          "wget",
-          "--no-verbose",
-          "--tries=1",
-          "--spider",
-          "http://localhost:5173",
-        ]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5173"]
       interval: 10s
       timeout: 5s
       retries: 3
       start_period: 10s
+    labels:
+      app: frontend
+      kompose.service.type: nodeport
 
 volumes:
   grafana-data:
