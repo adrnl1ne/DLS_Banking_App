@@ -6,6 +6,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Separator } from '../components/ui/separator';
 import { Checkbox } from '../components/ui/checkbox';
+import { login } from '../api/authApi';
 
 interface LoginProps {
   setIsAuthenticated: (value: boolean) => void;
@@ -17,7 +18,7 @@ const Login = ({ setIsAuthenticated }: LoginProps) => {
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState('');
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     
     // Validate inputs
@@ -25,9 +26,13 @@ const Login = ({ setIsAuthenticated }: LoginProps) => {
       setError('Please fill in all fields');
       return;
     }
-    
-    // For demo purposes, just set as authenticated
-    setIsAuthenticated(true);
+
+    try {
+      await login({ email, password });
+      setIsAuthenticated(true);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Invalid email or password');
+    }
   };
 
   return (
@@ -107,4 +112,4 @@ const Login = ({ setIsAuthenticated }: LoginProps) => {
   );
 };
 
-export default Login; 
+export default Login;

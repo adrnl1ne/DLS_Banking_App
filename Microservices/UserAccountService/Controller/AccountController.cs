@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 using System.Threading.Tasks;
 using UserAccountService.Service;
 using UserAccountService.Shared.DTO;
@@ -31,6 +32,20 @@ public class AccountController(IAccountService accountService, ILogger<AccountCo
         var claims = User.Claims.Select(c => $"{c.Type}: {c.Value}");
         logger.LogInformation("GetAccount called with claims: {Claims}", string.Join(", ", claims));
         return await accountService.GetAccountAsync(id);
+    }
+
+    [HttpGet("user")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<List<AccountResponse>>> GetUserAccounts()
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(userId))
+        {
+            return Unauthorized();
+        }
+
+        return await accountService.GetUserAccountsAsync(userId);
     }
 
     [HttpPost]

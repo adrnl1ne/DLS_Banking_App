@@ -1,108 +1,114 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
-
-interface AccountSummary {
-  id: number;
-  name: string;
-  balance: number;
-  accountNumber: string;
-}
-
-interface Transaction {
-  id: number;
-  date: string;
-  description: string;
-  amount: number;
-  type: 'credit' | 'debit';
-}
+import { getUserAccounts, Account } from '../api/accountApi';
+import { getCurrentUser } from '../api/authApi';
+import { Link } from 'react-router-dom';
+import { ArrowRight } from 'lucide-react';
 
 const Dashboard = () => {
-  const [accounts] = useState<AccountSummary[]>([
-    { id: 1, name: 'Checking Account', balance: 2540.80, accountNumber: '**** 4567' },
-    { id: 2, name: 'Savings Account', balance: 15750.25, accountNumber: '**** 7890' },
-  ]);
-  
-  const [recentTransactions] = useState<Transaction[]>([
-    { id: 1, date: '2025-04-20', description: 'Grocery Store', amount: 78.35, type: 'debit' },
-    { id: 2, date: '2025-04-19', description: 'Salary Deposit', amount: 3500.00, type: 'credit' },
-    { id: 3, date: '2025-04-18', description: 'Coffee Shop', amount: 4.50, type: 'debit' },
-    { id: 4, date: '2025-04-17', description: 'Electric Bill', amount: 65.78, type: 'debit' },
-  ]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [totalBalance, setTotalBalance] = useState(0);
+  const user = getCurrentUser()?.user;
+
+  useEffect(() => {
+    const fetchAccounts = async () => {
+      try {
+        setIsLoading(true);
+        const data = await getUserAccounts();
+        setAccounts(data);
+        
+        // Calculate total balance across all accounts
+        const total = data.reduce((sum, account) => sum + account.amount, 0);
+        setTotalBalance(total);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load accounts');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchAccounts();
+  }, []);
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+    }).format(amount);
+  };
 
   return (
     <div className="space-y-8">
-      <h1 className="text-3xl font-bold title-primary">Dashboard</h1>
-      
+      <div className="flex justify-between items-center">
+        <h1 className="text-3xl font-bold">Welcome, {user?.firstName || 'User'}</h1>
+      </div>
+
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-6" role="alert">
+          <span className="font-bold">Error:</span> {error}
+        </div>
+      )}
+
       <div className="grid gap-6 md:grid-cols-2">
-        <Card className="shadow-md">
-          <CardHeader className="card-header-muted">
-            <CardTitle className="card-title-primary">Account Summary</CardTitle>
+        <Card>
+          <CardHeader>
+            <CardTitle>Account Summary</CardTitle>
           </CardHeader>
-          <CardContent className="card-content-padded">
-            {accounts.map(account => (
-              <div key={account.id} className="account-item">
-                <div className="flex justify-between mb-1">
-                  <span className="font-medium">{account.name}</span>
-                  <span className="font-bold">${account.balance.toFixed(2)}</span>
+          <CardContent>
+            {isLoading ? (
+              <div className="py-4">Loading...</div>
+            ) : (
+              <>
+                <div className="mb-6">
+                  <p className="text-sm text-muted-foreground">Total Balance</p>
+                  <h2 className="text-3xl font-bold">{formatCurrency(totalBalance)}</h2>
                 </div>
-                <div className="account-label">
-                  Account: {account.accountNumber}
+                
+                <div className="space-y-4">
+                  <div className="flex justify-between">
+                    <span>Total Accounts</span>
+                    <span className="font-medium">{accounts.length}</span>
+                  </div>
+                  <Button asChild variant="outline" className="w-full">
+                    <Link to="/accounts" className="flex items-center justify-center">
+                      View All Accounts <ArrowRight className="ml-2 h-4 w-4" />
+                    </Link>
+                  </Button>
                 </div>
-              </div>
-            ))}
+              </>
+            )}
           </CardContent>
         </Card>
         
-        <Card className="shadow-md">
-          <CardHeader className="card-header-muted">
-            <CardTitle className="card-title-primary">Quick Actions</CardTitle>
+        <Card>
+          <CardHeader>
+            <CardTitle>Quick Actions</CardTitle>
           </CardHeader>
-          <CardContent className="card-content-padded">
-            <div className="grid grid-cols-2 gap-4">
-              <Button className="button-primary">
-                Transfer Money
-              </Button>
-              <Button className="button-primary">
-                Pay Bills
-              </Button>
-              <Button className="button-primary">
-                Mobile Deposit
-              </Button>
-              <Button className="button-primary">
-                Apply for Credit
-              </Button>
-            </div>
+          <CardContent className="space-y-4">
+            <Button asChild className="w-full">
+              <Link to="/accounts">Manage Accounts</Link>
+            </Button>
+            <Button asChild variant="outline" className="w-full">
+              <Link to="/transactions">View Transactions</Link>
+            </Button>
+            <Button asChild variant="outline" className="w-full">
+              <Link to="#">Transfer Money</Link>
+            </Button>
           </CardContent>
         </Card>
       </div>
       
-      <Card className="shadow-md">
-        <CardHeader className="card-header-muted">
-          <CardTitle className="card-title-primary">Recent Transactions</CardTitle>
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent Activity</CardTitle>
         </CardHeader>
-        <CardContent className="card-content-padded">
-          <Table>
-            <TableHeader>
-              <TableRow className="table-header-muted">
-                <TableHead>Date</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {recentTransactions.map(transaction => (
-                <TableRow key={transaction.id} className="hover:bg-muted/30">
-                  <TableCell>{transaction.date}</TableCell>
-                  <TableCell>{transaction.description}</TableCell>
-                  <TableCell className={transaction.type === 'credit' ? 'amount-credit' : 'amount-debit'}>
-                    {transaction.type === 'credit' ? '+' : '-'}${transaction.amount.toFixed(2)}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+        <CardContent>
+          <p className="text-center py-8 text-muted-foreground">
+            Your recent account activity will be shown here.
+          </p>
         </CardContent>
       </Card>
     </div>
