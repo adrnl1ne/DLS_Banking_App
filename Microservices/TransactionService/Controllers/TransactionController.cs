@@ -81,6 +81,9 @@ public class TransactionController(ITransactionService transactionService, ILogg
 
         try
         {
+            // Sanitize transferId to prevent log forging
+            transferId = transferId?.Replace("\n", "").Replace("\r", "");
+
             logger.LogInformation($"Getting transaction with ID: {transferId}");
 
             if (string.IsNullOrEmpty(transferId))
