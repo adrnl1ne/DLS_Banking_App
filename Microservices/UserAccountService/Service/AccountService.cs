@@ -334,8 +334,7 @@ public class AccountService(
             if (string.IsNullOrEmpty(request.TransactionType) ||
                 (request.TransactionType != "Deposit" && request.TransactionType != "Withdrawal"))
             {
-                logger.LogWarning("Invalid TransactionType {TransactionType} for balance update on account {AccountId}",
-                    request.TransactionType, id);
+                logger.LogWarning("Invalid TransactionType");
                 ErrorsTotal.WithLabels("UpdateBalance").Inc();
                 throw new InvalidOperationException("TransactionType must be 'Deposit' or 'Withdrawal'.");
             }
