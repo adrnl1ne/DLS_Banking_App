@@ -141,4 +141,23 @@ if (!builder.Environment.IsDevelopment())
 
 var app = builder.Build();
 
+// Add middleware in the correct order
+if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Docker"))
+{
+    app.UseDeveloperExceptionPage();
+    app.UseSwagger();
+    app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Transaction API v1"));
+}
+
+// Add a direct health check endpoint
+app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
+
+// Configure routing and authorization
+app.UseRouting();
+app.UseMetricServer(); // For Prometheus metrics
+app.UseCors(x => x.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapControllers();
+
 app.Run();
