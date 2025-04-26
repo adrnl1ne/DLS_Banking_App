@@ -13,13 +13,15 @@ namespace UserAccountService.Controller;
 public class AccountController(IAccountService accountService, ILogger<AccountController> logger)
     : ControllerBase
 {
-    [HttpGet("test")]
+    [HttpGet]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public IActionResult TestEndpoint()
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<List<AccountResponse>>> GetAccounts()
     {
-        logger.LogInformation("Test endpoint called");
-        return Ok(new { Message = "Test endpoint reached successfully!" });
+       var result = await accountService.GetAccountsAsync();
+       return Ok(result);
+
     }
 
     [HttpGet("{id}")]
@@ -29,8 +31,6 @@ public class AccountController(IAccountService accountService, ILogger<AccountCo
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<AccountResponse>> GetAccount(int id)
     {
-        var claims = User.Claims.Select(c => $"{c.Type}: {c.Value}");
-        logger.LogInformation("GetAccount called with claims: {Claims}", string.Join(", ", claims));
         return await accountService.GetAccountAsync(id);
     }
 
@@ -53,7 +53,30 @@ public class AccountController(IAccountService accountService, ILogger<AccountCo
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<ActionResult<AccountResponse>> CreateAccount([FromBody] AccountCreationRequest request)
     {
-        logger.LogInformation("CreateAccount called");
         return await accountService.CreateAccountAsync(request);
     }
+    
+    [HttpPut("{id}/balance")]
+    [Authorize(Policy = "ServiceOnly")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<AccountResponse>> UpdateBalance(int id, [FromBody] AccountBalanceRequest request)
+    {
+        logger.LogInformation("Received balance update request for account {AccountId}", id);
+        return await accountService.UpdateBalanceAsync(id, request);
+    }
+
+    [HttpDelete("{id}")]
+    [Authorize(Roles = "admin")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> DeleteAccount(int id)
+    {
+        await accountService.DeleteAccountAsync(id);
+        return NoContent();
+    }
+
 }

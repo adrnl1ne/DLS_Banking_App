@@ -1,4 +1,4 @@
-namespace AccountService.Models;
+namespace UserAccountService.Models;
 
 public class Role
 {
