@@ -352,8 +352,7 @@ public class AccountService(
             var redisKey = $"account:transaction:{request.TransactionId}";
             if (await redisDb.KeyExistsAsync(redisKey))
             {
-                logger.LogInformation("Duplicate transaction detected.",
-                    request.TransactionId, id);
+                logger.LogInformation("Duplicate transaction detected");
                 IdempotentRequestsTotal.Inc();
                 SuccessesTotal.WithLabels("UpdateBalance").Inc();
                 return new AccountResponse
