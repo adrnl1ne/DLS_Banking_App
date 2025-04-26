@@ -47,8 +47,12 @@ namespace TransactionService.Services
         {
             try
             {
+                var sanitizedFromAccount = request.FromAccount?.Replace(Environment.NewLine, "").Replace("\n", "").Replace("\r", "");
+                var sanitizedToAccount = request.ToAccount?.Replace(Environment.NewLine, "").Replace("\n", "").Replace("\r", "");
+                var sanitizedAmount = request.Amount.ToString().Replace(Environment.NewLine, "").Replace("\n", "").Replace("\r", "");
+
                 _logger.LogInformation("Creating transfer from {FromAccount} to {ToAccount} for {Amount}", 
-                    request.FromAccount, request.ToAccount, request.Amount);
+                    sanitizedFromAccount, sanitizedToAccount, sanitizedAmount);
 
                 // Parse account IDs to integers
                 if (!int.TryParse(request.FromAccount, out int fromAccountId) || 
