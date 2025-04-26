@@ -59,7 +59,7 @@ namespace TransactionService.Services
                     !int.TryParse(request.ToAccount, out int toAccountId))
                 {
                     _logger.LogWarning("Invalid account ID format - FromAccount: {FromAccount}, ToAccount: {ToAccount}", 
-                        request.FromAccount, request.ToAccount);
+                        sanitizedFromAccount, sanitizedToAccount);
                     throw new ArgumentException("Account IDs must be valid integers");
                 }
 
