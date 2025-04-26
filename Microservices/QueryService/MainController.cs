@@ -2,6 +2,8 @@
 
 namespace QueryService;
 
+[ApiController]
+[Route("api/[controller]")]
 public class MainController : Controller
 {
 
