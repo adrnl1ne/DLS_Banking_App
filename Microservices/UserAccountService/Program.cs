@@ -25,6 +25,17 @@ builder.Services.AddLogging(logging =>
 // Add services to the container.
 builder.Services.AddControllers();
 
+// Add CORS configuration
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        policy.WithOrigins("http://localhost:3001")
+              .AllowAnyHeader()
+              .AllowAnyMethod();
+    });
+});
+
 // Register repositories and services
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
@@ -156,6 +167,10 @@ var app = builder.Build();
 app.UseMetricServer();
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Add CORS middleware
+app.UseCors();
+
 app.MapControllers();
 app.UseSwagger();
 app.UseSwaggerUI(c =>
