@@ -1,4 +1,3 @@
-// Minimum required imports
 using System.Net.Http.Headers;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -10,6 +9,7 @@ using Polly;
 using Prometheus;
 using TransactionService.Infrastructure.Data;
 using TransactionService.Infrastructure.Data.Repositories;
+using TransactionService.Infrastructure.Logging;
 using TransactionService.Infrastructure.Messaging.RabbitMQ;
 using TransactionService.Models;
 using TransactionService.Services;
