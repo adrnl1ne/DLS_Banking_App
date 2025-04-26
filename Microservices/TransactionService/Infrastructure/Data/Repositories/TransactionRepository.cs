@@ -61,7 +61,8 @@ public class TransactionRepository(TransactionDbContext context, ILogger<Transac
         try
         {
             var sanitizedAccountId = accountId.Replace("\n", "").Replace("\r", "");
-            logger.LogInformation("Getting transactions for account: {AccountId}", sanitizedAccountId);
+            var hashedAccountId = Convert.ToBase64String(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(sanitizedAccountId)));
+            logger.LogInformation("Getting transactions for account: {AccountId}", hashedAccountId);
 
             var transactionsQuery = await context.Transactions
                 .AsNoTracking() // Better performance for read-only operations
@@ -78,7 +79,7 @@ public class TransactionRepository(TransactionDbContext context, ILogger<Transac
             }
 
             logger.LogInformation("Found {Count} transactions for account {AccountId}", 
-                transactionsQuery.Count, sanitizedAccountId);
+                transactionsQuery.Count, hashedAccountId);
             return transactionsQuery;
         }
         catch (Exception ex)
