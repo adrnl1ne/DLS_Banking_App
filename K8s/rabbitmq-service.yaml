@@ -4,6 +4,7 @@ metadata:
   annotations:
     app: rabbitmq
     kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+    kompose.image-pull-policy: Always
     kompose.service.type: nodeport
     kompose.version: 1.35.0 (HEAD)
   labels:
@@ -18,5 +19,5 @@ spec:
       port: 15672
       targetPort: 15672
   selector:
-    io.kompose.service: rabbitmq
+    app: rabbitmq
   type: NodePort

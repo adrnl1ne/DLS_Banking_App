@@ -4,6 +4,7 @@ metadata:
   annotations:
     app: frontend
     kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+    kompose.image-pull-policy: Always
     kompose.service.type: nodeport
     kompose.version: 1.35.0 (HEAD)
   labels:
@@ -13,35 +14,45 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-      io.kompose.service: frontend
+      app: frontend
   template:
     metadata:
       annotations:
         app: frontend
         kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+        kompose.image-pull-policy: Always
         kompose.service.type: nodeport
         kompose.version: 1.35.0 (HEAD)
       labels:
-        io.kompose.service: frontend
+        app: frontend
     spec:
       containers:
         - env:
             - name: VITE_API_URL
-            - name: VITE_QUERY_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: banking-app-config
+                  key: VITE_API_URL
             - name: VITE_USER_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: banking-app-config
+                  key: VITE_USER_SERVICE_URL
+            - name: VITE_QUERY_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: banking-app-config
+                  key: VITE_QUERY_SERVICE_URL
           image: fhallengreen/dls_banking_app-frontend:latest
+          imagePullPolicy: Always
           livenessProbe:
-            exec:
-              command:
-                - wget
-                - --no-verbose
-                - --tries=1
-                - --spider
-                - http://localhost:5173
-            failureThreshold: 3
+            httpGet:
+              path: /
+              port: 5173
             initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 5
+            failureThreshold: 3
           name: frontend
           ports:
             - containerPort: 5173

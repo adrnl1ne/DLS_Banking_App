@@ -4,6 +4,7 @@ metadata:
   annotations:
     app: frontend
     kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+    kompose.image-pull-policy: Always
     kompose.service.type: nodeport
     kompose.version: 1.35.0 (HEAD)
   labels:
@@ -15,5 +16,5 @@ spec:
       port: 3001
       targetPort: 5173
   selector:
-    io.kompose.service: frontend
+    app: frontend
   type: NodePort

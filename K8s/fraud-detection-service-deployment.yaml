@@ -4,6 +4,7 @@ metadata:
   annotations:
     app: fraud-detection-service
     kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+    kompose.image-pull-policy: Always
     kompose.service.type: nodeport
     kompose.version: 1.35.0 (HEAD)
   labels:
@@ -13,16 +14,17 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-      io.kompose.service: fraud-detection-service
+      app: fraud-detection-service
   template:
     metadata:
       annotations:
         app: fraud-detection-service
         kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+        kompose.image-pull-policy: Always
         kompose.service.type: nodeport
         kompose.version: 1.35.0 (HEAD)
       labels:
-        io.kompose.service: fraud-detection-service
+        app: fraud-detection-service
     spec:
       containers:
         - args:
@@ -32,17 +34,40 @@ spec:
             - 0.0.0.0
             - --port
             - "8000"
+          env:
+            - name: RABBITMQ_HOST
+              value: rabbitmq
+            - name: RABBITMQ_PORT
+              value: "5672"
+            - name: RABBITMQ_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: banking-app-secret
+                  key: RABBITMQ_DEFAULT_USER
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: banking-app-secret
+                  key: RABBITMQ_DEFAULT_PASS
+            - name: REDIS_HOST
+              value: redis
+            - name: REDIS_PORT
+              value: "6379"
+            - name: PROMETHEUS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: banking-app-config
+                  key: PROMETHEUS_PORT
           image: fhallengreen/dls_banking_app-fraud-detection-service:latest
+          imagePullPolicy: Always
           livenessProbe:
-            exec:
-              command:
-                - curl
-                - -f
-                - http://localhost:8000/health
-            failureThreshold: 3
+            httpGet:
+              path: /health
+              port: 8000
             initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 5
+            failureThreshold: 3
           name: fraud-detection-service
           ports:
             - containerPort: 8000
