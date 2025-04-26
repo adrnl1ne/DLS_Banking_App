@@ -1,16 +1,19 @@
-namespace TransactionService.Models;
+using System.Text.Json.Serialization;
 
-public class AccountBalanceRequest
+namespace TransactionService.Models
 {
-    public decimal Amount { get; set; }
-    public string TransactionId { get; set; } = string.Empty;
-    public string TransactionType { get; set; } = string.Empty; // "Deposit" or "Withdrawal"
-    
-    // Add a nested class if needed by the API
-    public class RequestDetails
+    public class AccountBalanceRequest
     {
-        public string Description { get; set; } = string.Empty;
+        [JsonPropertyName("transactionType")]
+        public string TransactionType { get; set; } = string.Empty;
+        
+        [JsonPropertyName("amount")]
+        public decimal Amount { get; set; }
+        
+        [JsonPropertyName("isAdjustment")]
+        public bool IsAdjustment { get; set; } = true;
+        
+        [JsonPropertyName("transactionId")]
+        public string TransactionId { get; set; } = string.Empty;
     }
-    
-    public RequestDetails Request { get; set; } = new RequestDetails();
 }

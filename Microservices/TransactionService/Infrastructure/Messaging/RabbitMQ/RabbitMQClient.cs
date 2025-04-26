@@ -17,6 +17,7 @@ public class RabbitMqClient : IRabbitMqClient, IDisposable
     private IModel? _channel;
     private bool _initialized;
     private bool _disposed;
+    private readonly object _channelLock = new object();
 
     public RabbitMqClient(ILogger<RabbitMqClient> logger, string hostName = "rabbitmq", int port = 5672, string username = "guest", string password = "guest")
     {
@@ -61,55 +62,46 @@ public class RabbitMqClient : IRabbitMqClient, IDisposable
         }
     }
 
-    public void Publish(string queue, string message)
+    public void Publish(string queueName, string message)
     {
-        if (!_initialized)
-        {
-            _logger.LogWarning("RabbitMQ client not initialized. Message to {Queue} not sent: {Message}", queue, message);
-            // Try to reconnect
-            InitializeConnection();
-            if (!_initialized)
-            {
-                return;
-            }
-        }
-
         try
         {
-            // Ensure the queue exists
-            try 
+            lock (_channelLock)
             {
-                _channel!.QueueDeclare(queue: queue, durable: false, exclusive: false, autoDelete: false);
-                _logger.LogInformation("Queue {Queue} declared", queue);
+                // Ensure connection and channel are available
+                EnsureConnection();
+                
+                _logger.LogInformation("Declaring queue {QueueName}", queueName);
+                _channel.QueueDeclare(queue: queueName, durable: false, exclusive: false, autoDelete: false, arguments: null);
+                
+                var body = Encoding.UTF8.GetBytes(message);
+                
+                // Add delivery confirmation
+                var properties = _channel.CreateBasicProperties();
+                properties.Persistent = true; // Make message persistent
+                
+                // Publish with the persistent flag
+                _channel.BasicPublish(exchange: "", routingKey: queueName, basicProperties: properties, body: body);
+                _logger.LogInformation("Published message to {QueueName}: {Message}", queueName, message);
             }
-            catch (Exception ex)
-            {
-                // If queue declaration fails (perhaps it already exists with different parameters)
-                // Try a passive declaration to check if it exists
-                _logger.LogWarning("Could not declare queue {Queue} as non-durable. Will try passive declaration. Error: {Error}", queue, ex.Message);
-                try
-                {
-                    _channel!.QueueDeclarePassive(queue);
-                    _logger.LogInformation("Queue {Queue} exists", queue);
-                }
-                catch (Exception e)
-                {
-                    _logger.LogError(e, "Failed to confirm existence of queue {Queue}", queue);
-                    throw;
-                }
-            }
-
-            var body = Encoding.UTF8.GetBytes(message);
-            _channel!.BasicPublish(exchange: "",
-                routingKey: queue,
-                basicProperties: null,
-                body: body);
-
-            _logger.LogInformation("Published message to {Queue}: {Message}", queue, message);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to publish message to {Queue}", queue);
+            _logger.LogError(ex, "Failed to publish message to {QueueName}", queueName);
+            
+            // Try to reconnect if needed
+            try
+            {
+                CloseConnection();
+                EnsureConnection();
+                _logger.LogInformation("Reconnected to RabbitMQ after publish failure");
+            }
+            catch (Exception reconnectEx)
+            {
+                _logger.LogError(reconnectEx, "Failed to reconnect to RabbitMQ");
+            }
+            
+            throw; // Re-throw the exception to notify the caller
         }
     }
 
@@ -186,5 +178,21 @@ public class RabbitMqClient : IRabbitMqClient, IDisposable
         }
 
         _disposed = true;
+    }
+
+    private void EnsureConnection()
+    {
+        if (_connection == null || !_connection.IsOpen)
+        {
+            InitializeConnection();
+        }
+    }
+
+    private void CloseConnection()
+    {
+        if (_connection != null && _connection.IsOpen)
+        {
+            _connection.Close();
+        }
     }
 }

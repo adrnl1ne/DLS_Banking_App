@@ -154,6 +154,7 @@ builder.Services.AddSingleton<IRabbitMqClient, RabbitMqClient>();
 builder.Services.AddSingleton<Counter>(Metrics.CreateCounter("transactions_total", "The total number of transactions"));
 builder.Services.AddSingleton<Histogram>(Metrics.CreateHistogram("transaction_amount", "Transaction amounts"));
 builder.Services.AddScoped<ITransactionService, TransactionService.Services.TransactionService>();
+builder.Services.AddSingleton<FallbackFraudService>();
 
 var app = builder.Build();
 
