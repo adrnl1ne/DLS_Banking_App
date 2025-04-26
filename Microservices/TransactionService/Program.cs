@@ -8,7 +8,9 @@ using Polly;
 using Prometheus;
 using TransactionService.Infrastructure.Data;
 using TransactionService.Infrastructure.Data.Repositories;
+using TransactionService.Infrastructure.Logging;
 using TransactionService.Infrastructure.Messaging.RabbitMQ;
+using TransactionService.Infrastructure.Security;
 using TransactionService.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -102,87 +104,38 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 // Configure HttpClient for User Account Service
-var serviceToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0cmFuc2FjdGlvbi1zZXJ2aWNlIiwicm9sZSI6InNlcnZpY2UiLCJqdGkiOiJjNGEwMzRjYy1iMDE4LTQxYTYtOTNmMi02MDc5MDQ1MWU1OWEiLCJpc3MiOiJCYW5raW5nQXBwIiwic2NvcGVzIjpbInJlYWQ6YWNjb3VudHMiLCJ1cGRhdGU6YWNjb3VudC1iYWxhbmNlIl0sImV4cCI6MTc2MTI0NjM0NSwiYXVkIjoiVXNlckFjY291bnRBUEkifQ.xiE7sJOYZWizg-cvk_yKya4-vfaXUV9BDTXaJx5QgJE";
 
-// Use fallback value for userAccountServiceUrl if configuration is missing
-var userAccountServiceUrl = builder.Configuration["Services:UserAccountService"] ?? "http://user-account-service:80";
-Console.WriteLine($"Configuring HttpClient for UserAccountClientService: URL={userAccountServiceUrl}, Token={serviceToken}");
+// Setup Environment Variables support
+builder.Configuration.AddEnvironmentVariables();
 
-// Create the URI without checking (already have default value)
-var uri = new Uri(userAccountServiceUrl);
+// Add logging filter
+builder.Logging.AddSensitiveDataFilter();
 
-builder.Services.AddHttpClient<UserAccountClientService>(client =>
-{
-    client.BaseAddress = uri;
+// Add secure transaction logger
+builder.Services.AddScoped<ISecureTransactionLogger, SecureTransactionLogger>();
+
+// Replace the token configuration (which is currently exposing the token in the logs)
+builder.Services.AddHttpClient<UserAccountClientService>((services, client) => {
+    var configuration = services.GetRequiredService<IConfiguration>();
+    var logger = services.GetRequiredService<ILogger<UserAccountClientService>>();
+    
+    // Get token from configuration
+    var serviceToken = Environment.GetEnvironmentVariable("TRANSACTION_SERVICE_TOKEN") ?? 
+                  configuration["ServiceAuthentication:Token"] ?? 
+                  throw new InvalidOperationException("TransactionService token not configured");
+        
+    client.BaseAddress = new Uri(configuration["Services:UserAccountService"] ?? "http://user-account-service:80");
     client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", serviceToken);
-    client.Timeout = TimeSpan.FromSeconds(30);
-}).AddTransientHttpErrorPolicy(policyBuilder =>
-    policyBuilder.WaitAndRetryAsync(3, attempt => TimeSpan.FromSeconds(Math.Pow(2, attempt))));
-
-// Register repositories
-builder.Services.AddScoped<ITransactionRepository, TransactionRepository>();
-
-// Register services
-builder.Services.AddScoped<ITransactionService, TransactionService.Services.TransactionService>();
-
-// Create Prometheus metrics
-var transactionCounter = Metrics.CreateCounter(
-    "transactions_total",
-    "Total number of transactions",
-    new CounterConfiguration { LabelNames = ["type", "status"] }
-);
-
-var transactionDurationHistogram = Metrics.CreateHistogram(
-    "transaction_duration_seconds",
-    "Transaction processing duration in seconds",
-    new HistogramConfiguration
-    {
-        LabelNames = ["type"],
-        Buckets = [0.1, 0.5, 1, 2, 5, 10]
-    }
-);
-
-// Register metrics
-builder.Services.AddSingleton(transactionCounter);
-builder.Services.AddSingleton(transactionDurationHistogram);
-
-// Find where services are registered and add:
-builder.Services.AddSingleton<IRabbitMqClient, RabbitMqClient>(sp => 
-{
-    var logger = sp.GetRequiredService<ILogger<RabbitMqClient>>();
-    return new RabbitMqClient(logger);
+    
+    // Don't log the token
+    logger.LogInformation("UserAccountClientService configured with BaseAddress: {BaseAddress}", client.BaseAddress);
 });
 
-var app = builder.Build();
-
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
+// Production logging configuration
+if (!builder.Environment.IsDevelopment())
 {
-    app.UseSwagger();
-    app.UseSwaggerUI(c => 
-    {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Transaction API v1");
-        c.RoutePrefix = string.Empty; // To serve the Swagger UI at the app's root
-    });
+    builder.Logging.AddFilter("Microsoft", LogLevel.Warning);
+    builder.Logging.AddFilter("System", LogLevel.Warning);
 }
-else
-{
-    // Production configuration
-    app.UseSwagger();
-    app.UseSwaggerUI(c =>
-    {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Transaction API v1");
-        c.RoutePrefix = "api-docs";
-    });
-}
-
-app.UseMetricServer();
-app.UseHttpMetrics();
-
-app.UseAuthentication();
-app.UseAuthorization();
-
-app.MapControllers();
-
 
 app.Run();

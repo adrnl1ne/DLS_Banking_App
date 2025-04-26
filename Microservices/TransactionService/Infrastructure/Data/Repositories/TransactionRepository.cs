@@ -1,129 +1,132 @@
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using TransactionService.Infrastructure.Security;
 using TransactionService.Models;
 
-namespace TransactionService.Infrastructure.Data.Repositories;
-
-public class TransactionRepository(TransactionDbContext context, ILogger<TransactionRepository> logger)
-    : ITransactionRepository
+namespace TransactionService.Infrastructure.Data.Repositories
 {
-    public async Task<Transaction> CreateTransactionAsync(Transaction transaction)
+    public class TransactionRepository : ITransactionRepository
     {
-        try
+        private readonly TransactionDbContext _context;
+        private readonly ILogger<TransactionRepository> _logger;
+        private readonly Infrastructure.Logging.ISecureTransactionLogger _secureLogger;
+
+        public TransactionRepository(
+            TransactionDbContext context, 
+            ILogger<TransactionRepository> logger,
+            Infrastructure.Logging.ISecureTransactionLogger secureLogger)
         {
-            await context.Transactions.AddAsync(transaction);
-            await context.SaveChangesAsync();
+            _context = context;
+            _logger = logger;
+            _secureLogger = secureLogger;
+        }
+
+        public async Task<Transaction> CreateTransactionAsync(Transaction transaction)
+        {
+            // Secure logging - mask sensitive details
+            _logger.LogInformation("Creating new transaction with ID: {TransactionId}", 
+                LogSanitizer.MaskTransferId(transaction.TransferId));
+
+            await _context.Transactions.AddAsync(transaction);
+            await _context.SaveChangesAsync();
+
+            // Use secure logger for full transaction details
+            await _secureLogger.LogTransactionEventAsync(
+                transaction.Id,
+                "status_change",
+                $"Transaction created with status: {transaction.Status} - From account {transaction.FromAccount} to account {transaction.ToAccount} for {transaction.Amount}");
+
             return transaction;
         }
-        catch (Exception ex)
+
+        public async Task<Transaction?> GetTransactionByIdAsync(string id)
         {
-            logger.LogError(ex, "Error creating transaction: {Message}", ex.Message);
-            throw;
+            // Sanitize ID for logging
+            _logger.LogInformation("Getting transaction with ID: {TransactionId}", 
+                LogSanitizer.MaskTransferId(id));
+
+            return await _context.Transactions.FindAsync(id);
         }
-    }
 
-    public async Task<Transaction?> GetTransactionByIdAsync(string id)
-    {
-        // Changed from Guid to string parameter
-        return await context.Transactions.FindAsync(id);
-    }
-
-    public async Task<Transaction?> GetTransactionByTransferIdAsync(string transferId)
-    {
-        try
+        public async Task<Transaction?> GetTransactionByTransferIdAsync(string transferId)
         {
-            var sanitizedTransferId = transferId.Replace("\n", "").Replace("\r", "");
-            logger.LogInformation("Getting transaction with transfer ID: {TransferId}", sanitizedTransferId);
+            // Sanitize ID for logging
+            _logger.LogInformation("Getting transaction with transfer ID: {TransferId}", 
+                LogSanitizer.MaskTransferId(transferId));
 
-            var transaction = await context.Transactions
-                .AsQueryable() // Explicitly treat as IQueryable
-                .FirstOrDefaultAsync(t => t.TransferId == sanitizedTransferId);
-
-            if (transaction == null)
-            {
-                logger.LogWarning("No transaction found with transfer ID: {TransferId}", sanitizedTransferId);
-                return null;
-            }
-
-            logger.LogInformation("Found transaction with ID: {Id}", transaction.Id);
-            return transaction;
-        }
-        catch (Exception ex)
-        {
-            var logSafeTransferId = transferId.Replace("\n", "").Replace("\r", "");
-            logger.LogError(ex, "Error getting transaction with transfer ID: {TransferId}. Error: {Message}", 
-                logSafeTransferId, ex.Message);
-            throw;
-        }
-    }
-
-    public async Task<IEnumerable<Transaction>> GetTransactionsByAccountAsync(string accountId)
-    {
-        try
-        {
-            var sanitizedAccountId = accountId.Replace("\n", "").Replace("\r", "");
-            logger.LogInformation("Getting transactions for account: {AccountId}", sanitizedAccountId);
-
-            var transactionsQuery = await context.Transactions
-                .AsNoTracking() // Better performance for read-only operations
-                .Where(t => t.FromAccount == sanitizedAccountId || t.ToAccount == sanitizedAccountId)
-                .ToListAsync();
-                
-            // Ensure UpdatedAt is not null before returning
-            foreach (var transaction in transactionsQuery)
-            {
-                if (transaction.UpdatedAt == null)
-                {
-                    transaction.UpdatedAt = transaction.CreatedAt;
-                }
-            }
-
-            logger.LogInformation("Found {Count} transactions for account {AccountId}", 
-                transactionsQuery.Count, sanitizedAccountId);
-            return transactionsQuery;
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error getting transactions for account {AccountId}: {Message}", 
-                accountId, ex.Message);
-            throw;
-        }
-    }
-
-    public async Task<Transaction> UpdateTransactionStatusAsync(string transferId, string status)
-    {
-        try
-        {
-            logger.LogInformation("Updating transaction {TransferId} status to {Status}", transferId, status);
-
-            var transaction = await context.Transactions
-                .AsQueryable() // Explicitly treat as IQueryable
+            return await _context.Transactions
                 .FirstOrDefaultAsync(t => t.TransferId == transferId);
+        }
 
+        public async Task<IEnumerable<Transaction>> GetTransactionsByUserIdAsync(int userId)
+        {
+            // Mask user ID for logging
+            _logger.LogInformation("Getting transactions for user: {UserId}", 
+                LogSanitizer.MaskAccountId(userId));
+
+            return await _context.Transactions
+                .Where(t => t.UserId == userId)
+                .ToListAsync();
+        }
+
+        public async Task<Transaction> UpdateTransactionStatusAsync(string id, string status)
+        {
+            // Secure logging
+            _logger.LogInformation("Updating transaction {TransactionId} status to: {Status}", 
+                LogSanitizer.MaskTransferId(id), status);
+
+            var transaction = await _context.Transactions.FindAsync(id);
             if (transaction == null)
             {
-                logger.LogWarning("No transaction found with transfer ID: {TransferId}", transferId);
-                throw new KeyNotFoundException($"Transaction with ID {transferId} not found");
+                throw new KeyNotFoundException($"Transaction with ID {LogSanitizer.MaskTransferId(id)} not found");
             }
 
             transaction.Status = status;
             transaction.UpdatedAt = DateTime.UtcNow;
+            transaction.LastModifiedBy = "system"; // Record who made the change
+            
+            await _context.SaveChangesAsync();
 
-            context.Transactions.Update(transaction);
-            await context.SaveChangesAsync();
+            // Log the status change with secure logger
+            await _secureLogger.LogTransactionEventAsync(
+                id,
+                "status_change",
+                $"Transaction status updated to: {status}");
 
-            logger.LogInformation("Updated transaction: {Id}", transaction.Id);
             return transaction;
         }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error updating transaction status for transfer ID: {TransferId}. Error: {Message}", 
-                transferId, ex.Message);
-            throw;
-        }
-    }
 
-    public async Task<bool> SaveChangesAsync()
-    {
-        return await context.SaveChangesAsync() > 0;
+        public async Task<IEnumerable<TransactionLog>> GetTransactionLogsAsync(string transactionId)
+        {
+            // Secure logging
+            _logger.LogInformation("Getting logs for transaction: {TransactionId}", 
+                LogSanitizer.MaskTransferId(transactionId));
+
+            // Return logs with sanitized messages if they contain sensitive data
+            var logs = await _context.TransactionLogs
+                .Where(l => l.TransactionId == transactionId)
+                .OrderBy(l => l.CreatedAt)
+                .Select(l => new TransactionLog 
+                {
+                    Id = l.Id,
+                    TransactionId = l.TransactionId,
+                    LogType = l.LogType,
+                    // Use sanitized message if contains sensitive data
+                    Message = l.ContainsSensitiveData ? l.SanitizedMessage ?? l.Message : l.Message,
+                    CreatedAt = l.CreatedAt
+                })
+                .ToListAsync();
+
+            return logs;
+        }
+
+        public async Task AddTransactionLogAsync(string transactionId, string logType, string message)
+        {
+            // Use the secure logger instead of directly adding logs
+            await _secureLogger.LogTransactionEventAsync(transactionId, logType, message);
+        }
     }
 }
