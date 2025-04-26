@@ -32,6 +32,13 @@ namespace TransactionService.Services
             _histogram = histogram;
             
             // Subscribe to fraud detection results - now with fault tolerance
+            static string HashAccountId(int accountId)
+            {
+                using var sha256 = SHA256.Create();
+                var bytes = Encoding.UTF8.GetBytes(accountId.ToString());
+                var hash = sha256.ComputeHash(bytes);
+                return Convert.ToBase64String(hash);
+            }
             try
             {
                 _rabbitMqClient.Subscribe("TransactionServiceQueue", HandleFraudResult);
@@ -74,7 +81,8 @@ namespace TransactionService.Services
                 var fromAccount = await _userAccountClient.GetAccountAsync(fromAccountId);
                 if (fromAccount == null)
                 {
-                    _logger.LogWarning("Source account {AccountId} not found", fromAccountId);
+                    var obfuscatedAccountId = HashAccountId(fromAccountId);
+                    _logger.LogWarning("Source account {AccountId} not found", obfuscatedAccountId);
                     throw new InvalidOperationException($"Source account {fromAccountId} not found");
                 }
 
