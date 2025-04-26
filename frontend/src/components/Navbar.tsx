@@ -1,6 +1,7 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Avatar, AvatarFallback } from './ui/avatar';
+import { logout, getCurrentUser } from '../api/authApi';
 
 interface NavbarProps {
   isAuthenticated: boolean;
@@ -8,8 +9,31 @@ interface NavbarProps {
 }
 
 const Navbar = ({ isAuthenticated, setIsAuthenticated }: NavbarProps) => {
+  const navigate = useNavigate();
+  const user = getCurrentUser()?.user;
+  
+  // Get user initials for the avatar
+  const getUserInitials = () => {
+    if (!user) return 'U';
+    
+    const firstName = user.firstName || '';
+    const lastName = user.lastName || '';
+    
+    if (firstName && lastName) {
+      return `${firstName[0]}${lastName[0]}`.toUpperCase();
+    } else if (firstName) {
+      return firstName[0].toUpperCase();
+    } else if (user.email) {
+      return user.email[0].toUpperCase();
+    }
+    
+    return 'U';
+  };
+
   const handleLogout = () => {
+    logout();
     setIsAuthenticated(false);
+    navigate('/login');
   };
 
   return (
@@ -26,7 +50,7 @@ const Navbar = ({ isAuthenticated, setIsAuthenticated }: NavbarProps) => {
               </div>
               <div className="flex items-center gap-3">
                 <Avatar className="h-9 w-9 navbar-avatar">
-                  <AvatarFallback className="text-sm font-medium">JD</AvatarFallback>
+                  <AvatarFallback className="text-sm font-medium">{getUserInitials()}</AvatarFallback>
                 </Avatar>
                 <Button 
                   variant="outline" 

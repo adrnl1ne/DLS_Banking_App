@@ -1,88 +1,90 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Label } from '../components/ui/label';
+import { getAccountTransactions, Transaction as ApiTransaction } from '../api/transactionApi';
+import { getUserAccounts, Account } from '../api/accountApi';
+import { format } from 'date-fns';
 
-interface Transaction {
-  id: number;
-  date: string;
-  description: string;
-  category: string;
-  amount: number;
+interface TransactionWithAccountName extends ApiTransaction {
+  accountName: string;
   type: 'credit' | 'debit';
-  account: string;
-  balance: number;
 }
 
 const Transactions = () => {
-  const [transactions] = useState<Transaction[]>([
-    {
-      id: 1,
-      date: '2025-04-20',
-      description: 'Grocery Store',
-      category: 'Groceries',
-      amount: 78.35,
-      type: 'debit',
-      account: 'Checking Account (**** 4567)',
-      balance: 2540.80
-    },
-    {
-      id: 2,
-      date: '2025-04-19',
-      description: 'Salary Deposit',
-      category: 'Income',
-      amount: 3500.00,
-      type: 'credit',
-      account: 'Checking Account (**** 4567)',
-      balance: 2619.15
-    },
-    {
-      id: 3,
-      date: '2025-04-18',
-      description: 'Coffee Shop',
-      category: 'Dining',
-      amount: 4.50,
-      type: 'debit',
-      account: 'Checking Account (**** 4567)',
-      balance: -880.85
-    },
-    {
-      id: 4,
-      date: '2025-04-17',
-      description: 'Electric Bill',
-      category: 'Utilities',
-      amount: 65.78,
-      type: 'debit',
-      account: 'Checking Account (**** 4567)',
-      balance: -876.35
-    },
-    {
-      id: 5,
-      date: '2025-04-16',
-      description: 'Transfer to Savings',
-      category: 'Transfer',
-      amount: 500.00,
-      type: 'debit',
-      account: 'Checking Account (**** 4567)',
-      balance: -810.57
-    },
-    {
-      id: 6,
-      date: '2025-04-16',
-      description: 'Transfer from Checking',
-      category: 'Transfer',
-      amount: 500.00,
-      type: 'credit',
-      account: 'Savings Account (**** 7890)',
-      balance: 15750.25
-    },
-  ]);
-
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [transactions, setTransactions] = useState<TransactionWithAccountName[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [filterAccount, setFilterAccount] = useState<string>('all');
   const [filterType, setFilterType] = useState<string>('all');
+  const [backendError, setBackendError] = useState<boolean>(false);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        setBackendError(false);
+        
+        // Fetch user accounts
+        const userAccounts = await getUserAccounts();
+        setAccounts(userAccounts);
+        
+        // Fetch transactions for each account
+        const allTransactions: TransactionWithAccountName[] = [];
+        let anyRequestFailed = false;
+        
+        for (const account of userAccounts) {
+          try {
+            const accountTransactions = await getAccountTransactions(account.id.toString());
+            
+            // If transactions array is empty, it might be due to a backend error (handled in the API)
+            if (accountTransactions.length === 0) {
+              continue;
+            }
+            
+            // Enhance transactions with account name and type
+            const enhancedTransactions = accountTransactions.map(transaction => {
+              const type: 'credit' | 'debit' = transaction.toAccount === account.id.toString() ? 'credit' : 'debit';
+              return {
+                ...transaction,
+                accountName: account.name,
+                type
+              };
+            });
+            
+            allTransactions.push(...enhancedTransactions);
+          } catch (err) {
+            anyRequestFailed = true;
+            console.error(`Error fetching transactions for account ${account.id}:`, err);
+          }
+        }
+
+        // If no transactions were fetched and at least one request failed, 
+        // the backend might be having issues
+        if (allTransactions.length === 0 && anyRequestFailed) {
+          setBackendError(true);
+        }
+        
+        // Sort by date descending
+        allTransactions.sort((a, b) => 
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+        
+        setTransactions(allTransactions);
+        setLoading(false);
+      } catch (err) {
+        console.error('Error fetching data:', err);
+        setError('Failed to load transactions. Please try again later.');
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
 
   const filteredTransactions = transactions.filter(transaction => {
-    if (filterAccount !== 'all' && !transaction.account.includes(filterAccount)) {
+    if (filterAccount !== 'all' && transaction.accountName !== filterAccount) {
       return false;
     }
     if (filterType !== 'all' && transaction.type !== filterType) {
@@ -90,6 +92,14 @@ const Transactions = () => {
     }
     return true;
   });
+
+  if (loading) {
+    return <div className="text-center py-10">Loading transactions...</div>;
+  }
+
+  if (error) {
+    return <div className="text-center py-10 text-red-500">{error}</div>;
+  }
 
   return (
     <div className="space-y-6">
@@ -110,8 +120,11 @@ const Transactions = () => {
                 onChange={(e) => setFilterAccount(e.target.value)}
               >
                 <option value="all">All Accounts</option>
-                <option value="4567">Checking Account (**** 4567)</option>
-                <option value="7890">Savings Account (**** 7890)</option>
+                {accounts.map(account => (
+                  <option key={account.id} value={account.name}>
+                    {account.name}
+                  </option>
+                ))}
               </select>
             </div>
             
@@ -145,42 +158,62 @@ const Transactions = () => {
         </CardContent>
       </Card>
       
-      <Card>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead>Account</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-                <TableHead className="text-right">Balance</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredTransactions.map(transaction => (
-                <TableRow key={transaction.id}>
-                  <TableCell>{transaction.date}</TableCell>
-                  <TableCell>{transaction.description}</TableCell>
-                  <TableCell>
-                    <span className="inline-block px-2 py-1 bg-secondary text-secondary-foreground text-xs rounded-full">
-                      {transaction.category}
-                    </span>
-                  </TableCell>
-                  <TableCell>{transaction.account}</TableCell>
-                  <TableCell className={`text-right ${
-                    transaction.type === 'credit' ? 'text-green-600' : 'text-red-600'
-                  }`}>
-                    {transaction.type === 'credit' ? '+' : '-'}${transaction.amount.toFixed(2)}
-                  </TableCell>
-                  <TableCell className="text-right">${transaction.balance.toFixed(2)}</TableCell>
+      {backendError ? (
+        <Card className="p-8 text-center">
+          <div className="text-amber-600 text-xl mb-4">Transaction Data Temporarily Unavailable</div>
+          <p className="text-gray-600">
+            We're currently experiencing technical difficulties with the transaction service. 
+            Our team is working on resolving this issue. Please try again later.
+          </p>
+        </Card>
+      ) : filteredTransactions.length === 0 ? (
+        <div className="text-center py-10">No transactions found.</div>
+      ) : (
+        <Card>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Account</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+              </TableHeader>
+              <TableBody>
+                {filteredTransactions.map(transaction => (
+                  <TableRow key={transaction.transferId}>
+                    <TableCell>{format(new Date(transaction.createdAt), 'yyyy-MM-dd')}</TableCell>
+                    <TableCell>
+                      {transaction.type === 'credit' 
+                        ? `Transfer from ${transaction.fromAccount}` 
+                        : `Transfer to ${transaction.toAccount}`}
+                    </TableCell>
+                    <TableCell>
+                      <span className={`inline-block px-2 py-1 text-xs rounded-full ${
+                        transaction.status === 'completed' 
+                          ? 'bg-green-100 text-green-800' 
+                          : transaction.status === 'pending'
+                          ? 'bg-yellow-100 text-yellow-800'
+                          : 'bg-red-100 text-red-800'
+                      }`}>
+                        {transaction.status}
+                      </span>
+                    </TableCell>
+                    <TableCell>{transaction.accountName}</TableCell>
+                    <TableCell className={`text-right ${
+                      transaction.type === 'credit' ? 'text-green-600' : 'text-red-600'
+                    }`}>
+                      {transaction.type === 'credit' ? '+' : '-'}${transaction.amount.toFixed(2)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 };
