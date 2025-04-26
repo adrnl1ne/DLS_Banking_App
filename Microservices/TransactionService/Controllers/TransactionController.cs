@@ -81,6 +81,9 @@ public class TransactionController(ITransactionService transactionService, ILogg
 
         try
         {
+            // Sanitize transferId to prevent log forging
+            transferId = transferId?.Replace("\n", "").Replace("\r", "");
+
             logger.LogInformation($"Getting transaction with ID: {transferId}");
 
             if (string.IsNullOrEmpty(transferId))
@@ -115,7 +118,10 @@ public class TransactionController(ITransactionService transactionService, ILogg
 
         try
         {
-            logger.LogInformation($"Getting transactions for account: {accountId}");
+            // Sanitize accountId to prevent log forging
+            accountId = accountId.Replace("\n", "").Replace("\r", "");
+            var hashedAccountId = HashSensitiveData(accountId);
+            logger.LogInformation($"Getting transactions for account with hashed ID: {hashedAccountId}");
 
             if (string.IsNullOrEmpty(accountId))
             {
@@ -159,5 +165,15 @@ public class TransactionController(ITransactionService transactionService, ILogg
             logger.LogError(ex, $"Error retrieving transactions for account {accountId}");
             return StatusCode(500, $"An error occurred while retrieving transactions: {ex.Message}");
         }
+    }
+    private string HashSensitiveData(string data)
+    {
+        if (string.IsNullOrEmpty(data))
+        {
+            return string.Empty;
+        }
+        using var sha256 = SHA256.Create();
+        var hashedBytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(data));
+        return Convert.ToBase64String(hashedBytes);
     }
 }
