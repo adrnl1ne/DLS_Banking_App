@@ -4,7 +4,7 @@ using RabbitMQ.Client;
 
 namespace UserAccountService.Service;
 
-public class RabbitMqEventPublisher : IEventPublisher
+public class RabbitMqEventPublisher : IEventPublisher, IDisposable
 {
     private readonly IConnection _connection;
     private readonly IModel _channel;
@@ -13,26 +13,35 @@ public class RabbitMqEventPublisher : IEventPublisher
     {
         var factory = new ConnectionFactory
         {
-            HostName = configuration["RabbitMQ_Host"],
-            Port = configuration.GetValue<int>("RabbitMQ_Port"),
-            UserName = configuration["RabbitMQ_Username"],
-            Password = configuration["RabbitMQ_Password"]
+            HostName = configuration["RabbitMQ_Host"] ?? "rabbitmq",
+            Port = configuration.GetValue<int>("RabbitMQ_Port", 5672),
+            UserName = configuration["RabbitMQ_Username"] ?? "guest",
+            Password = configuration["RabbitMQ_Password"] ?? "guest"
         };
 
-        Console.WriteLine(configuration["RabbitMQ_Host"]);
-
+        Console.WriteLine($"Connecting to RabbitMQ: Host={factory.HostName}, Port={factory.Port}");
         _connection = factory.CreateConnection();
         _channel = _connection.CreateModel();
+
+        // Declare the banking.events topic exchange
+        _channel.ExchangeDeclare(exchange: "banking.events", type: "topic", durable: true, autoDelete: false);
     }
 
-    public void Publish(string queueName, string message)
+    public void Publish(string routingKey, string message)
     {
-        _channel.QueueDeclare(queue: queueName, durable: false, exclusive: false, autoDelete: false, arguments: null);
-
         var body = Encoding.UTF8.GetBytes(message);
-        _channel.BasicPublish(exchange: "", routingKey: queueName, basicProperties: null, body: body);
+        var properties = _channel.CreateBasicProperties();
+        properties.DeliveryMode = 2;
+
+        _channel.BasicPublish(
+            exchange: "banking.events",
+            routingKey: routingKey,
+            basicProperties: properties,
+            body: body
+        );
+        Console.WriteLine($"Published event to banking.events with routing key: {routingKey}");
     }
-    
+
     public void Dispose()
     {
         _channel?.Dispose();

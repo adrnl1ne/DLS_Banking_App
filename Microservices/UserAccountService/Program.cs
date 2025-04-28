@@ -2,7 +2,6 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using Prometheus;
 using System.Text;
 using AccountService.Database.Data;
 using AccountService.Repository;
@@ -10,11 +9,32 @@ using AccountService.Services;
 using UserAccountService.Repository;
 using UserAccountService.Service;
 using Microsoft.OpenApi.Models;
+using Prometheus;
+using StackExchange.Redis;
+using Microsoft.Extensions.Logging; // Add this for logging
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Add logging services
+builder.Services.AddLogging(logging =>
+{
+    logging.AddConsole();
+    logging.AddDebug();
+});
+
 // Add services to the container.
 builder.Services.AddControllers();
+
+// Add CORS configuration
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        policy.WithOrigins("http://localhost:3001")
+              .AllowAnyHeader()
+              .AllowAnyMethod();
+    });
+});
 
 // Register repositories and services
 builder.Services.AddHttpContextAccessor();
@@ -24,7 +44,31 @@ builder.Services.AddSingleton<IEventPublisher, RabbitMqEventPublisher>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IAccountService, UserAccountService.Service.AccountService>();
 
-var connectionString = string.Format("server={0};port={1};database={2};user={3};password={4};SslMode=Required",
+// Register Redis IConnectionMultiplexer
+builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
+{
+    var redisConnectionString = builder.Configuration.GetConnectionString("Redis");
+    if (string.IsNullOrEmpty(redisConnectionString))
+    {
+        var host = builder.Configuration.GetValue<string>("REDIS_HOST") ?? "redis";
+        var port = builder.Configuration.GetValue<string>("REDIS_PORT") ?? "6379";
+        redisConnectionString = $"{host}:{port}";
+    }
+
+    return ConnectionMultiplexer.Connect(redisConnectionString);
+});
+
+// Configure Redis cache
+builder.Services.AddStackExchangeRedisCache(options =>
+{
+    options.Configuration = builder.Configuration.GetConnectionString("Redis") ??
+                            $"{builder.Configuration.GetValue<string>("REDIS_HOST", "redis")}:{builder.Configuration.GetValue<string>("REDIS_PORT", "6379")}";
+    options.InstanceName = "UserAccountService_";
+});
+
+// Configure MySQL
+var connectionString = string.Format(
+    "server={0};port={1};database={2};user={3};password={4};SslMode=Required",
     builder.Configuration.GetValue<string>("MYSQL_HOST"),
     builder.Configuration.GetValue<string>("MYSQL_PORT"),
     builder.Configuration.GetValue<string>("MYSQL_DATABASE"),
@@ -70,12 +114,14 @@ builder.Services.AddAuthentication(options =>
 });
 
 // Add authorization policies
-builder.Services.AddAuthorization(options =>
-{
-    options.AddPolicy("ReadAccounts", policy =>
+builder.Services.AddAuthorizationBuilder()
+    // Add authorization policies
+    .AddPolicy("ReadAccounts", policy =>
         policy.RequireRole("service")
-              .RequireClaim("scopes", "read:accounts"));
-});
+            .RequireClaim("scopes", "read:accounts"))
+    // Add authorization policies
+    .AddPolicy("ServiceOnly", policy =>
+        policy.RequireRole("service"));
 
 // Configure Swagger
 builder.Services.AddSwaggerGen(c =>
@@ -86,8 +132,9 @@ builder.Services.AddSwaggerGen(c =>
         Description = "JWT Authorization header using the Bearer scheme. Example: \"Authorization: Bearer {token}\"",
         Name = "Authorization",
         In = ParameterLocation.Header,
-        Type = SecuritySchemeType.ApiKey,
-        Scheme = "Bearer"
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT"
     });
     c.AddSecurityRequirement(new OpenApiSecurityRequirement
     {
@@ -105,18 +152,32 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-var app = builder.Build();
+// Configure CORS
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", corsPolicyBuilder =>
+    {
+        corsPolicyBuilder.AllowAnyOrigin()
+            .AllowAnyMethod()
+            .AllowAnyHeader();
+    });
+});
 
-// Configure the HTTP request pipeline.
+var app = builder.Build();
+app.UseMetricServer();
 app.UseAuthentication();
 app.UseAuthorization();
-app.MapControllers();
 
+// Add CORS middleware
+app.UseCors();
+
+app.MapControllers();
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
     c.SwaggerEndpoint("/swagger/v1/swagger.json", "UserAccountService API v1");
     c.RoutePrefix = string.Empty;
 });
+app.UseCors("AllowAll");
 
 app.Run();

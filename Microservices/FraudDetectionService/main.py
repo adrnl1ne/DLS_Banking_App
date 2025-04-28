@@ -65,7 +65,8 @@ def get_rabbitmq_connection(max_retries=30, initial_delay=1, max_delay=30):
             time.sleep(sleep_time)
             delay = min(delay * 2, max_delay)
 
-# Callback function to process incoming messages
+duplicate_fraud_checks = Counter("duplicate_fraud_checks", "Number of duplicate fraud check requests")
+
 def callback(ch, method, properties, body):
     try:
         # Parse the incoming message
@@ -74,14 +75,15 @@ def callback(ch, method, properties, body):
         amount = message["amount"]
 
         # Check for idempotence using Redis
-        if redis_client.get(f"transfer:{transfer_id}"):
+        if redis_client.get(f"fraud:transfer:{transfer_id}"):
             logging.info(f"Duplicate message for transfer {transfer_id}, skipping processing")
-            duplicate_messages.inc()  # Increment duplicate message counter
+            duplicate_messages.inc()
+            duplicate_fraud_checks.inc()  # New metric
             ch.basic_ack(delivery_tag=method.delivery_tag)
             return
 
         # Mark the transfer as processed (for idempotence)
-        redis_client.setex(f"transfer:{transfer_id}", 86400, "processed")  # Expire after 24 hours
+        redis_client.setex(f"fraud:transfer:{transfer_id}", 604800, "processed")  # 7-day expiry
 
         # Store transaction details in Redis (for auditing)
         transaction_data = {
@@ -89,27 +91,33 @@ def callback(ch, method, properties, body):
             "amount": amount,
             "timestamp": time.time()
         }
-        redis_client.setex(f"transaction:{transfer_id}", 604800, json.dumps(transaction_data))  # Expire after 7 days
+        redis_client.setex(f"fraud:transaction:{transfer_id}", 604800, json.dumps(transaction_data))  # 7-day expiry
 
         # Fraud detection logic: flag if amount > $1000
         is_fraud = amount > 1000
         status = "declined" if is_fraud else "approved"
-        result = {"transferId": transfer_id, "isFraud": is_fraud, "status": status}
+        result = {
+            "transferId": transfer_id,
+            "isFraud": is_fraud,
+            "status": status,
+            "amount": amount,
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S.%fZ", time.gmtime())
+        }
 
         # Update transaction data with fraud detection result
         transaction_data["isFraud"] = is_fraud
         transaction_data["status"] = status
-        redis_client.setex(f"transaction:{transfer_id}", 604800, json.dumps(transaction_data))
+        redis_client.setex(f"fraud:transaction:{transfer_id}", 604800, json.dumps(transaction_data))
 
         # Increment Prometheus metrics
         messages_processed.inc()
         if is_fraud:
             fraud_detections.inc()
 
-        # Log the result to console only, not to file
+        # Log the result to console only
         logging.info(f"Transfer {transfer_id}: Amount=${amount}, Fraud={is_fraud}, Status={status}")
 
-        # Publish the result to the "FraudResult" queue
+        # Publish to existing queues
         connection = get_rabbitmq_connection()
         channel = connection.channel()
         channel.queue_declare(queue="FraudResult")
@@ -118,14 +126,28 @@ def callback(ch, method, properties, body):
             routing_key="FraudResult",
             body=json.dumps(result),
         )
-
-        # Publish the result to the "TransactionServiceQueue"
         channel.queue_declare(queue="TransactionServiceQueue")
         channel.basic_publish(
             exchange="",
             routing_key="TransactionServiceQueue",
             body=json.dumps(result),
         )
+
+        # Publish to QueryService via FraudEvents queue
+        channel.queue_declare(queue="FraudEvents")
+        channel.basic_publish(
+            exchange="",
+            routing_key="FraudEvents",
+            body=json.dumps({
+                "event_type": "FraudCheckCompleted",
+                "transferId": transfer_id,
+                "isFraud": is_fraud,
+                "status": status,
+                "amount": amount,
+                "timestamp": result["timestamp"]
+            }),
+        )
+
         connection.close()
 
         # Acknowledge the message
