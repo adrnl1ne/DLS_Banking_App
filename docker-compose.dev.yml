@@ -246,6 +246,39 @@ services:
       retries: 3
       start_period: 60s
 
+  query-service:
+    build:
+      context: ./Microservices/QueryService
+      dockerfile: Dockerfile.dev
+    image: dls_banking_app-query-service:dev
+    mem_limit: 512m
+    cpus: "0.5"
+    container_name: query-service
+    ports:
+      - "8004:80"
+    volumes:
+      - ./Microservices/QueryService:/app
+      - /app/bin
+      - /app/obj
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USERNAME=${RABBITMQ_DEFAULT_USER}
+      - RABBITMQ_PASSWORD=${RABBITMQ_DEFAULT_PASS}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+
   frontend:
     build:
       context: ./frontend

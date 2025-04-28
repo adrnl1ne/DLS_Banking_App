@@ -11,7 +11,13 @@ var settings = new ConnectionSettings(new Uri("http://localhost:9200"))
     .DefaultIndex("transactions");
 var elasticClient = new ElasticClient(settings);
 
+//Swagger
+// Add services to the container.
+builder.Services.AddControllers();
 
+// Add Swagger here
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
 
 builder.Services.AddSingleton<IElasticClient>(elasticClient);
 builder.Services.AddHostedService<RabbitMqListener>();
@@ -19,7 +25,7 @@ builder.Services.AddHostedService<RabbitMqListener>();
 builder.Services.AddSingleton<RabbitMqConnection>(sp =>
 {
     var config = builder.Configuration;
-    var hostName = config["RabbitMQ:HostName"];
+    var hostName = "rabbitmq";//config["RabbitMQ:HostName"];
     var userName = config["RabbitMQ:UserName"];
     var password = config["RabbitMQ:Password"];
     
