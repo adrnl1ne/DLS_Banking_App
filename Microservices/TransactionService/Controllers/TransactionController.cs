@@ -49,7 +49,7 @@ public class TransactionController(ITransactionService transactionService, ILogg
 
             request.UserId = userId; // Set the user ID from the token
 
-            logger.LogInformation($"Creating transfer from account {request.FromAccount} to account {request.ToAccount} for amount {request.Amount}");
+            logger.LogInformation($"Creating transfer");
 
             var result = await transactionService.CreateTransferAsync(request);
             return CreatedAtAction(nameof(GetTransaction), new { transferId = result.TransferId }, result);
@@ -122,7 +122,7 @@ public class TransactionController(ITransactionService transactionService, ILogg
             // Sanitize accountId to prevent log forging
             accountId = accountId.Replace("\n", "").Replace("\r", "");
             var hashedAccountId = HashSensitiveData(accountId);
-            logger.LogInformation($"Getting transactions for account with hashed ID: {hashedAccountId}");
+            logger.LogInformation("Getting transactions");
 
             if (string.IsNullOrEmpty(accountId))
             {
