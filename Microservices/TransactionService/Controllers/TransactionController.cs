@@ -119,9 +119,6 @@ public class TransactionController(ITransactionService transactionService, ILogg
 
         try
         {
-            // Sanitize accountId to prevent log forging
-            accountId = accountId.Replace("\n", "").Replace("\r", "");
-            var hashedAccountId = HashSensitiveData(accountId);
             logger.LogInformation("Getting transactions");
 
             if (string.IsNullOrEmpty(accountId))
@@ -145,25 +142,25 @@ public class TransactionController(ITransactionService transactionService, ILogg
         catch (UnauthorizedAccessException ex)
         {
             TransactionErrorsTotal.WithLabels("GET").Inc();
-            logger.LogWarning(ex, "Unauthorized access attempt during retrieval of transactions for account {AccountId}", accountId);
+            logger.LogWarning(ex, "Unauthorized access attempt during retrieval of transactions for account");
             return StatusCode(403, ex.Message);
         }
         catch (ArgumentException ex)
         {
             TransactionErrorsTotal.WithLabels("GET").Inc();
-            logger.LogWarning(ex, "Invalid argument during retrieval of transactions for account {AccountId}", accountId);
+            logger.LogWarning(ex, "Invalid argument during retrieval of transactions");
             return BadRequest(ex.Message);
         }
         catch (InvalidOperationException ex)
         {
             TransactionErrorsTotal.WithLabels("GET").Inc();
-            logger.LogWarning(ex, "Invalid operation during retrieval of transactions for account {AccountId}", accountId);
+            logger.LogWarning(ex, "Invalid operation during retrieval of transactions for account");
             return NotFound(ex.Message);
         }
         catch (Exception ex)
         {
             TransactionErrorsTotal.WithLabels("GET").Inc();
-            logger.LogError(ex, $"Error retrieving transactions for account {accountId}");
+            logger.LogError(ex, $"Error retrieving transactions for account");
             return StatusCode(500, $"An error occurred while retrieving transactions: {ex.Message}");
         }
     }
