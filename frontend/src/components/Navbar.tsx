@@ -38,18 +38,26 @@ const Navbar = ({ isAuthenticated, setIsAuthenticated }: NavbarProps) => {
 
   return (
     <nav className="navbar shadow-lg">
-      <div className="container mx-auto py-4 px-4 md:px-6 flex justify-between items-center">
-        <Link to="/" className="text-xl font-bold tracking-tight">DLS Banking</Link>
+      <div className="container mx-auto py-5 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
+        <Link to="/" className="text-2xl font-bold tracking-tight hover:opacity-90 transition-opacity">
+          <span className="flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+              <polyline points="9 22 9 12 15 12 15 22"></polyline>
+            </svg>
+            Faktura Fabrikken
+          </span>
+        </Link>
         <div className="flex items-center gap-6">
           {isAuthenticated ? (
             <>
-              <div className="hidden md:flex items-center gap-6">
-                <Link to="/" className="navbar-link">Dashboard</Link>
-                <Link to="/accounts" className="navbar-link">Accounts</Link>
-                <Link to="/transactions" className="navbar-link">Transactions</Link>
+              <div className="hidden md:flex items-center gap-8">
+                <Link to="/" className="navbar-link text-sm font-medium">Dashboard</Link>
+                <Link to="/accounts" className="navbar-link text-sm font-medium">Accounts</Link>
+                <Link to="/transactions" className="navbar-link text-sm font-medium">Transactions</Link>
               </div>
-              <div className="flex items-center gap-3">
-                <Avatar className="h-9 w-9 navbar-avatar">
+              <div className="flex items-center gap-4">
+                <Avatar className="h-10 w-10 navbar-avatar">
                   <AvatarFallback className="text-sm font-medium">{getUserInitials()}</AvatarFallback>
                 </Avatar>
                 <Button 
@@ -64,9 +72,9 @@ const Navbar = ({ isAuthenticated, setIsAuthenticated }: NavbarProps) => {
             </>
           ) : (
             <>
-              <div className="hidden md:flex items-center gap-6">
-                <Link to="/login" className="navbar-link">Login</Link>
-                <Link to="/register" className="navbar-link">Register</Link>
+              <div className="hidden md:flex items-center gap-8">
+                <Link to="/login" className="navbar-link text-sm font-medium">Login</Link>
+                <Link to="/register" className="navbar-link text-sm font-medium">Register</Link>
               </div>
               <Button asChild size="sm" variant="outline" className="navbar-button">
                 <Link to="/register">Get Started</Link>

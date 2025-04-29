@@ -23,8 +23,8 @@ function App() {
     <Router>
       <div className="min-h-screen flex flex-col bg-background text-foreground">
         <Navbar isAuthenticated={isLoggedIn} setIsAuthenticated={setIsLoggedIn} />
-        <main className="flex-1 flex justify-center py-8">
-          <div className="container mx-auto px-4 md:px-6 max-w-7xl">
+        <main className="flex-1 flex justify-center py-10">
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl">
             <Routes>
               <Route path="/" element={isLoggedIn ? <Dashboard /> : <Login setIsAuthenticated={setIsLoggedIn} />} />
               <Route path="/accounts" element={isLoggedIn ? <Accounts /> : <Navigate to="/login" />} />
@@ -35,9 +35,9 @@ function App() {
             </Routes>
           </div>
         </main>
-        <footer className="py-6 mt-8 border-t border-border bg-muted">
-          <div className="container mx-auto px-4 md:px-6 text-center text-sm text-muted-foreground">
-            <p>© 2025 DLS Banking. All rights reserved.</p>
+        <footer className="py-8 mt-auto border-t border-border bg-secondary">
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <p className="text-sm text-muted-foreground">© 2025 Faktura Fabrikken. All rights reserved.</p>
           </div>
         </footer>
       </div>
