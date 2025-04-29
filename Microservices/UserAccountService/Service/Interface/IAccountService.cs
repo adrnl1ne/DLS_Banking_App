@@ -12,4 +12,5 @@ public interface IAccountService
     Task DeleteAccountAsync(int id);
     Task<ActionResult<AccountResponse>> RenameAccountAsync(int id, AccountRenameRequest request);
     Task<ActionResult<AccountResponse>> UpdateBalanceAsync(int id, AccountBalanceRequest request);
+    Task<ActionResult<AccountResponse>> DepositToAccountAsync(int id, AccountDepositRequest request);
 }

@@ -68,6 +68,17 @@ public class AccountController(IAccountService accountService, ILogger<AccountCo
         return await accountService.UpdateBalanceAsync(id, request);
     }
 
+    [HttpPost("{id}/deposit")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<AccountResponse>> Deposit(int id, [FromBody] AccountDepositRequest request)
+    {
+        logger.LogInformation("Received deposit request for account {AccountId}", id);
+        return await accountService.DepositToAccountAsync(id, request);
+    }
+
     [HttpDelete("{id}")]
     [Authorize(Roles = "admin")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]

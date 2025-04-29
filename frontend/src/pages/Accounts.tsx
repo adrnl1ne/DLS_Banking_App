@@ -1,49 +1,113 @@
 import { useState, useEffect } from 'react';
-import { Card, CardContent, CardFooter } from '../components/ui/card';
-import { Button } from '../components/ui/button';
-import { Separator } from '../components/ui/separator';
-import { getUserAccounts, Account } from '../api/accountApi';
+import { Card, CardContent, CardFooter } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogFooter,
+  DialogTrigger 
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { useNavigate } from 'react-router-dom';
+import { getUserAccounts, createAccount, Account, AccountCreationRequest } from '../api/accountApi';
 
 const Accounts = () => {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
+  const [newAccountName, setNewAccountName] = useState('');
+  const [success, setSuccess] = useState('');
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const fetchAccounts = async () => {
       try {
         setIsLoading(true);
+        setError('');
         const data = await getUserAccounts();
+
+        console.log('Accounts:', data);
         
         setAccounts(data);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load accounts');
+        console.error('Error fetching accounts:', err);
+        
+        // Handle specific error cases
+        if (err instanceof Error) {
+          if (err.message.includes('Authentication required')) {
+            setError('Authentication required. Please log in again.');
+            navigate('/login');
+          } else if (err.message.includes('Failed to fetch')) {
+            setError('Could not load accounts. Please try again later.');
+          } else {
+            setError(err.message);
+          }
+        } else {
+          setError('An unexpected error occurred');
+        }
       } finally {
         setIsLoading(false);
       }
     };
 
     fetchAccounts();
-  }, []);
+  }, [navigate]);
 
-  // const handleCreateAccount = async () => {
-  //   try {
-  //     const newAccount = await createAccount({ name: 'New Account' });
+  const handleCreateAccount = async () => {
+    if (!newAccountName.trim()) {
+      setError('Please enter an account name');
+      return;
+    }
+    
+    try {
+      setIsCreating(true);
+      setError('');
+      setSuccess('');
       
-  //     // Add display properties to the new account
-  //     const enhancedAccount: Account = {
-  //       ...newAccount,
-  //       type: 'Checking',
-  //       accountNumber: `**** ${Math.floor(1000 + Math.random() * 9000)}`,
-  //       openDate: new Date().toISOString().split('T')[0],
-  //       status: 'active'
-  //     };
+      // Create the account request payload
+      const accountRequest: AccountCreationRequest = { 
+        name: newAccountName.trim() 
+      };
       
-  //     setAccounts([...accounts, enhancedAccount]);
-  //   } catch (err) {
-  //     setError(err instanceof Error ? err.message : 'Failed to create account');
-  //   }
-  // };
+      // Make API call to create the account
+      console.log('Creating account with name:', accountRequest.name);
+      const newAccount = await createAccount(accountRequest);
+      console.log('Account created successfully:', newAccount);
+      
+      // Update the UI with the new account
+      setSuccess(`Account "${newAccount.name}" was created successfully!`);
+      setNewAccountName('');
+      setDialogOpen(false);
+      
+      // Clear success message after 5 seconds
+      setTimeout(() => setSuccess(''), 5000);
+    } catch (err) {
+      console.error('Error creating account:', err);
+      
+      // Handle specific error cases
+      if (err instanceof Error) {
+        if (err.message.includes('Authentication required')) {
+          setError('Authentication required. Please log in again.');
+          navigate('/login');
+        } else if (err.message.includes('Failed to create account')) {
+          setError('Could not create account. Please try again later.');
+        } else {
+          setError(err.message);
+        }
+      } else {
+        setError('An unexpected error occurred');
+      }
+    } finally {
+      setIsCreating(false);
+    }
+  };
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -56,15 +120,50 @@ const Accounts = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">My Accounts</h1>
-        <Button>
-          Open New Account
-        </Button>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogTrigger asChild>
+            <Button>Open New Account</Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Create New Account</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="name" className="text-right">
+                  Account Name
+                </Label>
+                <Input
+                  id="name"
+                  value={newAccountName}
+                  onChange={(e) => setNewAccountName(e.target.value)}
+                  className="col-span-3"
+                  placeholder="e.g. Savings, Checking, Emergency Fund"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button 
+                onClick={handleCreateAccount} 
+                disabled={isCreating || !newAccountName.trim()}
+              >
+                {isCreating ? 'Creating...' : 'Create Account'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
       
+      {success && (
+        <Alert className="border-green-500 bg-green-50">
+          <AlertDescription className="text-green-700">{success}</AlertDescription>
+        </Alert>
+      )}
+      
       {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-6" role="alert">
-          <span className="font-bold">Error:</span> {error}
-        </div>
+        <Alert className="border-red-500 bg-red-50">
+          <AlertDescription className="text-red-700">{error}</AlertDescription>
+        </Alert>
       )}
       
       {isLoading ? (
@@ -119,7 +218,7 @@ const Accounts = () => {
               <Separator />
               
               <CardFooter className="flex gap-3 pt-6">
-                <Button size="sm">
+                <Button size="sm" onClick={() => navigate(`/accounts/${account.id}`)}>
                   View Details
                 </Button>
                 <Button variant="outline" size="sm">
