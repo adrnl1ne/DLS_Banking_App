@@ -4,12 +4,13 @@ using QueryService;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
+builder.Services.AddSingleton<IElasticClient>(sp =>
+{
+    var settings = new ConnectionSettings(new Uri("http://localhost:9200"))
+        .DefaultIndex("transactions");
 
-
-
-var settings = new ConnectionSettings(new Uri("http://localhost:9200"))
-    .DefaultIndex("transactions");
-var elasticClient = new ElasticClient(settings);
+    return new ElasticClient(settings);
+});
 
 //Swagger
 // Add services to the container.
@@ -19,7 +20,6 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-builder.Services.AddSingleton<IElasticClient>(elasticClient);
 builder.Services.AddHostedService<RabbitMqListener>();
 
 builder.Services.AddSingleton<RabbitMqConnection>(sp =>
@@ -45,7 +45,18 @@ builder.Services
 var app = builder.Build();
 
 
+
+app.MapControllers();
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
 app.UseHttpsRedirection();
+app.UseAuthorization();
+
 app.MapGraphQL();
 
 app.Run();

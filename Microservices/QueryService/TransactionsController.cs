@@ -7,7 +7,7 @@ namespace QueryService;
 
 [ApiController]
 [Route("api/transaction/")]
-public class TransactionsController
+public class TransactionsController : ControllerBase
 {
     
     private readonly IElasticClient elasticsearchClient;
