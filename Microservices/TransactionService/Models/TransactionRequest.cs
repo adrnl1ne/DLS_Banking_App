@@ -1,28 +1,23 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace TransactionService.Models
-{
-    public class TransactionRequest
-    {
-        [Required]
-        public int UserId { get; set; }
+namespace TransactionService.Models;
 
-        [Required]
-        public string FromAccount { get; set; } = string.Empty;
+public class TransactionRequest
+{
+    [Required]
+    public int UserId { get; set; }
+
+    [Required]
+    public required string FromAccount { get; set; }
         
-        [Required]
-        public string ToAccount { get; set; } = string.Empty;
+    [Required]
+    public required string ToAccount { get; set; }
         
-        [Required]
-        [Range(0.01, double.MaxValue, ErrorMessage = "Amount must be greater than 0")]
-        public decimal Amount { get; set; }
+    [Required]
+    [Range(0.01, double.MaxValue, ErrorMessage = "Amount must be greater than 0")]
+    public decimal Amount { get; set; }
         
-        public string? Description { get; set; }
+    public string? Description { get; set; }
         
-        // Default to "transfer" if not specified
-        public string TransactionType { get; set; } = "transfer";
-        
-        // Add this property back to fix the deserialization error
-        public string? Currency { get; set; } = "USD";
-    }
+    public required string TransactionType { get; set; }
 }
