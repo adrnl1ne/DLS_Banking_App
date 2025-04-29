@@ -1,11 +1,9 @@
-using System.Collections.Concurrent;
-using System.Text.Json;
-using System.Xml.Linq;
 using Polly;
 using TransactionService.Infrastructure.Data.Repositories;
 using TransactionService.Models;
 using TransactionService.Services.Interface;
 using Prometheus;
+using TransactionService.Exceptions;
 
 namespace TransactionService.Services;
 
@@ -96,7 +94,9 @@ public class TransactionService(
         {
             logger.LogWarning("User account service is down, rejecting transaction");
             errorsTotal.WithLabels("CreateTransfer").Inc();
-            throw new InvalidOperationException("Something went wrong, please try again later.");
+            throw new ServiceUnavailableException(
+                "UserAccountService",
+                "The user account service is currently unavailable. Please try again later.");
         }
 
         // Check fraud detection service health
@@ -104,7 +104,9 @@ public class TransactionService(
         {
             logger.LogWarning("Fraud detection service is down, rejecting transaction");
             errorsTotal.WithLabels("CreateTransfer").Inc();
-            throw new InvalidOperationException("Something went wrong, please try again later.");
+            throw new ServiceUnavailableException(
+                "FraudDetectionService",
+                "The fraud detection service is currently unavailable. Please try again later.");
         }
     }
 
@@ -124,7 +126,6 @@ public class TransactionService(
             FromAccount = request.FromAccount,
             ToAccount = request.ToAccount,
             Amount = request.Amount,
-            Currency = "USD",
             Status = "pending",
             TransactionType = request.TransactionType,
             Description = request.Description ?? $"Transfer from account {fromAccount.Id} to {toAccount.Id}",
@@ -173,7 +174,6 @@ public class TransactionService(
             FromAccount = transaction.FromAccount,
             ToAccount = transaction.FromAccount,
             Amount = transaction.Amount,
-            Currency = "USD",
             Status = "pending",
             TransactionType = "withdrawal",
             Description = $"Withdrawal from account {fromAccount.Id} for transfer {transaction.TransferId}",
@@ -190,7 +190,6 @@ public class TransactionService(
             FromAccount = transaction.ToAccount,
             ToAccount = transaction.ToAccount,
             Amount = transaction.Amount,
-            Currency = "USD",
             Status = "pending",
             TransactionType = "deposit",
             Description = $"Deposit to account {toAccount.Id} from transfer {transaction.TransferId}",

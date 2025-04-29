@@ -30,7 +30,7 @@ public class RedisClient : IRedisClient, IDisposable
         try
         {
             var value = await _db.StringGetAsync(key);
-            return value.HasValue ? value.ToString() : null;
+            return (value.HasValue ? value.ToString() : null) ?? throw new InvalidOperationException();
         }
         catch (Exception ex)
         {

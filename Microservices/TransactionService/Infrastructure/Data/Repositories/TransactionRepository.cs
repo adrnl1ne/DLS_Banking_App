@@ -9,35 +9,25 @@ using TransactionService.Models;
 
 namespace TransactionService.Infrastructure.Data.Repositories
 {
-    public class TransactionRepository : ITransactionRepository
+    public class TransactionRepository(
+        TransactionDbContext context,
+        ILogger<TransactionRepository> logger,
+        Logging.ISecureTransactionLogger secureLogger)
+        : ITransactionRepository
     {
-        private readonly TransactionDbContext _context;
-        private readonly ILogger<TransactionRepository> _logger;
-        private readonly Infrastructure.Logging.ISecureTransactionLogger _secureLogger;
-
-        public TransactionRepository(
-            TransactionDbContext context, 
-            ILogger<TransactionRepository> logger,
-            Infrastructure.Logging.ISecureTransactionLogger secureLogger)
-        {
-            _context = context;
-            _logger = logger;
-            _secureLogger = secureLogger;
-        }
-
         public async Task<Transaction> CreateTransactionAsync(Transaction transaction)
         {
             // Store ClientIp temporarily if needed for logging
             var clientIp = transaction.ClientIp;
             
             // Save transaction
-            var result = await _context.Transactions.AddAsync(transaction);
-            await _context.SaveChangesAsync();
+            var result = await context.Transactions.AddAsync(transaction);
+            await context.SaveChangesAsync();
 
             // Log the IP address securely without storing it in the database
             if (!string.IsNullOrEmpty(clientIp))
             {
-                await _secureLogger.LogTransactionEventAsync(transaction.Id, "ClientInfo", 
+                await secureLogger.LogTransactionEventAsync(transaction.Id, "ClientInfo",
                     $"Request originated from IP: {clientIp}");
             }
             
@@ -47,21 +37,21 @@ namespace TransactionService.Infrastructure.Data.Repositories
 
         public async Task<Transaction?> GetTransactionByIdAsync(string id)
         {
-            return await _context.Transactions.FirstOrDefaultAsync(t => t.Id == id);
+            return await context.Transactions.FirstOrDefaultAsync(t => t.Id == id);
         }
 
         public async Task<Transaction?> GetTransactionByTransferIdAsync(string transferId)
         {
-            return await _context.Transactions.FirstOrDefaultAsync(t => t.TransferId == transferId);
+            return await context.Transactions.FirstOrDefaultAsync(t => t.TransferId == transferId);
         }
 
         public async Task<IEnumerable<Transaction>> GetTransactionsByUserIdAsync(int userId)
         {
             // Mask user ID for logging
-            _logger.LogInformation("Getting transactions for user: {UserId}", 
+            logger.LogInformation("Getting transactions for user: {UserId}",
                 LogSanitizer.MaskAccountId(userId));
 
-            return await _context.Transactions
+            return await context.Transactions
                 .Where(t => t.UserId == userId)
                 .ToListAsync();
         }
@@ -69,11 +59,11 @@ namespace TransactionService.Infrastructure.Data.Repositories
         public async Task<IEnumerable<Transaction>> GetTransactionsByAccountAsync(string accountId)
         {
             // Mask account ID for logging
-            _logger.LogInformation("Getting transactions for account: {AccountId}", 
+            logger.LogInformation("Getting transactions for account: {AccountId}",
                 LogSanitizer.MaskTransferId(accountId));
 
             // Get transactions where the account is either the source or the destination
-            return await _context.Transactions
+            return await context.Transactions
                 .Where(t => t.FromAccount == accountId || t.ToAccount == accountId)
                 .ToListAsync();
         }
@@ -81,10 +71,10 @@ namespace TransactionService.Infrastructure.Data.Repositories
         public async Task<Transaction> UpdateTransactionStatusAsync(string id, string status)
         {
             // Secure logging
-            _logger.LogInformation("Updating transaction {TransactionId} status to: {Status}", 
+            logger.LogInformation("Updating transaction {TransactionId} status to: {Status}",
                 LogSanitizer.MaskTransferId(id), status);
 
-            var transaction = await _context.Transactions.FindAsync(id);
+            var transaction = await context.Transactions.FindAsync(id);
             if (transaction == null)
             {
                 throw new KeyNotFoundException($"Transaction with ID {LogSanitizer.MaskTransferId(id)} not found");
@@ -95,10 +85,10 @@ namespace TransactionService.Infrastructure.Data.Repositories
             // Set this for use in the application but it won't be saved to DB
             transaction.LastModifiedBy = "system";
             
-            await _context.SaveChangesAsync();
+            await context.SaveChangesAsync();
 
             // Log the status change with secure logger
-            await _secureLogger.LogTransactionEventAsync(
+            await secureLogger.LogTransactionEventAsync(
                 id,
                 "status_change",
                 $"Transaction status updated to: {status}");
@@ -109,11 +99,11 @@ namespace TransactionService.Infrastructure.Data.Repositories
         public async Task<IEnumerable<TransactionLog>> GetTransactionLogsAsync(string transactionId)
         {
             // Secure logging
-            _logger.LogInformation("Getting logs for transaction: {TransactionId}", 
+            logger.LogInformation("Getting logs for transaction: {TransactionId}",
                 LogSanitizer.MaskTransferId(transactionId));
 
             // Return logs with sanitized messages if they contain sensitive data
-            var logs = await _context.TransactionLogs
+            var logs = await context.TransactionLogs
                 .Where(l => l.TransactionId == transactionId)
                 .OrderBy(l => l.CreatedAt)
                 .Select(l => new TransactionLog 
@@ -133,12 +123,12 @@ namespace TransactionService.Infrastructure.Data.Repositories
         public async Task AddTransactionLogAsync(string transactionId, string logType, string message)
         {
             // Use the secure logger instead of directly adding logs
-            await _secureLogger.LogTransactionEventAsync(transactionId, logType, message);
+            await secureLogger.LogTransactionEventAsync(transactionId, logType, message);
         }
 
         public async Task<int> SaveChangesAsync()
         {
-            return await _context.SaveChangesAsync();
+            return await context.SaveChangesAsync();
         }
     }
 }

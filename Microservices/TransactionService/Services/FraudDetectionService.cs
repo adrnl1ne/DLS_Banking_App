@@ -69,7 +69,7 @@ public class FraudDetectionService(
             var resultJson = await redisClient.GetAsync($"fraud:result:{transferId}");
             if (string.IsNullOrEmpty(resultJson))
             {
-                return null;
+                throw new ArgumentException("Result not found in Redis");
             }
 
             // Configure JsonSerializer to use camelCase

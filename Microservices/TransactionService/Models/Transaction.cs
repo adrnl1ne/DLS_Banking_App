@@ -4,15 +4,14 @@ namespace TransactionService.Models
 {
     public class Transaction
     {
-        public string Id { get; set; }
-        public string TransferId { get; set; }
-        public string TransactionType { get; set; }
+        public required string Id { get; set; }
+        public required string TransferId { get; set; }
+        public required string TransactionType { get; set; }
         public decimal Amount { get; set; }
-        public string Currency { get; set; }
-        public string Description { get; set; }
-        public string Status { get; set; }
-        public string FromAccount { get; set; }
-        public string ToAccount { get; set; }
+        public required string Description { get; set; }
+        public required string Status { get; set; }
+        public required string FromAccount { get; set; }
+        public required string ToAccount { get; set; }
         public int UserId { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
@@ -23,10 +22,10 @@ namespace TransactionService.Models
         
         // Already marked as NotMapped
         [NotMapped]
-        public string FraudCheckResult { get; set; }
+        public string? FraudCheckResult { get; set; }
 
         // Already marked as NotMapped
         [NotMapped]
-        public string ClientIp { get; set; }
+        public string? ClientIp { get; set; }
     }
 }

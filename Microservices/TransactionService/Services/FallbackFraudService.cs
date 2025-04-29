@@ -46,7 +46,10 @@ public class FallbackFraudService
         {
             TransferId = transferId,
             IsFraud = isFraud,
-            Status = isFraud ? "declined" : "approved"
+            Status = isFraud
+                ? "declined"
+                : "approved",
+            Timestamp = DateTime.UtcNow.ToString("o"),
         };
     }
 }

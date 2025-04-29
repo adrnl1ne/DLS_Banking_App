@@ -1,12 +1,6 @@
-using System;
-using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
-using System.Threading.Tasks;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
 using TransactionService.Infrastructure.Security;
 using TransactionService.Models;
 using TransactionService.Services.Interface;
@@ -38,7 +32,7 @@ public class UserAccountClientService : IUserAccountClient
     {
         try
         {
-            _logger.LogInformation("Getting account details for account ID {AccountId}", id);
+            _logger.LogInformation("Getting account details for account");
             
             var response = await _httpClient.GetAsync($"/api/Account/{id}");
             response.EnsureSuccessStatusCode();
@@ -48,7 +42,7 @@ public class UserAccountClientService : IUserAccountClient
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving account {AccountId}", id);
+            _logger.LogError(ex, "Error retrieving account");
             throw;
         }
     }
@@ -72,22 +66,20 @@ public class UserAccountClientService : IUserAccountClient
             if (!response.IsSuccessStatusCode)
             {
                 var errorContent = await response.Content.ReadAsStringAsync();
-                LogSanitizedError(errorContent, accountId);
+                LogSanitizedError(errorContent);
                 throw new InvalidOperationException($"Failed to update balance for account {LogSanitizer.MaskAccountId(accountId)}. Status: {response.StatusCode}");
             }
             
-            _logger.LogInformation("Successfully updated account {AccountId} balance", 
-                LogSanitizer.MaskAccountId(accountId));
+            _logger.LogInformation("Successfully updated account");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating balance for account {AccountId}", 
-                LogSanitizer.MaskAccountId(accountId));
+            _logger.LogError(ex, "Error updating balance for account");
             throw;
         }
     }
 
-    private void LogSanitizedError(string errorContent, int accountId)
+    private void LogSanitizedError(string errorContent)
     {
         try
         {
@@ -109,14 +101,13 @@ public class UserAccountClientService : IUserAccountClient
                 // If parsing fails, use generic message
             }
 
-            _logger.LogError("Failed to update balance for account {AccountId}. Error type: {ErrorType}, Status: {ErrorStatus}",
-                LogSanitizer.MaskAccountId(accountId), errorType, errorStatus);
+            _logger.LogError("Failed to update balance for account. Error type: {ErrorType}, Status: {ErrorStatus}",
+                errorType, errorStatus);
         }
         catch
         {
             // Fallback to very limited info if even the sanitization fails
-            _logger.LogError("Failed to update balance for account {AccountId}. (Error details sanitized)",
-                LogSanitizer.MaskAccountId(accountId));
+            _logger.LogError("Failed to update balance for account");
         }
     }
 }

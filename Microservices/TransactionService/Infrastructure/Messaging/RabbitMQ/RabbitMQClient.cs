@@ -1,6 +1,4 @@
-using System;
 using System.Text;
-using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using TransactionService.Infrastructure.Logging;
@@ -18,7 +16,7 @@ public class RabbitMqClient : IRabbitMqClient, IDisposable
     private IModel? _channel;
     private bool _initialized;
     private bool _disposed;
-    private readonly object _channelLock = new object();
+    private readonly Lock _channelLock = new();
 
     public RabbitMqClient(ILogger<RabbitMqClient> logger, string hostName = "rabbitmq", int port = 5672, string username = "guest", string password = "guest")
     {
@@ -72,23 +70,27 @@ public class RabbitMqClient : IRabbitMqClient, IDisposable
                 EnsureConnection();
                 
                 _logger.LogInformation("Declaring queue {QueueName}", queueName);
-                _channel.QueueDeclare(queue: queueName, durable: false, exclusive: false, autoDelete: false, arguments: null);
+                _channel?.QueueDeclare(queue: queueName, durable: false, exclusive: false, autoDelete: false, arguments: null);
                 
                 var body = Encoding.UTF8.GetBytes(message);
                 
                 // Add delivery confirmation
-                var properties = _channel.CreateBasicProperties();
-                properties.Persistent = true; // Make message persistent
+                if (_channel != null)
+                {
+                    var properties = _channel.CreateBasicProperties();
+                    properties.Persistent = true; // Make message persistent
                 
-                // Publish with the persistent flag
-                _channel.BasicPublish(exchange: "", routingKey: queueName, basicProperties: properties, body: body);
+                    // Publish with the persistent flag
+                    _channel.BasicPublish(exchange: "", routingKey: queueName, basicProperties: properties, body: body);
+                }
+
                 // SECURE - Redact or summarize the message content instead of logging it all
                 _logger.LogInformation("Published message to {QueueName} with length: {MessageLength}", 
-                    queueName, message?.Length ?? 0);
+                    queueName, message.Length);
 
                 // If you need message content, sanitize it:
                 _logger.LogDebug("Published message to {QueueName}: {Message}", 
-                    queueName, LogSanitizer.SanitizeLogMessage(message));
+                    queueName, LogSanitizer.SanitizeLogMessage(message ?? throw new ArgumentNullException(nameof(message))));
             }
         }
         catch (Exception ex)
@@ -126,11 +128,12 @@ public class RabbitMqClient : IRabbitMqClient, IDisposable
 
         try
         {
+            if (_channel == null) return;
             _channel!.QueueDeclare(queue: queue, durable: false, exclusive: false, autoDelete: false);
             _logger.LogInformation("Subscribed to queue {Queue}", queue);
 
             var consumer = new EventingBasicConsumer(_channel);
-            consumer.Received += (model, ea) =>
+            consumer.Received += (_, ea) =>
             {
                 var body = ea.Body.ToArray();
                 var message = Encoding.UTF8.GetString(body);

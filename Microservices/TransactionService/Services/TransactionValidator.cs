@@ -1,5 +1,4 @@
-﻿using System.Diagnostics.Metrics;
-using Polly;
+﻿using Polly;
 using Prometheus;
 using TransactionService.Models;
 using TransactionService.Services.Interface;
@@ -54,8 +53,8 @@ public class TransactionValidator(
             .Handle<Exception>()
             .WaitAndRetryAsync(
                 retryCount: 3, // Retry 3 times
-                sleepDurationProvider: attempt => TimeSpan.FromSeconds(2), // Wait 2 seconds between retries
-                onRetry: (exception, timeSpan, retryCount, context) =>
+                sleepDurationProvider: _ => TimeSpan.FromSeconds(2), // Wait 2 seconds between retries
+                onRetry: (exception, _, retryCount, _) =>
                 {
                     logger.LogWarning("Retry {RetryCount} for user account service call due to {ExceptionMessage}",
                         retryCount, exception.Message);
