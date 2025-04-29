@@ -243,6 +243,7 @@ services:
       - PROMETHEUS_PORT=${PROMETHEUS_PORT}
       - TRANSACTION_SERVICE_TOKEN=${TRANSACTION_SERVICE_TOKEN}
       - Services__UserAccountService=http://user-account-service:80
+      - Services__FraudDetectionService=http://fraud-detection-service:8000
     depends_on:
       mysql-transaction:
         condition: service_healthy

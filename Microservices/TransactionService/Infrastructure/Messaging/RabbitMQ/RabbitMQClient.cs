@@ -49,7 +49,6 @@ public class RabbitMqClient : IRabbitMqClient, IDisposable
             
             // Create all necessary queues on startup
             _channel.QueueDeclare(queue: "CheckFraud", durable: false, exclusive: false, autoDelete: false);
-            _channel.QueueDeclare(queue: "TransactionServiceQueue", durable: false, exclusive: false, autoDelete: false);
             _channel.QueueDeclare(queue: "FraudResult", durable: false, exclusive: false, autoDelete: false);
             _channel.QueueDeclare(queue: "FraudEvents", durable: false, exclusive: false, autoDelete: false);
             

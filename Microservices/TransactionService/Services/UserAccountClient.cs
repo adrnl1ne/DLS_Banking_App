@@ -9,10 +9,11 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using TransactionService.Infrastructure.Security;
 using TransactionService.Models;
+using TransactionService.Services.Interface;
 
 namespace TransactionService.Services;
 
-public class UserAccountClientService
+public class UserAccountClientService : IUserAccountClient
 {
     private readonly HttpClient _httpClient;
     private readonly ILogger<UserAccountClientService> _logger;
@@ -93,13 +94,13 @@ public class UserAccountClientService
             // Try to extract just essential info from the error
             var errorType = "Unknown";
             var errorStatus = "Unknown";
-            
+
             try
             {
                 using var doc = JsonDocument.Parse(errorContent);
                 if (doc.RootElement.TryGetProperty("title", out var title))
                     errorType = title.GetString() ?? "Unknown";
-                    
+
                 if (doc.RootElement.TryGetProperty("status", out var status))
                     errorStatus = status.GetInt32().ToString();
             }
@@ -107,27 +108,15 @@ public class UserAccountClientService
             {
                 // If parsing fails, use generic message
             }
-            
-            _logger.LogError("Failed to update balance for account {AccountId}. Error type: {ErrorType}, Status: {ErrorStatus}", 
+
+            _logger.LogError("Failed to update balance for account {AccountId}. Error type: {ErrorType}, Status: {ErrorStatus}",
                 LogSanitizer.MaskAccountId(accountId), errorType, errorStatus);
         }
         catch
         {
             // Fallback to very limited info if even the sanitization fails
-            _logger.LogError("Failed to update balance for account {AccountId}. (Error details sanitized)", 
+            _logger.LogError("Failed to update balance for account {AccountId}. (Error details sanitized)",
                 LogSanitizer.MaskAccountId(accountId));
         }
-    }
-    
-    private string MaskId(int id)
-    {
-        // Use the utility method from LogSanitizer instead of duplicating code
-        return LogSanitizer.MaskAccountId(id);
-    }
-
-    private string MaskAmount(decimal amount)
-    {
-        // Only show that there was an amount, not the specific value
-        return "***.**";
     }
 }

@@ -1,6 +1,9 @@
-﻿namespace TransactionService.Services;
+﻿using TransactionService.Models;
 
-public class IFraudDetectionService
+namespace TransactionService.Services.Interface;
+
+public interface IFraudDetectionService
 {
-    
+    Task<bool> IsServiceAvailableAsync();
+    Task<FraudResult> CheckFraudAsync(string transferId, Transaction transaction);
 }

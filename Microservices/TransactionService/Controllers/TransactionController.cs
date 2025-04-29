@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Prometheus;
 using TransactionService.Models;
 using TransactionService.Services;
+using TransactionService.Services.Interface;
 
 namespace TransactionService.Controllers;
 
