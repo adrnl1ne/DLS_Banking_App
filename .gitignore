@@ -2,6 +2,7 @@ src/FraudDetectionService/__pycache__/
 .env
 secrets.yaml
 
+__pycache__/
 # Build output
 [Bb]in/
 [Oo]bj/
