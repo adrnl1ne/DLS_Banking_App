@@ -1,9 +1,11 @@
+using Newtonsoft.Json;
 using Polly;
 using TransactionService.Infrastructure.Data.Repositories;
 using TransactionService.Models;
 using TransactionService.Services.Interface;
 using Prometheus;
 using TransactionService.Exceptions;
+using TransactionService.Infrastructure.Messaging.RabbitMQ;
 
 namespace TransactionService.Services;
 
@@ -16,6 +18,7 @@ public class TransactionService(
     Counter requestsTotal,
     Counter successesTotal,
     Counter errorsTotal,
+    IRabbitMqClient rabbitMqClient,
     Histogram histogram)
     : ITransactionService
 {
@@ -65,6 +68,18 @@ public class TransactionService(
 
                 // Track transaction amount in histogram for metrics
                 histogram.WithLabels("transfer").Observe((double)transaction.Amount);
+
+                // RabbitMQ publish logic
+                rabbitMqClient.Publish("TransactionCreated", JsonConvert.SerializeObject(new
+                {
+                    transaction.TransferId,
+                    transaction.Status,
+                    transaction.Amount,
+                    transaction.Description,
+                    transaction.FromAccount,
+                    transaction.ToAccount,
+                    transaction.CreatedAt
+                }));
 
                 successesTotal.WithLabels("CreateTransfer").Inc();
                 return TransactionResponse.FromTransaction(transaction);
@@ -136,26 +151,6 @@ public class TransactionService(
         await repository.CreateTransactionAsync(transaction);
         logger.LogInformation("Created pending transaction with TransferId: {TransferId}", transferId);
         return transaction;
-    }
-
-    private static async Task PerformFraudCheckAsync(
-        Transaction transaction,
-        ILogger<TransactionService> logger,
-        IFraudDetectionService fraudDetectionService,
-        ITransactionRepository repository,
-        Counter errorsTotal)
-    {
-        // Perform fraud check
-        var fraudResult = await fraudDetectionService.CheckFraudAsync(transaction.TransferId, transaction);
-
-        // Handle fraud detection result
-        if (fraudResult.IsFraud)
-        {
-            logger.LogWarning("Fraud detected for transaction {TransferId}", transaction.TransferId);
-            await repository.UpdateTransactionStatusAsync(transaction.Id, "declined");
-            errorsTotal.WithLabels("CreateTransfer").Inc();
-            throw new InvalidOperationException("Transaction declined due to potential fraud");
-        }
     }
 
     private static async Task<(Transaction WithdrawalTransaction, Transaction DepositTransaction)>
