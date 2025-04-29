@@ -410,7 +410,7 @@ public class AccountService(
                     logger.LogWarning("User {UserId} is not authorized to update balance for account {AccountId}",
                         currentUserService.UserId, id);
                     ErrorsTotal.WithLabels("UpdateBalance").Inc();
-                    throw new UnauthorizedAccessException("You are not authorized to update this account's balance.");
+                    throw new UnauthorizedAccessException("You are not authorized to update this account’s balance.");
                 }
             }
 
