@@ -1,6 +1,4 @@
-using System.Diagnostics.Metrics;
 using System.Security.Claims;
-using System.Security.Cryptography;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Prometheus;
@@ -20,6 +18,7 @@ public class TransactionController(ITransactionService transactionService, ILogg
         "Total number of transaction requests",
         new CounterConfiguration { LabelNames = new[] { "method" } }
     );
+
     private static readonly Counter TransactionErrorsTotal = Metrics.CreateCounter(
         "transaction_errors_total",
         "Total number of transaction errors",
@@ -41,7 +40,7 @@ public class TransactionController(ITransactionService transactionService, ILogg
             }
 
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var userId))
             {
                 TransactionErrorsTotal.WithLabels("POST").Inc();
                 return Unauthorized("User ID not found in token.");
@@ -49,7 +48,7 @@ public class TransactionController(ITransactionService transactionService, ILogg
 
             request.UserId = userId; // Set the user ID from the token
 
-            logger.LogInformation($"Creating transfer");
+            logger.LogInformation("Creating transfer");
 
             var result = await transactionService.CreateTransferAsync(request);
             return CreatedAtAction(nameof(GetTransaction), new { transferId = result.TransferId }, result);
@@ -83,9 +82,9 @@ public class TransactionController(ITransactionService transactionService, ILogg
         try
         {
             // Sanitize transferId to prevent log forging
-            transferId = transferId?.Replace("\n", "").Replace("\r", "");
+            transferId = transferId.Replace("\n", "").Replace("\r", "") ?? throw new InvalidOperationException();
 
-            logger.LogInformation($"Getting transaction with ID: {transferId}");
+            logger.LogInformation("Getting transaction");
 
             if (string.IsNullOrEmpty(transferId))
             {
@@ -161,17 +160,7 @@ public class TransactionController(ITransactionService transactionService, ILogg
         {
             TransactionErrorsTotal.WithLabels("GET").Inc();
             logger.LogError(ex, $"Error retrieving transactions for account");
-            return StatusCode(500, $"An error occurred while retrieving transactions: {ex.Message}");
+            return StatusCode(500, "An error occurred while retrieving transactions: {ex.Message}");
         }
-    }
-    private string HashSensitiveData(string data)
-    {
-        if (string.IsNullOrEmpty(data))
-        {
-            return string.Empty;
-        }
-        using var sha256 = SHA256.Create();
-        var hashedBytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(data));
-        return Convert.ToBase64String(hashedBytes);
     }
 }

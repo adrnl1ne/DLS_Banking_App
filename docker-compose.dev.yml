@@ -223,6 +223,9 @@ services:
       - "9092:${PROMETHEUS_PORT}"
     volumes:
       - ./Microservices/TransactionService:/app
+      - /app/bin
+      - /app/obj
+      - data-protection-keys:/root/.aspnet/DataProtection-Keys
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - MYSQL_HOST=mysql-transaction

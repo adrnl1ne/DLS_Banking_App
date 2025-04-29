@@ -150,10 +150,27 @@ builder.Services.AddHttpClient<UserAccountClientService>((services, client) => {
 // Register other required services
 builder.Services.AddScoped<ITransactionRepository, TransactionRepository>();
 builder.Services.AddSingleton<IRabbitMqClient, RabbitMqClient>();
-builder.Services.AddSingleton<Counter>(Metrics.CreateCounter("transactions_total", "The total number of transactions"));
-builder.Services.AddSingleton<Histogram>(Metrics.CreateHistogram("transaction_amount", "Transaction amounts"));
 builder.Services.AddScoped<ITransactionService, TransactionService.Services.TransactionService>();
 builder.Services.AddSingleton<FallbackFraudService>();
+var transactionCounter = Metrics.CreateCounter(
+    "transactions_total",
+    "Total number of transactions",
+    new CounterConfiguration { LabelNames = new[] { "type", "status" } }
+);
+
+var transactionDurationHistogram = Metrics.CreateHistogram(
+    "transaction_duration_seconds",
+    "Transaction processing duration in seconds",
+    new HistogramConfiguration
+    {
+        LabelNames = ["type"],
+        Buckets = [0.1, 0.5, 1, 2, 5, 10]
+    }
+);
+
+// Register metrics
+builder.Services.AddSingleton(transactionCounter);
+builder.Services.AddSingleton(transactionDurationHistogram);
 
 var app = builder.Build();
 
@@ -162,6 +179,8 @@ if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Docker"))
 {
     app.UseDeveloperExceptionPage();
 }
+app.UseMetricServer();
+app.UseHttpMetrics();
 
 // CRITICAL: Set up Swagger UI before authentication middleware
 app.UseSwagger();
@@ -175,7 +194,6 @@ app.UseSwaggerUI(c =>
 // The middleware ordering is critical for proper functioning
 app.UseRouting();                // First set up routing
 app.UseCors("AllowAll");         // Then CORS
-app.UseMetricServer();           // Then metrics before auth
 app.UseAuthentication();         // Then authentication
 app.UseAuthorization();          // Then authorization
 app.MapControllers();            // Finally map controllers
