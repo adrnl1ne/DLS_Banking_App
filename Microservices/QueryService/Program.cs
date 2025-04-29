@@ -32,12 +32,6 @@ builder.Services.AddSingleton<RabbitMqConnection>(sp =>
     return new RabbitMqConnection(hostName, userName, password);
 });
 
-builder.Services.AddHostedService(provider =>
-    new RabbitMqListener(
-        provider.GetRequiredService<RabbitMqConnection>(),
-        provider.GetRequiredService<IElasticClient>()
-    ));
-
 builder.Services
     .AddGraphQLServer()
     .AddQueryType<Query>();

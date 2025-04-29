@@ -26,8 +26,8 @@ public class RabbitMqListener : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await _rabbit.open_connection();
-        await _rabbit.open_channel();
+        await _rabbit.OpenConnectionAsync();
+        await _rabbit.OpenChannelAsync();
 
         var channel = _rabbit.Channel;
 
