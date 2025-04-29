@@ -190,7 +190,6 @@ builder.Services.AddScoped<ITransactionRepository, TransactionRepository>();
 builder.Services.AddScoped<TransactionValidator>();
 builder.Services.AddSingleton<IRabbitMqClient, RabbitMqClient>();
 builder.Services.AddScoped<ITransactionService, TransactionService.Services.TransactionService>();
-builder.Services.AddSingleton<FallbackFraudService>();
 
 // Define and register metrics
 var requestsTotalCounter = Metrics.CreateCounter(

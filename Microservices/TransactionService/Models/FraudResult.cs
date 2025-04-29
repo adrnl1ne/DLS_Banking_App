@@ -6,6 +6,6 @@ namespace TransactionService.Models
         public bool IsFraud { get; set; }
         public required string Status { get; set; }
         public decimal Amount { get; set; }
-        public required string Timestamp { get; set; }
+        public required DateTime Timestamp { get; set; }
     }
 }

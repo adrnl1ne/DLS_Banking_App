@@ -25,12 +25,12 @@ public class RedisClient : IRedisClient, IDisposable
         }
     }
 
-    public async Task<string> GetAsync(string key)
+    public async Task<string?> GetAsync(string key)
     {
         try
         {
             var value = await _db.StringGetAsync(key);
-            return (value.HasValue ? value.ToString() : null) ?? throw new InvalidOperationException();
+            return value.HasValue ? value.ToString() : null;
         }
         catch (Exception ex)
         {
