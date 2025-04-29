@@ -1,192 +1,207 @@
 using System.Text;
-using System.Text.Json;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using TransactionService.Infrastructure.Logging;
 
 namespace TransactionService.Infrastructure.Messaging.RabbitMQ;
 
-public class RabbitMqClient : IRabbitMQClient, IDisposable
+public class RabbitMqClient : IRabbitMqClient, IDisposable
 {
-    private readonly IConnection _connection;
-    private readonly IModel _channel;
     private readonly ILogger<RabbitMqClient> _logger;
+    private readonly string _hostName;
+    private readonly int _port;
+    private readonly string _username;
+    private readonly string _password;
+    private IConnection? _connection;
+    private IModel? _channel;
+    private bool _initialized;
+    private bool _disposed;
+    private readonly Lock _channelLock = new();
 
-    // Constructor using RabbitMQConfiguration
-    public RabbitMqClient(RabbitMQConfiguration config, ILogger<RabbitMqClient> logger)
+    public RabbitMqClient(ILogger<RabbitMqClient> logger, string hostName = "rabbitmq", int port = 5672, string username = "guest", string password = "guest")
     {
         _logger = logger;
+        _hostName = hostName;
+        _port = port;
+        _username = username;
+        _password = password;
         
-        var factory = new ConnectionFactory
-        {
-            HostName = config.HostName,
-            Port = config.Port,
-            UserName = config.UserName,
-            Password = config.Password,
-            VirtualHost = config.VirtualHost
-        };
-
-        try
-        {
-            _connection = factory.CreateConnection();
-            _channel = _connection.CreateModel();
-            _logger.LogInformation("Connected to RabbitMQ at {Host}:{Port}", config.HostName, config.Port);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to connect to RabbitMQ at {Host}:{Port}", config.HostName, config.Port);
-            throw;
-        }
+        InitializeConnection();
     }
 
-    // Method to publish serialized messages
-    public void PublishMessage<T>(string queue, T message)
+    private void InitializeConnection()
     {
         try
         {
-            _channel.QueueDeclare(queue: queue, durable: true, exclusive: false, autoDelete: false);
-            
-            var json = JsonSerializer.Serialize(message);
-            var body = Encoding.UTF8.GetBytes(json);
+            var factory = new ConnectionFactory
+            {
+                HostName = _hostName,
+                Port = _port,
+                UserName = _username,
+                Password = _password,
+                RequestedHeartbeat = TimeSpan.FromSeconds(30)
+            };
 
-            _channel.BasicPublish(
-                exchange: "",
-                routingKey: queue,
-                basicProperties: null,
-                body: body);
+            _connection = factory.CreateConnection();
+            _channel = _connection.CreateModel();
             
-            _logger.LogInformation("Message published to queue {Queue}: {Message}", queue, json);
+            // Create all necessary queues on startup
+            _channel.QueueDeclare(queue: "CheckFraud", durable: false, exclusive: false, autoDelete: false);
+            _channel.QueueDeclare(queue: "FraudResult", durable: false, exclusive: false, autoDelete: false);
+            _channel.QueueDeclare(queue: "FraudEvents", durable: false, exclusive: false, autoDelete: false);
+            
+            _logger.LogInformation("RabbitMQ client initialized successfully. Connected to {Host}:{Port}", _hostName, _port);
+            _initialized = true;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to publish message to {Queue}", queue);
-            throw;
+            _logger.LogError(ex, "Failed to initialize RabbitMQ client");
+            _initialized = false;
         }
     }
 
-    // Method to publish string messages
     public void Publish(string queueName, string message)
     {
         try
         {
-            _channel.QueueDeclare(queue: queueName, durable: true, exclusive: false, autoDelete: false);
-            
-            var body = Encoding.UTF8.GetBytes(message);
-            
-            _channel.BasicPublish(
-                exchange: "",
-                routingKey: queueName,
-                basicProperties: null,
-                body: body);
-            
-            _logger.LogInformation("Message published to queue {Queue}: {Message}", queueName, message);
+            lock (_channelLock)
+            {
+                // Ensure connection and channel are available
+                EnsureConnection();
+                
+                _logger.LogInformation("Declaring queue {QueueName}", queueName);
+                _channel?.QueueDeclare(queue: queueName, durable: false, exclusive: false, autoDelete: false, arguments: null);
+                
+                var body = Encoding.UTF8.GetBytes(message);
+                
+                // Add delivery confirmation
+                if (_channel != null)
+                {
+                    var properties = _channel.CreateBasicProperties();
+                    properties.Persistent = true; // Make message persistent
+                
+                    // Publish with the persistent flag
+                    _channel.BasicPublish(exchange: "", routingKey: queueName, basicProperties: properties, body: body);
+                }
+
+                // SECURE - Redact or summarize the message content instead of logging it all
+                _logger.LogInformation("Published message to {QueueName} with length: {MessageLength}", 
+                    queueName, message.Length);
+
+                // If you need message content, sanitize it:
+                _logger.LogDebug("Published message to {QueueName}: {Message}", 
+                    queueName, LogSanitizer.SanitizeLogMessage(message ?? throw new ArgumentNullException(nameof(message))));
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to publish message to {Queue}", queueName);
-            throw;
+            _logger.LogError(ex, "Failed to publish message to {QueueName}", queueName);
+            
+            // Try to reconnect if needed
+            try
+            {
+                CloseConnection();
+                EnsureConnection();
+                _logger.LogInformation("Reconnected to RabbitMQ after publish failure");
+            }
+            catch (Exception reconnectEx)
+            {
+                _logger.LogError(reconnectEx, "Failed to reconnect to RabbitMQ");
+            }
+            
+            throw; // Re-throw the exception to notify the caller
         }
     }
 
-    // Subscribe to a queue with a handler callback
-    public void SubscribeToQueue<T>(string queue, Action<T> handler)
+    public void Subscribe(string queue, Action<string> callback)
     {
+        if (!_initialized)
+        {
+            _logger.LogWarning("RabbitMQ client not initialized. Cannot subscribe to {Queue}", queue);
+            // Try to reconnect
+            InitializeConnection();
+            if (!_initialized)
+            {
+                return;
+            }
+        }
+
         try
         {
-            _channel.QueueDeclare(queue: queue, durable: true, exclusive: false, autoDelete: false);
+            if (_channel == null) return;
+            _channel!.QueueDeclare(queue: queue, durable: false, exclusive: false, autoDelete: false);
+            _logger.LogInformation("Subscribed to queue {Queue}", queue);
 
             var consumer = new EventingBasicConsumer(_channel);
             consumer.Received += (_, ea) =>
             {
+                var body = ea.Body.ToArray();
+                var message = Encoding.UTF8.GetString(body);
+                _logger.LogInformation("Received message from {Queue}: {Message}", queue, message);
+
                 try
                 {
-                    var body = ea.Body.ToArray();
-                    var json = Encoding.UTF8.GetString(body);
-                    
-                    _logger.LogInformation("Message received from queue {Queue}: {Message}", queue, json);
-                    
-                    var message = JsonSerializer.Deserialize<T>(json);
-                    if (message != null)
-                    {
-                        handler(message);
-                        _channel.BasicAck(ea.DeliveryTag, false);
-                    }
+                    callback(message);
+                    _channel.BasicAck(deliveryTag: ea.DeliveryTag, multiple: false);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error processing message from {Queue}", queue);
-                    _channel.BasicNack(ea.DeliveryTag, false, true);
+                    _logger.LogError(ex, "Error processing message from {Queue}: {Message}", queue, message);
+                    _channel.BasicNack(deliveryTag: ea.DeliveryTag, multiple: false, requeue: true);
                 }
             };
 
-            _channel.BasicConsume(queue: queue, autoAck: false, consumer: consumer);
-            _logger.LogInformation("Subscribed to queue {Queue}", queue);
+            _channel.BasicConsume(queue: queue,
+                autoAck: false,
+                consumer: consumer);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to subscribe to {Queue}", queue);
-            throw;
         }
-    }
-
-    // Async consumption method
-    public async Task<string> ConsumeAsync(string queueName, CancellationToken cancellationToken = default)
-    {
-        _logger.LogInformation("Setting up async consumption from queue {Queue}", queueName);
-        
-        _channel.QueueDeclare(queue: queueName, durable: true, exclusive: false, autoDelete: false);
-
-        var tcs = new TaskCompletionSource<string>();
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cts.Token.Register(() => {
-            _logger.LogInformation("Consumption from queue {Queue} was cancelled", queueName);
-            tcs.TrySetCanceled();
-        }, useSynchronizationContext: false);
-
-        var consumer = new EventingBasicConsumer(_channel);
-        string? consumerTag = null;
-
-        var tag = consumerTag;
-        consumer.Received += (_, ea) =>
-        {
-            try {
-                var body = ea.Body.ToArray();
-                var message = Encoding.UTF8.GetString(body);
-                
-                _logger.LogInformation("Message received from queue {Queue} during async consumption: {Message}", queueName, message);
-                
-                tcs.TrySetResult(message);
-                _channel.BasicAck(deliveryTag: ea.DeliveryTag, multiple: false);
-                
-                // Cancel consumption after receiving the message
-                if (tag != null) {
-                    _channel.BasicCancel(tag);
-                }
-            }
-            catch (Exception ex) {
-                _logger.LogError(ex, "Error processing message from {Queue} during async consumption", queueName);
-                _channel.BasicNack(ea.DeliveryTag, false, true);
-                tcs.TrySetException(ex);
-            }
-        };
-
-        consumerTag = _channel.BasicConsume(queue: queueName, autoAck: false, consumer: consumer);
-
-        return await tcs.Task;
     }
 
     public void Dispose()
     {
-        try
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_disposed) return;
+
+        if (disposing)
         {
-            _channel?.Close();
-            _channel?.Dispose();
-            _connection?.Close();
-            _connection?.Dispose();
-            _logger.LogInformation("RabbitMQ connection closed");
+            if (_channel != null)
+            {
+                _channel.Close();
+                _channel.Dispose();
+            }
+
+            if (_connection != null)
+            {
+                _connection.Close();
+                _connection.Dispose();
+            }
         }
-        catch (Exception ex)
+
+        _disposed = true;
+    }
+
+    private void EnsureConnection()
+    {
+        if (_connection == null || !_connection.IsOpen)
         {
-            _logger.LogError(ex, "Error during RabbitMQ client disposal");
+            InitializeConnection();
+        }
+    }
+
+    private void CloseConnection()
+    {
+        if (_connection != null && _connection.IsOpen)
+        {
+            _connection.Close();
         }
     }
 }

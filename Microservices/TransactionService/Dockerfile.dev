@@ -4,4 +4,4 @@ COPY TransactionService.csproj .
 RUN dotnet restore
 COPY . .
 EXPOSE 80 9091
-CMD ["dotnet", "watch", "run", "--urls", "http://*:80"]
+CMD ["dotnet", "watch", "run", "--non-interactive", "--urls", "http://*:80"]

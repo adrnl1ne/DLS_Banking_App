@@ -46,10 +46,12 @@ services:
       - RABBITMQ_DEFAULT_PASS=${RABBITMQ_DEFAULT_PASS}
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf
+    user: "rabbitmq:rabbitmq"
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
-      timeout: 5s
+      timeout: 10s
       retries: 5
       start_period: 15s
 
@@ -106,6 +108,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
 
   fraud-detection-service:
     build:
@@ -233,6 +236,9 @@ services:
       - "9092:${PROMETHEUS_PORT}"
     volumes:
       - ./Microservices/TransactionService:/app
+      - /app/bin
+      - /app/obj
+      - data-protection-keys:/root/.aspnet/DataProtection-Keys
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - MYSQL_HOST=mysql-transaction
@@ -250,6 +256,7 @@ services:
       - PROMETHEUS_PORT=${PROMETHEUS_PORT}
       - TRANSACTION_SERVICE_TOKEN=${TRANSACTION_SERVICE_TOKEN}
       - Services__UserAccountService=http://user-account-service:80
+      - Services__FraudDetectionService=http://fraud-detection-service:8000
     depends_on:
       mysql-transaction:
         condition: service_healthy

@@ -2,14 +2,18 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using TransactionService.Models;
 
-namespace TransactionService.Infrastructure.Data.Repositories;
-
-public interface ITransactionRepository
+namespace TransactionService.Infrastructure.Data.Repositories
 {
-    Task<Transaction> CreateTransactionAsync(Transaction transaction);
-    Task<Transaction?> GetTransactionByTransferIdAsync(string transferId);
-    Task<IEnumerable<Transaction>> GetTransactionsByAccountAsync(string accountId);
-    
-    // The interface expects this method to return Task<Transaction>
-    Task<Transaction> UpdateTransactionStatusAsync(string transferId, string status);
+    public interface ITransactionRepository
+    {
+        Task<Transaction> CreateTransactionAsync(Transaction transaction);
+        Task<Transaction?> GetTransactionByIdAsync(string id);
+        Task<Transaction?> GetTransactionByTransferIdAsync(string transferId);
+        Task<IEnumerable<Transaction>> GetTransactionsByUserIdAsync(int userId);
+        Task<IEnumerable<Transaction>> GetTransactionsByAccountAsync(string accountId);
+        Task<Transaction> UpdateTransactionStatusAsync(string id, string status);
+        Task<IEnumerable<TransactionLog>> GetTransactionLogsAsync(string transactionId);
+        Task AddTransactionLogAsync(string transactionId, string logType, string message);
+        Task<int> SaveChangesAsync();
+    }
 }

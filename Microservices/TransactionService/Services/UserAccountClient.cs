@@ -1,29 +1,113 @@
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
+using TransactionService.Infrastructure.Security;
 using TransactionService.Models;
+using TransactionService.Services.Interface;
 
 namespace TransactionService.Services;
 
-public class UserAccountClientService
+public class UserAccountClientService : IUserAccountClient
 {
     private readonly HttpClient _httpClient;
+    private readonly ILogger<UserAccountClientService> _logger;
 
     public UserAccountClientService(HttpClient httpClient, IConfiguration configuration, ILogger<UserAccountClientService> logger)
     {
         _httpClient = httpClient;
-        var serviceToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0cmFuc2FjdGlvbi1zZXJ2aWNlIiwicm9sZSI6InNlcnZpY2UiLCJqdGkiOiJjNGEwMzRjYy1iMDE4LTQxYTYtOTNmMi02MDc5MDQ1MWU1OWEiLCJpc3MiOiJCYW5raW5nQXBwIiwic2NvcGVzIjpbInJlYWQ6YWNjb3VudHMiLCJ1cGRhdGU6YWNjb3VudC1iYWxhbmNlIl0sImV4cCI6MTc2MTI0NjM0NSwiYXVkIjoiVXNlckFjY291bnRBUEkifQ.xiE7sJOYZWizg-cvk_yKya4-vfaXUV9BDTXaJx5QgJE" ?? throw new InvalidOperationException("Service token must be configured");
+        _logger = logger;
+        
+        // Get token from configuration (secure way)
+        var serviceToken = configuration["ServiceAuthentication:Token"] 
+            ?? throw new InvalidOperationException("ServiceAuthentication:Token is not configured");
         _httpClient.BaseAddress = new Uri(configuration["Services:UserAccountService"] ?? "http://user-account-service:80");
-        _httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", serviceToken);
-        logger.LogInformation("UserAccountClientService initialized with BaseAddress: {BaseAddress}, Token: {Token}", _httpClient.BaseAddress, serviceToken);
-    }
-    public async Task<Account?> GetAccountAsync(int id)
-    {
-        var response = await _httpClient.GetAsync($"/api/Account/{id}");
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<Account>();
+        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", serviceToken);
+        
+        // Don't log the token, just log the base address
+        logger.LogInformation("UserAccountClientService initialized with BaseAddress: {BaseAddress}", 
+            _httpClient.BaseAddress);
     }
 
-    public async Task UpdateBalanceAsync(int accountId, decimal newBalance)
+    public async Task<Account?> GetAccountAsync(int id)
     {
-        var response = await _httpClient.PutAsync($"/api/Account/{accountId}/balance?newBalance={newBalance}", null);
-        response.EnsureSuccessStatusCode();
+        try
+        {
+            _logger.LogInformation("Getting account details for account");
+            
+            var response = await _httpClient.GetAsync($"/api/Account/{id}");
+            response.EnsureSuccessStatusCode();
+            
+            var account = await response.Content.ReadFromJsonAsync<Account>();
+            return account;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving account");
+            throw;
+        }
+    }
+
+    public async Task UpdateBalanceAsync(int accountId, AccountBalanceRequest balanceRequest)
+    {
+        try
+        {
+            _logger.LogInformation("Updating account {AccountId} balance with type {TransactionType}", 
+                LogSanitizer.MaskAccountId(accountId), balanceRequest.TransactionType);
+                
+            // Serialize with proper content type
+            var content = new StringContent(
+                JsonSerializer.Serialize(balanceRequest),
+                Encoding.UTF8,
+                "application/json");
+                    
+            // Make the API call
+            var response = await _httpClient.PutAsync($"/api/Account/{accountId}/balance", content);
+            
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorContent = await response.Content.ReadAsStringAsync();
+                LogSanitizedError(errorContent);
+                throw new InvalidOperationException($"Failed to update balance for account {LogSanitizer.MaskAccountId(accountId)}. Status: {response.StatusCode}");
+            }
+            
+            _logger.LogInformation("Successfully updated account");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating balance for account");
+            throw;
+        }
+    }
+
+    private void LogSanitizedError(string errorContent)
+    {
+        try
+        {
+            // Try to extract just essential info from the error
+            var errorType = "Unknown";
+            var errorStatus = "Unknown";
+
+            try
+            {
+                using var doc = JsonDocument.Parse(errorContent);
+                if (doc.RootElement.TryGetProperty("title", out var title))
+                    errorType = title.GetString() ?? "Unknown";
+
+                if (doc.RootElement.TryGetProperty("status", out var status))
+                    errorStatus = status.GetInt32().ToString();
+            }
+            catch
+            {
+                // If parsing fails, use generic message
+            }
+
+            _logger.LogError("Failed to update balance for account. Error type: {ErrorType}, Status: {ErrorStatus}",
+                errorType, errorStatus);
+        }
+        catch
+        {
+            // Fallback to very limited info if even the sanitization fails
+            _logger.LogError("Failed to update balance for account");
+        }
     }
 }
