@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import Navbar from './components/Navbar'
 import Dashboard from './pages/Dashboard'
 import Accounts from './pages/Accounts'
+import AccountDetails from './pages/AccountDetails'
 import Transactions from './pages/Transactions'
 import Login from './pages/Login'
 import Register from './pages/Register'
@@ -27,6 +28,7 @@ function App() {
             <Routes>
               <Route path="/" element={isLoggedIn ? <Dashboard /> : <Login setIsAuthenticated={setIsLoggedIn} />} />
               <Route path="/accounts" element={isLoggedIn ? <Accounts /> : <Navigate to="/login" />} />
+              <Route path="/accounts/:accountId" element={isLoggedIn ? <AccountDetails /> : <Navigate to="/login" />} />
               <Route path="/transactions" element={isLoggedIn ? <Transactions /> : <Navigate to="/login" />} />
               <Route path="/login" element={isLoggedIn ? <Navigate to="/" /> : <Login setIsAuthenticated={setIsLoggedIn} />} />
               <Route path="/register" element={isLoggedIn ? <Navigate to="/" /> : <Register />} />
