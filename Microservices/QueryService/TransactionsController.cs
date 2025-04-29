@@ -18,7 +18,6 @@ public class TransactionsController : ControllerBase
     }
     
     [HttpGet("accounts/{accountId}/transactions")]
-    
     public async Task<IActionResult> GetTransactionHistory(int accountId, [FromQuery] string fromDate = null, [FromQuery] string toDate = null)
     {
         var filters = new List<QueryContainer>();

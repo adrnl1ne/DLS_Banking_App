@@ -6,7 +6,7 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddSingleton<IElasticClient>(sp =>
 {
-    var settings = new ConnectionSettings(new Uri("http://localhost:9200"))
+    var settings = new ConnectionSettings(new Uri("http://elasticsearch:9200"))
         .DefaultIndex("transactions");
 
     return new ElasticClient(settings);
@@ -25,7 +25,7 @@ builder.Services.AddHostedService<RabbitMqListener>();
 builder.Services.AddSingleton<RabbitMqConnection>(sp =>
 {
     var config = builder.Configuration;
-    var hostName = "rabbitmq";//config["RabbitMQ:HostName"];
+    var hostName = config["RabbitMQ:HostName"];
     var userName = config["RabbitMQ:UserName"];
     var password = config["RabbitMQ:Password"];
     
@@ -38,7 +38,7 @@ builder.Services
 
 var app = builder.Build();
 
-
+await Helpers.EnsureElasticsearchIndicesAsync(app.Services);
 
 app.MapControllers();
 
