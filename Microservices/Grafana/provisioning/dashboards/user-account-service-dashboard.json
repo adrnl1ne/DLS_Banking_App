@@ -398,5 +398,6 @@
   "timezone": "browser",
   "title": "UserAccountService Metrics",
   "uid": "user-account-service",
-  "version": 1
+  "version": 1,
+  "refresh": "5s"
 }

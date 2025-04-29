@@ -1,119 +1,357 @@
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
-using Microsoft.Extensions.Logging;
-using Prometheus;
+using Polly;
 using TransactionService.Infrastructure.Data.Repositories;
-using TransactionService.Infrastructure.Messaging.RabbitMQ;
 using TransactionService.Models;
+using TransactionService.Services.Interface;
+using Prometheus;
+using TransactionService.Exceptions;
 
-namespace TransactionService.Services
+namespace TransactionService.Services;
+
+public class TransactionService(
+    ILogger<TransactionService> logger,
+    ITransactionRepository repository,
+    IUserAccountClient userAccountClient,
+    IFraudDetectionService fraudDetectionService,
+    TransactionValidator validator,
+    Counter requestsTotal,
+    Counter successesTotal,
+    Counter errorsTotal,
+    Histogram histogram)
+    : ITransactionService
 {
-    public class TransactionService : ITransactionService
+    public async Task<TransactionResponse> CreateTransferAsync(TransactionRequest request)
     {
-        private readonly ITransactionRepository _repository;
-        private readonly IRabbitMQClient _rabbitMqClient;
-        private readonly UserAccountClientService _userAccountClient;
-        private readonly ILogger<TransactionService> _logger;
-        private readonly Counter _counter;
-        private readonly Histogram _histogram;
-
-        public TransactionService(
-            ITransactionRepository repository,
-            IRabbitMQClient rabbitMqClient,
-            UserAccountClientService userAccountClient,
-            ILogger<TransactionService> logger,
-            Counter counter,
-            Histogram histogram)
+        requestsTotal.WithLabels("CreateTransfer").Inc();
+        try
         {
-            _repository = repository;
-            _rabbitMqClient = rabbitMqClient;
-            _userAccountClient = userAccountClient;
-            _logger = logger;
-            _counter = counter;
-            _histogram = histogram;
-        }
+            logger.LogInformation("Creating transfer");
 
-        public async Task<TransactionResponse> CreateTransferAsync(TransactionRequest request)
-        {
+            // Perform health checks for both services upfront
+            await CheckExternalServicesHealthAsync(logger, fraudDetectionService, validator, errorsTotal);
+
+            // Validate the transfer request and fetch accounts
+            var (fromAccount, toAccount) = await validator.ValidateTransferRequestAsync(request);
+
+            // Create the pending transaction
+            var transaction = await CreatePendingTransactionAsync(request, fromAccount, toAccount, logger, repository);
+
             try
             {
-                _logger.LogInformation($"Creating transfer from {request.FromAccount} to {request.ToAccount} for {request.Amount}");
+                // Perform fraud check
+                var fraudResult = await fraudDetectionService.CheckFraudAsync(transaction.TransferId, transaction);
 
-                var transaction = new Transaction
+                // Check both IsFraud and Status to determine if the transaction should be declined
+                if (fraudResult.IsFraud || fraudResult.Status == "declined")
                 {
-                    Id = Guid.NewGuid(),
-                    TransferId = $"TRX-{DateTime.UtcNow.Ticks}",
-                    UserId = request.UserId,
-                    FromAccount = request.FromAccount,
-                    ToAccount = request.ToAccount,
-                    Amount = request.Amount,
-                    Status = "pending",
-                    CreatedAt = DateTime.UtcNow
-                };
+                    logger.LogWarning("Fraud detected for transaction {TransferId}: IsFraud={IsFraud}, Status={Status}",
+                        transaction.TransferId, fraudResult.IsFraud, fraudResult.Status);
+                    await repository.UpdateTransactionStatusAsync(transaction.Id, "declined");
+                    errorsTotal.WithLabels("CreateTransfer").Inc();
+                    throw new InvalidOperationException("Transaction declined due to potential fraud");
+                }
 
-                await _repository.CreateTransactionAsync(transaction);
+                // Create child transactions (withdrawal and deposit)
+                var (withdrawalTransaction, depositTransaction) = await CreateChildTransactionsAsync(
+                    transaction, fromAccount, toAccount, repository);
 
-                // Convert decimal to double for Histogram
-                _histogram.Observe((double)transaction.Amount);
+                // Update account balances
+                await UpdateAccountBalancesAsync(transaction, fromAccount, toAccount, logger, userAccountClient);
 
+                // Update transaction statuses to completed
+                await UpdateTransactionStatusesAsync(transaction, withdrawalTransaction, depositTransaction,
+                    repository);
+
+                logger.LogInformation("Transaction {TransferId} completed successfully", transaction.TransferId);
+
+                // Track transaction amount in histogram for metrics
+                histogram.WithLabels("transfer").Observe((double)transaction.Amount);
+
+                successesTotal.WithLabels("CreateTransfer").Inc();
                 return TransactionResponse.FromTransaction(transaction);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error creating transfer");
+                await HandleTransactionFailureAsync(transaction, ex, logger, repository, errorsTotal);
                 throw;
             }
         }
-
-        public async Task<TransactionResponse> GetTransactionByTransferIdAsync(string transferId)
+        catch (Exception ex)
         {
-            var transaction = await _repository.GetTransactionByTransferIdAsync(transferId);
-            return (transaction != null ? TransactionResponse.FromTransaction(transaction) : null) ?? throw new InvalidOperationException();
+            errorsTotal.WithLabels("CreateTransfer").Inc();
+            logger.LogError(ex, "Error creating transfer");
+            throw;
+        }
+    }
+
+    private static async Task CheckExternalServicesHealthAsync(
+        ILogger<TransactionService> logger,
+        IFraudDetectionService fraudDetectionService,
+        TransactionValidator validator,
+        Counter errorsTotal)
+    {
+        // Check user account service health
+        if (!await validator.IsUserAccountServiceAvailableAsync())
+        {
+            logger.LogWarning("User account service is down, rejecting transaction");
+            errorsTotal.WithLabels("CreateTransfer").Inc();
+            throw new ServiceUnavailableException(
+                "UserAccountService",
+                "The user account service is currently unavailable. Please try again later.");
         }
 
-        public async Task<IEnumerable<TransactionResponse>> GetTransactionsByAccountAsync(string accountId, int authenticatedUserId)
+        // Check fraud detection service health
+        if (!await fraudDetectionService.IsServiceAvailableAsync())
         {
-            try
-            {
-                // Validate accountId format
-                if (!int.TryParse(accountId, out int accountIdInt))
+            logger.LogWarning("Fraud detection service is down, rejecting transaction");
+            errorsTotal.WithLabels("CreateTransfer").Inc();
+            throw new ServiceUnavailableException(
+                "FraudDetectionService",
+                "The fraud detection service is currently unavailable. Please try again later.");
+        }
+    }
+
+    private static async Task<Transaction> CreatePendingTransactionAsync(
+        TransactionRequest request,
+        Account fromAccount,
+        Account toAccount,
+        ILogger<TransactionService> logger,
+        ITransactionRepository repository)
+    {
+        var transferId = Guid.NewGuid().ToString();
+        var transaction = new Transaction
+        {
+            Id = Guid.NewGuid().ToString(),
+            TransferId = transferId,
+            UserId = request.UserId,
+            FromAccount = request.FromAccount,
+            ToAccount = request.ToAccount,
+            Amount = request.Amount,
+            Status = "pending",
+            TransactionType = request.TransactionType,
+            Description = request.Description ?? $"Transfer from account {fromAccount.Id} to {toAccount.Id}",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        await repository.CreateTransactionAsync(transaction);
+        logger.LogInformation("Created pending transaction with TransferId: {TransferId}", transferId);
+        return transaction;
+    }
+
+    private static async Task PerformFraudCheckAsync(
+        Transaction transaction,
+        ILogger<TransactionService> logger,
+        IFraudDetectionService fraudDetectionService,
+        ITransactionRepository repository,
+        Counter errorsTotal)
+    {
+        // Perform fraud check
+        var fraudResult = await fraudDetectionService.CheckFraudAsync(transaction.TransferId, transaction);
+
+        // Handle fraud detection result
+        if (fraudResult.IsFraud)
+        {
+            logger.LogWarning("Fraud detected for transaction {TransferId}", transaction.TransferId);
+            await repository.UpdateTransactionStatusAsync(transaction.Id, "declined");
+            errorsTotal.WithLabels("CreateTransfer").Inc();
+            throw new InvalidOperationException("Transaction declined due to potential fraud");
+        }
+    }
+
+    private static async Task<(Transaction WithdrawalTransaction, Transaction DepositTransaction)>
+        CreateChildTransactionsAsync(
+            Transaction transaction,
+            Account fromAccount,
+            Account toAccount,
+            ITransactionRepository repository)
+    {
+        // Create withdrawal transaction for source account
+        var withdrawalTransaction = new Transaction
+        {
+            Id = Guid.NewGuid().ToString(),
+            TransferId = transaction.TransferId + "-withdrawal",
+            UserId = transaction.UserId,
+            FromAccount = transaction.FromAccount,
+            ToAccount = transaction.FromAccount,
+            Amount = transaction.Amount,
+            Status = "pending",
+            TransactionType = "withdrawal",
+            Description = $"Withdrawal from account {fromAccount.Id} for transfer {transaction.TransferId}",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        // Create deposit transaction for destination account
+        var depositTransaction = new Transaction
+        {
+            Id = Guid.NewGuid().ToString(),
+            TransferId = transaction.TransferId + "-deposit",
+            UserId = toAccount.UserId,
+            FromAccount = transaction.ToAccount,
+            ToAccount = transaction.ToAccount,
+            Amount = transaction.Amount,
+            Status = "pending",
+            TransactionType = "deposit",
+            Description = $"Deposit to account {toAccount.Id} from transfer {transaction.TransferId}",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        // Save the child transactions
+        await repository.CreateTransactionAsync(withdrawalTransaction);
+        await repository.CreateTransactionAsync(depositTransaction);
+
+        return (withdrawalTransaction, depositTransaction);
+    }
+
+    private static async Task UpdateAccountBalancesAsync(
+        Transaction transaction,
+        Account fromAccount,
+        Account toAccount,
+        ILogger<TransactionService> logger,
+        IUserAccountClient userAccountClient)
+    {
+        logger.LogInformation("Updating balances for transaction {TransferId}", transaction.TransferId);
+
+        // Define a retry policy for user account service calls
+        var userAccountRetryPolicy = Policy
+            .Handle<Exception>()
+            .WaitAndRetryAsync(
+                retryCount: 3,
+                sleepDurationProvider: _ => TimeSpan.FromSeconds(2),
+                onRetry: (exception, _, retryCount, _) =>
                 {
-                    _logger.LogWarning("Invalid account ID format: {AccountId}", accountId);
-                    throw new ArgumentException("Account ID must be a valid integer.");
-                }
+                    logger.LogWarning("Retry {RetryCount} for user account service call due to {ExceptionMessage}",
+                        retryCount, exception.Message);
+                });
 
-                // Call UserAccountService to get account details
-                _logger.LogInformation("Fetching account {AccountId} from UserAccountService", accountId);
-                var account = await _userAccountClient.GetAccountAsync(accountIdInt);
+        // For source account: SUBTRACT funds
+        var fromBalanceRequest = new AccountBalanceRequest
+        {
+            Amount = transaction.Amount,
+            TransactionId = transaction.TransferId + "-withdrawal",
+            TransactionType = "Withdrawal",
+            IsAdjustment = true
+        };
 
-                if (account == null)
-                {
-                    _logger.LogWarning("Account {AccountId} not found in UserAccountService", accountId);
-                    throw new InvalidOperationException($"Account {accountId} not found.");
-                }
+        // For destination account: ADD funds
+        var toBalanceRequest = new AccountBalanceRequest
+        {
+            Amount = transaction.Amount,
+            TransactionId = transaction.TransferId + "-deposit",
+            TransactionType = "Deposit",
+            IsAdjustment = true
+        };
 
-                // Validate that the authenticated user owns the account
-                if (account.UserId != authenticatedUserId)
-                {
-                    _logger.LogWarning("User {UserId} is not authorized to access transactions for account {AccountId}", authenticatedUserId, accountId);
-                    throw new UnauthorizedAccessException("You are not authorized to access transactions for this account.");
-                }
+        // Update the balances via the client service with retries
+        await userAccountRetryPolicy.ExecuteAsync(async () =>
+            await userAccountClient.UpdateBalanceAsync(fromAccount.Id, fromBalanceRequest));
+        await userAccountRetryPolicy.ExecuteAsync(async () =>
+            await userAccountClient.UpdateBalanceAsync(toAccount.Id, toBalanceRequest));
+    }
 
-                // Fetch transactions from the repository
-                var transactions = await _repository.GetTransactionsByAccountAsync(accountId);
+    private static async Task UpdateTransactionStatusesAsync(
+        Transaction transaction,
+        Transaction withdrawalTransaction,
+        Transaction depositTransaction,
+        ITransactionRepository repository)
+    {
+        await repository.UpdateTransactionStatusAsync(transaction.Id, "completed");
+        await repository.UpdateTransactionStatusAsync(withdrawalTransaction.Id, "completed");
+        await repository.UpdateTransactionStatusAsync(depositTransaction.Id, "completed");
+    }
 
-                return transactions.Select(TransactionResponse.FromTransaction);
-            }
-            catch (UnauthorizedAccessException ex)
+    private static async Task HandleTransactionFailureAsync(
+        Transaction transaction,
+        Exception ex,
+        ILogger<TransactionService> logger,
+        ITransactionRepository repository,
+        Counter errorsTotal)
+    {
+        logger.LogError(ex, "Error processing transaction {TransferId}", transaction.TransferId);
+
+        try
+        {
+            var failedTransaction = await repository.GetTransactionByTransferIdAsync(transaction.TransferId);
+            if (failedTransaction != null)
             {
-                throw; // Re-throw to let the controller handle it
+                await repository.UpdateTransactionStatusAsync(failedTransaction.Id, "failed");
             }
-            catch (Exception ex)
+            else
             {
-                _logger.LogError(ex, "Error retrieving transactions for account {AccountId}", accountId);
-                throw;
+                logger.LogWarning("Could not find transaction {TransferId} to mark as failed", transaction.TransferId);
             }
+        }
+        catch (Exception updateEx)
+        {
+            logger.LogError(updateEx, "Error updating transaction {TransferId} status to failed",
+                transaction.TransferId);
+        }
+
+        errorsTotal.WithLabels("CreateTransfer").Inc();
+    }
+
+    public async Task<TransactionResponse?> GetTransactionByTransferIdAsync(string transferId)
+    {
+        requestsTotal.WithLabels("GetTransactionByTransferId").Inc();
+        try
+        {
+            var transaction = await repository.GetTransactionByTransferIdAsync(transferId);
+            successesTotal.WithLabels("GetTransactionByTransferId").Inc();
+            return transaction != null ? TransactionResponse.FromTransaction(transaction) : null;
+        }
+        catch (Exception ex)
+        {
+            errorsTotal.WithLabels("GetTransactionByTransferId").Inc();
+            logger.LogError(ex, "Error retrieving transaction");
+            throw;
+        }
+    }
+
+    public async Task<IEnumerable<TransactionResponse>> GetTransactionsByAccountAsync(string accountId,
+        int authenticatedUserId)
+    {
+        requestsTotal.WithLabels("GetTransactionsByAccount").Inc();
+        try
+        {
+            // Validate accountId format
+            if (!int.TryParse(accountId, out int accountIdInt))
+            {
+                logger.LogWarning("Invalid account ID format");
+                errorsTotal.WithLabels("GetTransactionsByAccount").Inc();
+                throw new ArgumentException("Account ID must be a valid integer.");
+            }
+
+            // Call UserAccountService to get account details
+            logger.LogInformation("Fetching account from UserAccountService");
+            var account = await userAccountClient.GetAccountAsync(accountIdInt);
+
+            if (account == null)
+            {
+                logger.LogWarning("Account not found in UserAccountService");
+                errorsTotal.WithLabels("GetTransactionsByAccount").Inc();
+                throw new InvalidOperationException($"Account {accountId} not found.");
+            }
+
+            // Validate that the authenticated user owns the account
+            if (account.UserId != authenticatedUserId)
+            {
+                logger.LogWarning("User is not authorized to access transactions for account");
+                errorsTotal.WithLabels("GetTransactionsByAccount").Inc();
+                throw new UnauthorizedAccessException(
+                    "You are not authorized to access transactions for this account.");
+            }
+
+            // Fetch transactions from the repository
+            var transactions = await repository.GetTransactionsByAccountAsync(accountId);
+            successesTotal.WithLabels("GetTransactionsByAccount").Inc();
+            return transactions.Select(TransactionResponse.FromTransaction);
+        }
+        catch (Exception ex)
+        {
+            errorsTotal.WithLabels("GetTransactionsByAccount").Inc();
+            logger.LogError(ex, "Error retrieving transactions for account {AccountId}", accountId);
+            throw;
         }
     }
 }

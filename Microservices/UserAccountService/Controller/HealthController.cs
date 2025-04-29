@@ -1,4 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
+using System;
+
+namespace UserAccountService.Controller;
 
 [ApiController]
 [Route("api/[controller]")]
@@ -15,6 +19,6 @@ public class HealthController : ControllerBase
     public IActionResult Get()
     {
         _logger.LogInformation("Health check endpoint called");
-        return Ok(new { status = "healthy", service = "Transaction Service", timestamp = DateTime.UtcNow });
+        return Ok(new { status = "healthy", service = "User Account Service", timestamp = DateTime.UtcNow });
     }
 }

@@ -1,4 +1,4 @@
-using System;
+
 
 namespace TransactionService.Infrastructure.Messaging.Events;
 

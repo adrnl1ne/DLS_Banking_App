@@ -32,8 +32,9 @@ messages_processed = Counter("messages_processed", "Total number of messages pro
 fraud_detections = Counter("fraud_detections", "Number of fraud cases detected")
 processing_errors = Counter("processing_errors", "Number of errors during message processing")
 duplicate_messages = Counter("duplicate_messages", "Number of duplicate messages skipped")
+duplicate_fraud_checks = Counter("duplicate_fraud_checks", "Number of duplicate fraud check requests")
 
-# Redis client for idempotence and transaction storage
+# Redis client for idempotence, transaction storage, and result storage
 redis_client = redis.Redis(host="redis", port=6379, db=0, decode_responses=True)
 
 # RabbitMQ connection setup with retry logic
@@ -65,7 +66,24 @@ def get_rabbitmq_connection(max_retries=30, initial_delay=1, max_delay=30):
             time.sleep(sleep_time)
             delay = min(delay * 2, max_delay)
 
-duplicate_fraud_checks = Counter("duplicate_fraud_checks", "Number of duplicate fraud check requests")
+# Global channel and connection objects
+rabbitmq_connection = None
+rabbitmq_channel = None
+
+def get_channel():
+    """Get or create a channel for publishing"""
+    global rabbitmq_connection, rabbitmq_channel
+    
+    if rabbitmq_connection is None or not rabbitmq_connection.is_open:
+        rabbitmq_connection = get_rabbitmq_connection()
+        rabbitmq_channel = rabbitmq_connection.channel()
+        
+        # Declare all queues we'll be using
+        rabbitmq_channel.queue_declare(queue="FraudResult")
+        rabbitmq_channel.queue_declare(queue="FraudEvents")
+        # Note: Removed TransactionServiceQueue since we'll use Redis instead
+        
+    return rabbitmq_channel
 
 def callback(ch, method, properties, body):
     try:
@@ -78,7 +96,7 @@ def callback(ch, method, properties, body):
         if redis_client.get(f"fraud:transfer:{transfer_id}"):
             logging.info(f"Duplicate message for transfer {transfer_id}, skipping processing")
             duplicate_messages.inc()
-            duplicate_fraud_checks.inc()  # New metric
+            duplicate_fraud_checks.inc()
             ch.basic_ack(delivery_tag=method.delivery_tag)
             return
 
@@ -109,6 +127,9 @@ def callback(ch, method, properties, body):
         transaction_data["status"] = status
         redis_client.setex(f"fraud:transaction:{transfer_id}", 604800, json.dumps(transaction_data))
 
+        # Store the fraud check result in Redis
+        redis_client.setex(f"fraud:result:{transfer_id}", 3600, json.dumps(result))  # 1-hour expiry
+
         # Increment Prometheus metrics
         messages_processed.inc()
         if is_fraud:
@@ -117,24 +138,17 @@ def callback(ch, method, properties, body):
         # Log the result to console only
         logging.info(f"Transfer {transfer_id}: Amount=${amount}, Fraud={is_fraud}, Status={status}")
 
-        # Publish to existing queues
-        connection = get_rabbitmq_connection()
-        channel = connection.channel()
-        channel.queue_declare(queue="FraudResult")
+        # Use the shared channel to publish results
+        channel = get_channel()
+        
+        # Publish to FraudResult queue (for monitoring/reporting)
         channel.basic_publish(
             exchange="",
             routing_key="FraudResult",
             body=json.dumps(result),
         )
-        channel.queue_declare(queue="TransactionServiceQueue")
-        channel.basic_publish(
-            exchange="",
-            routing_key="TransactionServiceQueue",
-            body=json.dumps(result),
-        )
-
+        
         # Publish to QueryService via FraudEvents queue
-        channel.queue_declare(queue="FraudEvents")
         channel.basic_publish(
             exchange="",
             routing_key="FraudEvents",
@@ -147,8 +161,6 @@ def callback(ch, method, properties, body):
                 "timestamp": result["timestamp"]
             }),
         )
-
-        connection.close()
 
         # Acknowledge the message
         ch.basic_ack(delivery_tag=method.delivery_tag)
@@ -165,8 +177,16 @@ def start_consuming():
         try:
             connection = get_rabbitmq_connection()
             channel = connection.channel()
-            channel.queue_declare(queue="CheckFraud")
-            channel.basic_consume(queue="CheckFraud", on_message_callback=callback)
+            
+            # Make sure the queue exists
+            channel.queue_declare(queue="CheckFraud", durable=False, exclusive=False, auto_delete=False)
+            
+            # Set prefetch count to 1 for fair dispatch
+            channel.basic_qos(prefetch_count=1)
+            
+            # Start consuming
+            channel.basic_consume(queue="CheckFraud", on_message_callback=callback, auto_ack=False)
+            
             logging.info("Fraud Detection Service started. Waiting for messages...")
             print("Fraud Detection Service started. Waiting for messages...")
             channel.start_consuming()
@@ -176,7 +196,7 @@ def start_consuming():
             logging.info("Will try to reconnect in 5 seconds...")
             time.sleep(5)
 
-# FastAPI health check endpoint (optional, for monitoring)
+# FastAPI health check endpoint
 @app.get("/health")
 async def health_check():
     try:
@@ -204,13 +224,10 @@ async def startup_event():
 
 if __name__ == "__main__":
     # This block will only execute when running the file directly, not with uvicorn
-    # Start Prometheus metrics server
     start_http_server(8001)
     logging.info("Prometheus metrics server started on port 8001")
     
-    # Start FastAPI in a separate thread
     threading.Thread(target=lambda: uvicorn.run(app, host="0.0.0.0", port=8000), daemon=True).start()
     logging.info("FastAPI server started on port 8000")
     
-    # Start RabbitMQ consumer
     start_consuming()

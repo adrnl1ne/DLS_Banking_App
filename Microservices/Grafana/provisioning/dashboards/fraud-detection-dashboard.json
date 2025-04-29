@@ -424,5 +424,6 @@
   "timezone": "browser",
   "title": "Fraud Detection",
   "uid": "aeil8ciepy58ge",
-  "version": 6
+  "version": 6,
+  "refresh": "5s"
 }
