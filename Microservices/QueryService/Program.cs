@@ -4,16 +4,32 @@ using QueryService;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
+builder.Services.AddSingleton<IElasticClient>(sp =>
+{
+    var settings = new ConnectionSettings(new Uri("http://elasticsearch:9200"))
+        .DefaultIndex("transactions");
 
+    return new ElasticClient(settings);
+});
 
+//Swagger
+// Add services to the container.
+builder.Services.AddControllers();
 
-var settings = new ConnectionSettings(new Uri("http://localhost:9200"))
-    .DefaultIndex("transactions");
-var elasticClient = new ElasticClient(settings);
+// Add Swagger here
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
 
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", corsPolicyBuilder =>
+    {
+        corsPolicyBuilder.AllowAnyOrigin()
+            .AllowAnyMethod()
+            .AllowAnyHeader();
+    });
+});
 
-
-builder.Services.AddSingleton<IElasticClient>(elasticClient);
 builder.Services.AddHostedService<RabbitMqListener>();
 
 builder.Services.AddSingleton<RabbitMqConnection>(sp =>
@@ -32,22 +48,21 @@ builder.Services
 
 var app = builder.Build();
 
-using (var scope = app.Services.CreateScope())
+await Helpers.EnsureElasticsearchIndicesAsync(app.Services);
+
+app.MapControllers();
+
+
+
+if (app.Environment.IsDevelopment())
 {
-    var rabbit = scope.ServiceProvider.GetRequiredService<RabbitMqConnection>();
-    await rabbit.open_connection();
-    await rabbit.open_channel();
-    
-    rabbit.send_message("CheckFraud", "Hello, RabbitMQ!");
+    app.UseSwagger();
+    app.UseSwaggerUI();
 }
 
-
-
-
-
-
-
 app.UseHttpsRedirection();
+app.UseAuthorization();
+
 app.MapGraphQL();
 
 app.Run();

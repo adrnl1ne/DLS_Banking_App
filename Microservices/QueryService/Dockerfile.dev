@@ -1,0 +1,17 @@
+FROM mcr.microsoft.com/dotnet/sdk:9.0
+WORKDIR /app
+
+# Copy the QueryService project file into the container
+COPY QueryService.csproj .
+
+# Restore the project dependencies
+RUN dotnet restore
+
+# Copy the rest of the source files into the container
+COPY . .
+
+# Expose the required ports (for health checks and Prometheus metrics)
+EXPOSE 80 9091
+
+# Start the application using dotnet watch for hot reload
+CMD ["dotnet", "watch", "run", "--urls", "http://*:80"]
