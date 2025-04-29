@@ -20,6 +20,16 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", corsPolicyBuilder =>
+    {
+        corsPolicyBuilder.AllowAnyOrigin()
+            .AllowAnyMethod()
+            .AllowAnyHeader();
+    });
+});
+
 builder.Services.AddHostedService<RabbitMqListener>();
 
 builder.Services.AddSingleton<RabbitMqConnection>(sp =>
@@ -41,6 +51,8 @@ var app = builder.Build();
 await Helpers.EnsureElasticsearchIndicesAsync(app.Services);
 
 app.MapControllers();
+
+
 
 if (app.Environment.IsDevelopment())
 {
