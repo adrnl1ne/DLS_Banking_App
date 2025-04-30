@@ -69,7 +69,13 @@ public class TransactionService(
                 // Track transaction amount in histogram for metrics
                 histogram.WithLabels("transfer").Observe((double)transaction.Amount);
 
-                // RabbitMQ publish logic
+                var settings = new JsonSerializerSettings
+                {
+                    DateFormatHandling = DateFormatHandling.IsoDateFormat,
+                    DateTimeZoneHandling = DateTimeZoneHandling.Utc // Ensure UTC with 'Z' suffix
+                };
+
+                // Serialize the message
                 rabbitMqClient.Publish("TransactionCreated", JsonConvert.SerializeObject(new
                 {
                     transaction.TransferId,
@@ -79,8 +85,8 @@ public class TransactionService(
                     transaction.FromAccount,
                     transaction.ToAccount,
                     transaction.CreatedAt
-                }));
-
+                }, settings));
+                
                 successesTotal.WithLabels("CreateTransfer").Inc();
                 return TransactionResponse.FromTransaction(transaction);
             }
