@@ -38,6 +38,7 @@ jobs:
             "user-account-service:Microservices/UserAccountService"
             "transaction-service:Microservices/TransactionService"
             "frontend:frontend"
+            "query-service:Microservices/QueryService"
           )
           for service in "${services[@]}"; do
             name="${service%%:*}"
@@ -59,6 +60,7 @@ jobs:
             "user-account-service"
             "transaction-service"
             "frontend"
+            "query-service"
           )
           for service in "${services[@]}"; do
             echo "Verifying $service..."

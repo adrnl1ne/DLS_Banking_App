@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    app: query-service
+    kompose.cmd: kompose convert -f ../docker-compose.prod.yml
+    kompose.image-pull-policy: Always
+    kompose.service.type: nodeport 
+    kompose.version: 1.35.0 (HEAD)
+  labels:
+    io.kompose.service: query-service
+    app: query-service
+  name: query-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: query-service
+  template:
+    metadata:
+      labels:
+        app: query-service
+    spec:
+      containers:
+        - name: query-service
+          image: fhallengreen/dls_banking_app-query-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+              name: http
+          env:
+            - name: ASPNETCORE_ENVIRONMENT
+              value: "Production"
+            - name: ELASTICSEARCH_URL
+              value: "http://elasticsearch:9200"
+            - name: RABBITMQ_HOST
+              value: "rabbitmq"
+            - name: RABBITMQ_PORT
+              value: "5672"
+            - name: RABBITMQ_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: banking-app-secret
+                  key: RABBITMQ_DEFAULT_USER
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: banking-app-secret
+                  key: RABBITMQ_DEFAULT_PASS
+          resources:
+            limits:
+              memory: "512Mi" 
+              cpu: "0.5"   
+            requests: 
+              memory: "256Mi"
+              cpu: "0.25"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 80 
+            initialDelaySeconds: 30 
+            periodSeconds: 10     
+            timeoutSeconds: 5       
+            failureThreshold: 3     
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 80
+            initialDelaySeconds: 15 
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+      restartPolicy: Always

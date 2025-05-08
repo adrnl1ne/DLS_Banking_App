@@ -9,6 +9,7 @@ metadata:
     kompose.version: 1.35.0 (HEAD)
   labels:
     io.kompose.service: user-account-service
+    app: user-account-service
   name: user-account-service
 spec:
   replicas: 1
@@ -17,67 +18,40 @@ spec:
       app: user-account-service
   template:
     metadata:
-      annotations:
-        app: user-account-service
-        kompose.cmd: kompose convert -f ../docker-compose.prod.yml
-        kompose.image-pull-policy: Always
-        kompose.service.type: nodeport
-        kompose.version: 1.35.0 (HEAD)
       labels:
         app: user-account-service
     spec:
       containers:
-        - env:
-            - name: ASPNETCORE_ENVIRONMENT
-              value: Development
-            - name: Logging__LogLevel__Default
-              value: Debug
-            - name: JWT_AUDIENCE
-              valueFrom:
-                configMapKeyRef:
-                  name: banking-app-config
-                  key: JWT_AUDIENCE
-            - name: JWT_ISSUER
-              valueFrom:
-                configMapKeyRef:
-                  name: banking-app-config
-                  key: JWT_ISSUER
-            - name: JWT_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: banking-app-secret
-                  key: JWT_KEY
+        - name: user-account-service
+          image: fhallengreen/dls_banking_app-user-account-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+              name: http
+            - containerPort: 9091
+              name: prometheus
+          env:
+            - name: MYSQL_HOST
+              value: "mysql-useraccount"
+            - name: MYSQL_PORT
+              value: "3306"
             - name: MYSQL_DATABASE
               valueFrom:
                 configMapKeyRef:
                   name: banking-app-config
                   key: MYSQL_DATABASE_UA
-            - name: MYSQL_HOST
-              value: mysql-useraccount
-            - name: MYSQL_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: banking-app-secret
-                  key: MYSQL_PASSWORD_UA
-            - name: MYSQL_PORT
-              value: "3306"
             - name: MYSQL_USER
               valueFrom:
                 secretKeyRef:
                   name: banking-app-secret
                   key: MYSQL_USER
-            - name: PROMETHEUS_PORT
-              valueFrom:
-                configMapKeyRef:
-                  name: banking-app-config
-                  key: PROMETHEUS_PORT
-            - name: RABBITMQ_HOST
-              value: rabbitmq
-            - name: RABBITMQ_PASSWORD
+            - name: MYSQL_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: banking-app-secret
-                  key: RABBITMQ_DEFAULT_PASS
+                  key: MYSQL_PASSWORD_UA
+            - name: RABBITMQ_HOST
+              value: "rabbitmq"
             - name: RABBITMQ_PORT
               value: "5672"
             - name: RABBITMQ_USERNAME
@@ -85,23 +59,49 @@ spec:
                 secretKeyRef:
                   name: banking-app-secret
                   key: RABBITMQ_DEFAULT_USER
-          image: fhallengreen/dls_banking_app-user-account-service:latest
-          imagePullPolicy: Always
-          livenessProbe:
-            httpGet:
-              path: /api/health
-              port: 8080
-            initialDelaySeconds: 120
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 5
-          name: user-account-service
-          ports:
-            - containerPort: 8080
-              protocol: TCP
-            - containerPort: 9091
-              protocol: TCP
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: banking-app-secret
+                  key: RABBITMQ_DEFAULT_PASS
+            - name: JWT_ISSUER
+              valueFrom:
+                configMapKeyRef:
+                  name: banking-app-config
+                  key: JWT_ISSUER
+            - name: JWT_AUDIENCE
+              valueFrom:
+                configMapKeyRef:
+                  name: banking-app-config
+                  key: JWT_AUDIENCE
+            - name: JWT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: banking-app-secret
+                  key: JWT_KEY
+            - name: PROMETHEUS_PORT
+              value: "9091"
           resources:
             limits:
-              memory: "1073741824"
+              memory: "1Gi" 
+              cpu: "1"
+            requests:
+              memory: "512Mi"
+              cpu: "0.5"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 80
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 80
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
       restartPolicy: Always

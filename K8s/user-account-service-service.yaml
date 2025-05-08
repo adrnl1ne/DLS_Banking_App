@@ -9,17 +9,18 @@ metadata:
     kompose.version: 1.35.0 (HEAD)
   labels:
     io.kompose.service: user-account-service
+    app: user-account-service
   name: user-account-service
 spec:
+  type: NodePort
   ports:
-    - name: "8002"
+    - name: "8002-80"
       port: 8002
-      targetPort: 8080
-      nodePort: 30926
-    - name: "9091"
+      targetPort: 80
+      protocol: TCP
+    - name: "9091-9091"
       port: 9091
       targetPort: 9091
-      nodePort: 30429
+      protocol: TCP
   selector:
     app: user-account-service
-  type: NodePort

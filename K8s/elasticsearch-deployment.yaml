@@ -43,7 +43,11 @@ spec:
               mountPath: /usr/share/elasticsearch/data
           resources:
             limits:
-              memory: "1073741824"
+              memory: "1073741824" # 1Gi
+              cpu: "1" # Added CPU limit
+            requests: # Added resource requests
+              memory: "512Mi"
+              cpu: "0.5"
       volumes:
         - name: esdata
           persistentVolumeClaim:
