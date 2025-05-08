@@ -5,8 +5,8 @@ metadata:
   namespace: default
 data:
   VITE_API_URL: "http://localhost:3001"
-  VITE_USER_SERVICE_URL: "http://localhost:5000"
-  VITE_QUERY_SERVICE_URL: "http://localhost:4000"
+  VITE_USER_SERVICE_URL: "http://user-account-service:8002"
+  VITE_QUERY_SERVICE_URL: "http://query-service:8004"
   MYSQL_DATABASE_UA: "useraccount_db"
   MYSQL_DATABASE_TA: "transaction_db"
   JWT_ISSUER: "BankingApp"

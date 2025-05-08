@@ -1,25 +1,19 @@
 apiVersion: v1
 kind: Service
 metadata:
-  annotations:
-    app: transaction-service
-    kompose.cmd: kompose convert -f ../docker-compose.prod.yml
-    kompose.image-pull-policy: Always
-    kompose.service.type: nodeport
-    kompose.version: 1.35.0 (HEAD)
-  labels:
-    io.kompose.service: transaction-service
   name: transaction-service
+  labels:
+    app: transaction-service
 spec:
-  ports:
-    - name: "8003"
-      port: 8003
-      targetPort: 8080
-      nodePort: 31134
-    - name: "9092"
-      port: 9092
-      targetPort: 9091
-      nodePort: 32200
+  type: ClusterIP # Changed from NodePort to ClusterIP for internal service
   selector:
     app: transaction-service
-  type: NodePort
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8003  # Service port for application
+      targetPort: 8080 # Container port for application
+    - name: metrics
+      protocol: TCP
+      port: 9092  # Service port for metrics
+      targetPort: 9092 # Container port for metrics

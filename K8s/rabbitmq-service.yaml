@@ -12,12 +12,12 @@ metadata:
   name: rabbitmq
 spec:
   ports:
-    - name: "5672"
+    - name: "amqp" # Renamed from "5672"
       port: 5672
       targetPort: 5672
-    - name: "15672"
+    - name: "management" # Renamed from "15672"
       port: 15672
       targetPort: 15672
   selector:
     app: rabbitmq
-  type: NodePort
+  type: NodePort # Kept as NodePort for management UI access, AMQP could be ClusterIP if only internal
