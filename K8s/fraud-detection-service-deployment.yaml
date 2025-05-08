@@ -11,7 +11,7 @@ metadata:
     io.kompose.service: fraud-detection-service
   name: fraud-detection-service
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: fraud-detection-service
