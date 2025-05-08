@@ -8,9 +8,15 @@ data:
     global:
       scrape_interval: 5s
     scrape_configs:
+      - job_name: "prometheus"  # Added job for Prometheus itself
+        static_configs:
+          - targets: ["localhost:9090"] # Prometheus scrapes itself on its container port
       - job_name: "fraud_detection_service"
         static_configs:
           - targets: ["fraud-detection-service:8001"]
       - job_name: "transaction_service"
         static_configs:
-          - targets: ["transaction-service:80"]
+          - targets: ["transaction-service:9092"] # Corrected port for transaction_service
+      - job_name: "user_account_service"  # Added job for user_account_service
+        static_configs:
+          - targets: ["user-account-service:9091"] # Port for user_account_service metrics
