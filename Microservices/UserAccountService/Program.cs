@@ -15,6 +15,7 @@ using Microsoft.Extensions.Logging; // Add this for logging
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddHealthChecks(); // Added health checks registration
 // Add logging services
 builder.Services.AddLogging(logging =>
 {
@@ -179,5 +180,7 @@ app.UseSwaggerUI(c =>
     c.RoutePrefix = string.Empty;
 });
 app.UseCors("AllowAll");
+
+app.MapHealthChecks("/health");
 
 app.Run();

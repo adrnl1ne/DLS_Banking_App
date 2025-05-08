@@ -21,7 +21,8 @@ check_service() {
 
     echo "--- Checking $service_display_name ---"
     
-    RAW_URLS=$(minikube service "$service_name" --url -n default 2>/dev/null)
+    # Added timeout to minikube service command
+    RAW_URLS=$(timeout 15s minikube service "$service_name" --url -n default 2>/dev/null)
 
     if [ -z "$RAW_URLS" ]; then
         echo "INFO: Could not automatically get URL for $service_display_name using 'minikube service --url'."
@@ -45,7 +46,8 @@ check_service() {
         
         echo "Attempting to ping: $FULL_URL"
         # -L to follow redirects, -s for silent, -f to fail fast on server errors (HTTP 4xx/5xx)
-        if curl -Lsf "$FULL_URL" > /dev/null; then
+        # Added --connect-timeout and --max-time to curl
+        if curl -Lsf --connect-timeout 5 --max-time 10 "$FULL_URL" > /dev/null; then
             echo "SUCCESS: $service_display_name is healthy at $FULL_URL"
             found_healthy_endpoint=true
             break # Found a working endpoint for this service
@@ -79,7 +81,8 @@ if [ -n "$RABBITMQ_NODE_PORT" ] && [[ "$RABBITMQ_NODE_PORT" =~ ^[0-9]+$ ]]; then
     RABBITMQ_HEALTH_URL="http://${MINIKUBE_IP}:${RABBITMQ_NODE_PORT}/api/aliveness-test/%2F"
     echo "Attempting to ping RabbitMQ Management via NodePort $RABBITMQ_NODE_PORT: $RABBITMQ_HEALTH_URL"
     # Default credentials for RabbitMQ are guest:guest (from your secrets.yaml)
-    if curl -Lsf -u guest:guest "$RABBITMQ_HEALTH_URL" > /dev/null; then
+    # Added --connect-timeout and --max-time to curl
+    if curl -Lsf --connect-timeout 5 --max-time 10 -u guest:guest "$RABBITMQ_HEALTH_URL" > /dev/null; then
         echo "SUCCESS: RabbitMQ Management API is healthy at $RABBITMQ_HEALTH_URL"
         RABBITMQ_HEALTHY=true
     else
@@ -95,7 +98,8 @@ else
             CLEAN_R_URL_BASE=${R_URL_BASE%/}
             RABBITMQ_HEALTH_URL_TRY="${CLEAN_R_URL_BASE}/api/aliveness-test/%2F"
             echo "Trying potential RabbitMQ Management URL: $RABBITMQ_HEALTH_URL_TRY"
-            if curl -Lsf -u guest:guest "$RABBITMQ_HEALTH_URL_TRY" > /dev/null; then
+            # Added --connect-timeout and --max-time to curl
+            if curl -Lsf --connect-timeout 5 --max-time 10 -u guest:guest "$RABBITMQ_HEALTH_URL_TRY" > /dev/null; then
                 echo "SUCCESS: RabbitMQ Management API is healthy at $RABBITMQ_HEALTH_URL_TRY"
                 RABBITMQ_HEALTHY=true
                 break

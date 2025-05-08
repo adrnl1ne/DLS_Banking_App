@@ -26,10 +26,12 @@ spec:
           image: fhallengreen/dls_banking_app-user-account-service:latest
           imagePullPolicy: Always
           ports:
-            - containerPort: 80
+            - containerPort: 8080
               name: http
+              protocol: TCP
             - containerPort: 9091
               name: prometheus
+              protocol: TCP
           env:
             - name: MYSQL_HOST
               value: "mysql-useraccount"
@@ -91,7 +93,7 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 80
+              port: http
             initialDelaySeconds: 60
             periodSeconds: 10
             timeoutSeconds: 5
@@ -99,9 +101,36 @@ spec:
           readinessProbe:
             httpGet:
               path: /health
-              port: 80
+              port: http
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3
+          volumeMounts:
+            - name: data-protection-keys
+              mountPath: /root/.aspnet/DataProtection-Keys
+            - name: service-account-token
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              readOnly: true
+      volumes:
+        - name: data-protection-keys
+          persistentVolumeClaim:
+            claimName: data-protection-keys-pvc
+        - name: service-account-token
+          projected:
+            sources:
+            - serviceAccountToken:
+                expirationSeconds: 3607
+                path: token
+            - configMap:
+                name: kube-root-ca.crt
+                items:
+                  - key: ca.crt
+                    path: ca.crt
+            - downwardAPI:
+                items:
+                  - path: "namespace"
+                    fieldRef:
+                      apiVersion: v1
+                      fieldPath: metadata.namespace
       restartPolicy: Always

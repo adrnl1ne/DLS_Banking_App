@@ -2,6 +2,7 @@ using Nest;
 using QueryService;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddHealthChecks();
 
 // Add services to the container.
 builder.Services.AddSingleton<IElasticClient>(sp =>
@@ -64,5 +65,6 @@ app.UseHttpsRedirection();
 app.UseAuthorization();
 
 app.MapGraphQL();
+app.MapHealthChecks("/health");
 
 app.Run();

@@ -29,7 +29,7 @@ spec:
       containers:
         - env:
             - name: ASPNETCORE_ENVIRONMENT
-              value: Development
+              value: Production
             - name: Logging__LogLevel__Default
               value: Debug
             - name: MYSQL_HOST
@@ -92,6 +92,11 @@ spec:
                   key: TRANSACTION_SERVICE_TOKEN
             - name: Services__UserAccountService
               value: http://user-account-service:8002
+            - name: Services__FraudDetectionService
+              value: http://fraud-detection-service:8000
+          volumeMounts:
+            - name: data-protection-keys
+              mountPath: /root/.aspnet/DataProtection-Keys
           image: fhallengreen/dls_banking_app-transaction-service:latest
           imagePullPolicy: Always
           livenessProbe:
@@ -112,3 +117,7 @@ spec:
             limits:
               memory: "1073741824"
       restartPolicy: Always
+      volumes:
+        - name: data-protection-keys
+          persistentVolumeClaim:
+            claimName: data-protection-keys-pvc
