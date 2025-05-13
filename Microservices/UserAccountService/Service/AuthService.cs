@@ -9,7 +9,7 @@ using Microsoft.IdentityModel.Tokens;
 using BCrypt.Net;
 using UserAccountService.Shared.DTO;
 using AccountService.Database.Data;
-using AccountService.Models;
+using UserAccountService.Models;
 
 namespace UserAccountService.Service;
 

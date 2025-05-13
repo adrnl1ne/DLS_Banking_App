@@ -1,6 +1,8 @@
 src/FraudDetectionService/__pycache__/
 .env
 secrets.yaml
+_site
+docs/UserAccountService/api/
 
 __pycache__/
 # Build output

@@ -43,6 +43,10 @@ public class AccountService(
         new CounterConfiguration { LabelNames = new[] { "method" } }
     );
 
+    /// <summary>
+    /// Retrieves all accounts for the current user.
+    /// </summary>
+    /// <returns>A list of AccountResponse objects.</returns>
     public async Task<List<AccountResponse>> GetAccountsAsync()
     {
         RequestsTotal.WithLabels("GetAccounts").Inc();
@@ -79,6 +83,11 @@ public class AccountService(
         }
     }
 
+    /// <summary>
+    /// Retrieves a specific account by its ID.
+    /// </summary>
+    /// <param name="id">The ID of the account to retrieve.</param>
+    /// <returns>An ActionResult containing the AccountResponse.</returns>
     public async Task<ActionResult<AccountResponse>> GetAccountAsync(int id)
     {
         RequestsTotal.WithLabels("GetAccount").Inc();
@@ -129,6 +138,11 @@ public class AccountService(
         }
     }
 
+    /// <summary>
+    /// Retrieves all accounts for a specific user ID.
+    /// </summary>
+    /// <param name="userId">The ID of the user whose accounts are to be retrieved.</param>
+    /// <returns>An ActionResult containing a list of AccountResponse objects.</returns>
     public async Task<ActionResult<List<AccountResponse>>> GetUserAccountsAsync(string userId)
     {
         if (string.IsNullOrEmpty(userId))
@@ -162,6 +176,11 @@ public class AccountService(
         }).ToList();
     }
 
+    /// <summary>
+    /// Creates a new account.
+    /// </summary>
+    /// <param name="request">The AccountCreationRequest containing the details of the new account.</param>
+    /// <returns>An ActionResult containing the created AccountResponse.</returns>
     public async Task<ActionResult<AccountResponse>> CreateAccountAsync(AccountCreationRequest request)
     {
         RequestsTotal.WithLabels("CreateAccount").Inc();
@@ -211,6 +230,10 @@ public class AccountService(
         }
     }
 
+    /// <summary>
+    /// Deletes an account by its ID.
+    /// </summary>
+    /// <param name="id">The ID of the account to delete.</param>
     public async Task DeleteAccountAsync(int id)
     {
         RequestsTotal.WithLabels("DeleteAccount").Inc();
@@ -255,6 +278,12 @@ public class AccountService(
         }
     }
 
+    /// <summary>
+    /// Renames an account.
+    /// </summary>
+    /// <param name="id">The ID of the account to rename.</param>
+    /// <param name="request">The AccountRenameRequest containing the new name for the account.</param>
+    /// <returns>An ActionResult containing the updated AccountResponse.</returns>
     public async Task<ActionResult<AccountResponse>> RenameAccountAsync(int id, AccountRenameRequest request)
     {
         RequestsTotal.WithLabels("RenameAccount").Inc();
@@ -352,6 +381,12 @@ public class AccountService(
         }
     }
 
+    /// <summary>
+    /// Updates the balance of an account.
+    /// </summary>
+    /// <param name="id">The ID of the account to update.</param>
+    /// <param name="request">The AccountBalanceRequest containing the details of the balance update.</param>
+    /// <returns>An ActionResult containing the updated AccountResponse.</returns>
     public async Task<ActionResult<AccountResponse>> UpdateBalanceAsync(int id, AccountBalanceRequest request)
     {
         RequestsTotal.WithLabels("UpdateBalance").Inc();
@@ -490,6 +525,12 @@ public class AccountService(
         }
     }
 
+    /// <summary>
+    /// Deposits funds into an account.
+    /// </summary>
+    /// <param name="id">The ID of the account to deposit into.</param>
+    /// <param name="request">The AccountDepositRequest containing the deposit details.</param>
+    /// <returns>An ActionResult containing the updated AccountResponse.</returns>
     public async Task<ActionResult<AccountResponse>> DepositToAccountAsync(int id, AccountDepositRequest request)
     {
         RequestsTotal.WithLabels("DepositToAccount").Inc();

@@ -1,15 +1,32 @@
 using Microsoft.EntityFrameworkCore;
-using AccountService.Models;
 using UserAccountService.Models;
 
 namespace AccountService.Database.Data;
 
+/// <summary>
+/// Represents the database context for the User Account Service.
+/// </summary>
 public class UserAccountDbContext(DbContextOptions<UserAccountDbContext> options) : DbContext(options)
 {
+    /// <summary>
+    /// Gets or sets the DbSet for Roles.
+    /// </summary>
     public DbSet<Role> Roles { get; set; }
+
+    /// <summary>
+    /// Gets or sets the DbSet for Users.
+    /// </summary>
     public DbSet<User> Users { get; set; }
+
+    /// <summary>
+    /// Gets or sets the DbSet for Accounts.
+    /// </summary>
     public DbSet<Account> Accounts { get; set; }
 
+    /// <summary>
+    /// Configures the model using the provided builder.
+    /// </summary>
+    /// <param name="modelBuilder">The builder being used to construct the model for this context.</param>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
