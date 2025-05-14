@@ -29,6 +29,33 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.x' # Specify your .NET version
+
+      - name: Run tests for UserAccountService
+        run: dotnet test Microservices/UserAccountService.Tests/UserAccountService.Tests.csproj --logger "trx;LogFileName=useraccountservice_test_results.trx"
+        continue-on-error: false
+
+      - name: Run tests for TransactionService
+        run: dotnet test Microservices/TransactionService/TransactionService.Tests/TransactionService.Tests.csproj --logger "trx;LogFileName=transactionservice_test_results.trx"
+        continue-on-error: false
+        
+      - name: Upload UserAccountService Test Results
+        uses: actions/upload-artifact@v4
+        if: always() # Always run this step to upload results even if tests fail
+        with:
+          name: useraccountservice-test-results
+          path: Microservices/UserAccountService.Tests/TestResults/useraccountservice_test_results.trx
+
+      - name: Upload TransactionService Test Results
+        uses: actions/upload-artifact@v4
+        if: always() # Always run this step to upload results even if tests fail
+        with:
+          name: transactionservice-test-results
+          path: Microservices/TransactionService/TransactionService.Tests/TestResults/transactionservice_test_results.trx
+
       - name: Build and push multi-architecture images
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
