@@ -16,9 +16,6 @@
   "build": {
     "content": [
       {
-        "files": ["api/**.yml", "api/index.md"]
-      },
-      {
         "files": ["*.md", "toc.yml"]
       }
     ],
@@ -27,16 +24,12 @@
         "files": ["images/**"]
       }
     ],
-    "output": "_site",
-    "template": [
-      "default",
-      "modern"
-    ],
+    "dest": "_site",
     "globalMetadata": {
-      "_appName": "TransactionService",
-      "_appTitle": "TransactionService",
-      "_enableSearch": true,
-      "pdf": true
-    }
+      "_appTitle": "TransactionService Documentation",
+      "_enableSearch": true
+    },
+    "template": ["default"],
+    "markdownEngineName": "markdig"
   }
 }
