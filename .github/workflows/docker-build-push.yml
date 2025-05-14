@@ -32,7 +32,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.x' # Specify your .NET version
+          dotnet-version: '9.x' # Updated to support .NET 9.0
 
       - name: Run tests for UserAccountService
         run: dotnet test Microservices/UserAccountService.Tests/UserAccountService.Tests.csproj --logger "trx;LogFileName=useraccountservice_test_results.trx"
