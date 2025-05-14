@@ -1,33 +1,30 @@
 {
-    "metadata": [
+  "metadata": [
     {
       "src": [
         {
-          "src": "../../DLS_Banking_App/Microservices/TransactionService",
-          "files": [
-            "TransactionService.csproj"
-          ]
+          "files": ["TransactionService.csproj"],
+          "src": "../../Microservices/TransactionService"
         }
       ],
-      "dest": "api"
+      "dest": "api",
+      "properties": {
+        "TargetFramework": "net9.0"
+      }
     }
   ],
   "build": {
     "content": [
       {
-        "files": [
-          "**/*.{md,yml}"
-        ],
-        "exclude": [
-          "_site/**"
-        ]
+        "files": ["api/**.yml", "api/index.md"]
+      },
+      {
+        "files": ["*.md", "toc.yml"]
       }
     ],
     "resource": [
       {
-        "files": [
-          "images/**"
-        ]
+        "files": ["images/**"]
       }
     ],
     "output": "_site",

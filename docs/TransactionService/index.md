@@ -2,10 +2,20 @@
 _layout: landing
 ---
 
-# This is the **HOMEPAGE**.
+# TransactionService Documentation
 
-Refer to [Markdown](http://daringfireball.net/projects/markdown/) for how to write markdown files.
+## Overview
+The TransactionService manages all financial transactions within the DLS Banking Application, ensuring secure and reliable money transfers between accounts.
 
-## Quick Start Notes:
+## Key Features
+- Secure transaction processing with fraud detection
+- Transaction history and reporting
+- Account balance updates
+- Multi-currency support
+- Event-based architecture using RabbitMQ
 
-1. Add images to the *images* folder if the file is referencing an image.
+## Getting Started
+To get started with the TransactionService, see the [Getting Started Guide](getting-started.md).
+
+## Transaction Flow
+To understand how transactions are processed, see the [Transaction Flow](TransactionFlow.md) documentation.
