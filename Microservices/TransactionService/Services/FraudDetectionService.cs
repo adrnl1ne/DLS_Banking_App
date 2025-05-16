@@ -1,5 +1,6 @@
 ﻿using System.Text.Json;
 using Polly;
+using TransactionService.Infrastructure.Json;
 using TransactionService.Infrastructure.Messaging.RabbitMQ;
 using TransactionService.Infrastructure.Redis;
 using TransactionService.Models;
@@ -72,10 +73,14 @@ public class FraudDetectionService(
                     return null;
                 }
 
+                // Add custom JSON serialization options
                 var options = new JsonSerializerOptions
                 {
-                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                    PropertyNameCaseInsensitive = true,
+                    Converters = { new DateTimeJsonConverter() }
                 };
+
+                // Use these options when deserializing
                 return JsonSerializer.Deserialize<FraudResult>(resultJson, options);
             });
 

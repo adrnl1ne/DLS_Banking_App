@@ -45,53 +45,39 @@ public class RabbitMqClient : IRabbitMqClient, IDisposable
             _connection = factory.CreateConnection();
             _channel = _connection.CreateModel();
             
-            // Create all necessary queues on startup
+            // Create all necessary queues on startup - Make AccountBalanceUpdates durable
             _channel.QueueDeclare(queue: "CheckFraud", durable: false, exclusive: false, autoDelete: false);
             _channel.QueueDeclare(queue: "FraudResult", durable: false, exclusive: false, autoDelete: false);
             _channel.QueueDeclare(queue: "FraudEvents", durable: false, exclusive: false, autoDelete: false);
+            _channel.QueueDeclare(queue: "AccountBalanceUpdates", durable: true, exclusive: false, autoDelete: false);
             
             _logger.LogInformation("RabbitMQ client initialized successfully. Connected to {Host}:{Port}", _hostName, _port);
             _initialized = true;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to initialize RabbitMQ client");
-            _initialized = false;
+            _logger.LogError(ex, "Error initializing RabbitMQ connection");
         }
     }
 
     public void Publish(string queueName, string message)
     {
+        EnsureConnection();
+
         try
         {
-            lock (_channelLock)
-            {
-                // Ensure connection and channel are available
-                EnsureConnection();
-                
-                _logger.LogInformation("Declaring queue {QueueName}", queueName);
-                _channel?.QueueDeclare(queue: queueName, durable: false, exclusive: false, autoDelete: false, arguments: null);
-                
-                var body = Encoding.UTF8.GetBytes(message);
-                
-                // Add delivery confirmation
-                if (_channel != null)
-                {
-                    var properties = _channel.CreateBasicProperties();
-                    properties.Persistent = true; // Make message persistent
-                
-                    // Publish with the persistent flag
-                    _channel.BasicPublish(exchange: "", routingKey: queueName, basicProperties: properties, body: body);
-                }
+            // Set durable to true for AccountBalanceUpdates queue
+            bool isDurable = queueName == "AccountBalanceUpdates";
+            
+            _logger.LogInformation("Declaring queue {QueueName}", queueName);
+            _channel.QueueDeclare(queue: queueName, durable: isDurable, exclusive: false, autoDelete: false);
 
-                // SECURE - Redact or summarize the message content instead of logging it all
-                _logger.LogInformation("Published message to {QueueName} with length: {MessageLength}", 
-                    queueName, message.Length);
+            var body = Encoding.UTF8.GetBytes(message);
+            var properties = _channel.CreateBasicProperties();
+            properties.Persistent = isDurable; // Match persistence with durability
 
-                // If you need message content, sanitize it:
-                _logger.LogDebug("Published message to {QueueName}: {Message}", 
-                    queueName, LogSanitizer.SanitizeLogMessage(message ?? throw new ArgumentNullException(nameof(message))));
-            }
+            _channel.BasicPublish(exchange: "", routingKey: queueName, basicProperties: properties, body: body);
+            _logger.LogInformation("Published message to {QueueName} with length: {Length}", queueName, message.Length);
         }
         catch (Exception ex)
         {

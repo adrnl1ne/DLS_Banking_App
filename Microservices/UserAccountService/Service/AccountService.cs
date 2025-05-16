@@ -1,3 +1,4 @@
+using System;
 using System.Text.Json;
 using AccountService.Database.Data;
 using AccountService.Repository;
@@ -661,6 +662,60 @@ public class AccountService(
             ErrorsTotal.WithLabels("DepositToAccount").Inc();
             logger.LogError(ex, "Failed to deposit to account");
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Updates account balance when initiated by the system (not a user request)
+    /// Used by background services like RabbitMQ consumers
+    /// </summary>
+    public async Task<ApiResponse<Account>> UpdateBalanceAsSystemAsync(int accountId, AccountBalanceRequest request)
+    {
+        // Get the account - using parameter names from the primary constructor
+        var account = await accountRepository.GetAccountByIdAsync(accountId);
+        if (account == null)
+        {
+            return new ApiResponse<Account> { Success = false, Message = "Account not found", ErrorCode = "ACCOUNT_NOT_FOUND" };
+        }
+        
+        // We're running as the system, so no need for permission checks
+        
+        try
+        {
+            // Handle the balance update based on transaction type
+            decimal newBalance = account.Amount;
+            
+            if (request.TransactionType.Equals("Deposit", StringComparison.OrdinalIgnoreCase))
+            {
+                newBalance += request.Amount;
+                logger.LogInformation("Depositing {Amount} to account {AccountId}, new balance: {Balance}", 
+                    request.Amount, accountId, newBalance);
+            }
+            else if (request.TransactionType.Equals("Withdrawal", StringComparison.OrdinalIgnoreCase))
+            {
+                newBalance -= request.Amount;
+                logger.LogInformation("Withdrawing {Amount} from account {AccountId}, new balance: {Balance}", 
+                    request.Amount, accountId, newBalance);
+            }
+            else
+            {
+                return new ApiResponse<Account> { Success = false, Message = "Invalid transaction type", ErrorCode = "INVALID_OPERATION" };
+            }
+            
+            // Update account balance
+            account.Amount = newBalance;
+            await accountRepository.SaveChangesAsync();
+            
+            // Log instead of using _auditLogger which doesn't exist
+            logger.LogInformation("System updated balance for account {AccountId} via {TransactionType}, amount: {Amount}", 
+                accountId, request.TransactionType, request.Amount);
+            
+            return new ApiResponse<Account> { Success = true, Data = account };
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to update balance for account {AccountId}", accountId);
+            return new ApiResponse<Account> { Success = false, Message = ex.Message, ErrorCode = "PROCESSING_ERROR" };
         }
     }
 }

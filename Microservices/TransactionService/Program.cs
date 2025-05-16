@@ -188,8 +188,21 @@ builder.Services.AddSingleton<ConcurrentDictionary<string, FraudResult>>(_ =>
 builder.Services.AddScoped<IFraudDetectionService, FraudDetectionService>();
 builder.Services.AddScoped<ITransactionRepository, TransactionRepository>();
 builder.Services.AddScoped<TransactionValidator>();
-builder.Services.AddSingleton<IRabbitMqClient, RabbitMqClient>();
+builder.Services.AddSingleton<IRabbitMqClient, RabbitMqClient>(sp =>
+{
+    var logger = sp.GetRequiredService<ILogger<RabbitMqClient>>();
+    var config = sp.GetRequiredService<IConfiguration>();
+    
+    return new RabbitMqClient(
+        logger,
+        config["RabbitMQ:Host"] ?? "rabbitmq",
+        int.Parse(config["RabbitMQ:Port"] ?? "5672"),
+        config["RabbitMQ:Username"] ?? "guest",
+        config["RabbitMQ:Password"] ?? "guest"
+    );
+});
 builder.Services.AddScoped<ITransactionService, TransactionService.Services.TransactionService>();
+builder.Services.AddScoped<IAccountBalanceService, AccountBalanceMessageService>();
 
 // Define and register metrics
 var requestsTotalCounter = Metrics.CreateCounter(

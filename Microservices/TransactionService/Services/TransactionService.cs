@@ -58,7 +58,7 @@ public class TransactionService(
                     transaction, fromAccount, toAccount, repository);
 
                 // Update account balances
-                await UpdateAccountBalancesAsync(transaction, fromAccount, toAccount, logger, userAccountClient);
+                await UpdateAccountBalancesAsync(transaction, fromAccount, toAccount);
 
                 // Update transaction statuses to completed
                 await UpdateTransactionStatusesAsync(transaction, withdrawalTransaction, depositTransaction,
@@ -205,50 +205,72 @@ public class TransactionService(
         return (withdrawalTransaction, depositTransaction);
     }
 
-    private static async Task UpdateAccountBalancesAsync(
+    // Update the UpdateAccountBalancesAsync method to use message queueing
+
+    private async Task UpdateAccountBalancesAsync(
         Transaction transaction,
         Account fromAccount,
-        Account toAccount,
-        ILogger<TransactionService> logger,
-        IUserAccountClient userAccountClient)
+        Account toAccount)
     {
         logger.LogInformation("Updating balances for transaction {TransferId}", transaction.TransferId);
 
-        // Define a retry policy for user account service calls
-        var userAccountRetryPolicy = Policy
-            .Handle<Exception>()
-            .WaitAndRetryAsync(
-                retryCount: 3,
-                sleepDurationProvider: _ => TimeSpan.FromSeconds(2),
-                onRetry: (exception, _, retryCount, _) =>
-                {
-                    logger.LogWarning("Retry {RetryCount} for user account service call due to {ExceptionMessage}",
-                        retryCount, exception.Message);
-                });
-
-        // For source account: SUBTRACT funds
-        var fromBalanceRequest = new AccountBalanceRequest
+        try 
         {
-            Amount = transaction.Amount,
-            TransactionId = transaction.TransferId + "-withdrawal",
-            TransactionType = "Withdrawal",
-            IsAdjustment = true
-        };
+            var fromBalanceRequest = new AccountBalanceRequest
+            {
+                Amount = transaction.Amount,
+                TransactionId = transaction.TransferId + "-withdrawal",
+                TransactionType = "Withdrawal",
+                IsAdjustment = true
+            };
+            
+            var toBalanceRequest = new AccountBalanceRequest
+            {
+                Amount = transaction.Amount,
+                TransactionId = transaction.TransferId + "-deposit",
+                TransactionType = "Deposit",
+                IsAdjustment = true
+            };
+            
+            // Create messages for RabbitMQ
+            var fromAccountMessage = new AccountBalanceUpdateMessage
+            {
+                AccountId = fromAccount.Id,
+                Amount = transaction.Amount,
+                TransactionId = transaction.TransferId + "-withdrawal",
+                TransactionType = "Withdrawal",
+                IsAdjustment = true,
+                Timestamp = DateTime.UtcNow
+            };
+            
+            var toAccountMessage = new AccountBalanceUpdateMessage
+            {
+                AccountId = toAccount.Id,
+                Amount = transaction.Amount,
+                TransactionId = transaction.TransferId + "-deposit",
+                TransactionType = "Deposit",
+                IsAdjustment = true,
+                Timestamp = DateTime.UtcNow
+            };
 
-        // For destination account: ADD funds
-        var toBalanceRequest = new AccountBalanceRequest
+            // Serialize to string before publishing
+            string fromAccountJson = System.Text.Json.JsonSerializer.Serialize(fromAccountMessage);
+            string toAccountJson = System.Text.Json.JsonSerializer.Serialize(toAccountMessage);
+
+            // Publish to RabbitMQ queue
+            rabbitMqClient.Publish("AccountBalanceUpdates", fromAccountJson);
+            rabbitMqClient.Publish("AccountBalanceUpdates", toAccountJson);
+            
+            logger.LogInformation("Balance update requests queued for transaction {TransferId}", transaction.TransferId);
+            
+            // Make method actually async by returning a completed task
+            await Task.CompletedTask;
+        }
+        catch (Exception ex)
         {
-            Amount = transaction.Amount,
-            TransactionId = transaction.TransferId + "-deposit",
-            TransactionType = "Deposit",
-            IsAdjustment = true
-        };
-
-        // Update the balances via the client service with retries
-        await userAccountRetryPolicy.ExecuteAsync(async () =>
-            await userAccountClient.UpdateBalanceAsync(fromAccount.Id, fromBalanceRequest));
-        await userAccountRetryPolicy.ExecuteAsync(async () =>
-            await userAccountClient.UpdateBalanceAsync(toAccount.Id, toBalanceRequest));
+            logger.LogError(ex, "Failed to queue balance updates for transaction {TransferId}", transaction.TransferId);
+            throw;
+        }
     }
 
     private static async Task UpdateTransactionStatusesAsync(

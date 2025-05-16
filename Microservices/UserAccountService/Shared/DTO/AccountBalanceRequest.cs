@@ -13,10 +13,15 @@ public class AccountBalanceRequest
     /// <summary>
     /// Gets or sets the transaction ID for the balance update.
     /// </summary>
-    public required string TransactionId { get; set; }
+    public string TransactionId { get; set; } = string.Empty;
 
     /// <summary>
     /// Gets or sets the transaction type for the balance update.
     /// </summary>
-    public required string  TransactionType { get; set; }
+    public string TransactionType { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether this instance is an adjustment.
+    /// </summary>
+    public bool IsAdjustment { get; set; }
 }
