@@ -10,6 +10,8 @@ public class ES
         { "transaction", typeof(TransactionDocument) },
         { "account_created", typeof(AccountCreatedEvent) },
         { "fraud", typeof(CheckFraudEvent) },
-        { "account", typeof(AccountDocument) }
+        { "account", typeof(AccountDocument) },
+        { "account_event", typeof(AccountEvent) },
+        { "transaction_history", typeof(TransactionCreatedEvent)}
     };
 }

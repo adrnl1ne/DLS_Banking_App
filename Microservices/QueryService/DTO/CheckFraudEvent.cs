@@ -2,8 +2,9 @@ namespace QueryService.DTO;
 
 public class CheckFraudEvent
 {
-    public string transferId { get; set; }
-    public bool isFraud { get; set; }
-    public string status { get; set; }
-    public DateTime Timestamp { get; set; }
+    public string TransferId { get; set; }
+    public bool IsFraud { get; set; }
+    public string Status { get; set; }
+    public decimal Amount { get; set; }
+    public string Timestamp { get; set; }
 }
