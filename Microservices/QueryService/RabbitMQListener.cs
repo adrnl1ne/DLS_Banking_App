@@ -161,6 +161,18 @@ public class RabbitMqListener : BackgroundService
                         : $"❌ Failed to update account balance in 'accounts' index: {updateResponse.DebugInformation}");
                 }
                 break;
+            
+            case "AccountDeposited":
+                if (accountEvent != null)
+                {
+                    var updateResponse = await _elasticClient.UpdateAsync<AccountEvent>(accountId, u => u
+                        .Index("accounts")
+                        .Doc(new AccountEvent { Amount = accountEvent.Amount }));
+                    Console.WriteLine(updateResponse.IsValid
+                        ? $"✅ Account balance updated in 'accounts' index after deposit."
+                        : $"❌ Failed to update account balance in 'accounts' index: {updateResponse.DebugInformation}");
+                }
+                break;
 
             default:
                 Console.WriteLine($"⚠️ Unknown event type: {eventType}");

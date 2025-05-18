@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Nest;
 using QueryService.DTO;
+using QueryService.utils;
 
 namespace QueryService;
 
@@ -18,17 +19,17 @@ public class TransactionsController : ControllerBase
     }
     
     [HttpGet("accounts/{accountId}/transactions")]
-    public async Task<IActionResult> GetTransactionHistory(int accountId, [FromQuery] string fromDate = null, [FromQuery] string toDate = null)
+    public async Task<IActionResult> GetTransactionHistory(string accountId, [FromQuery] string fromDate = null, [FromQuery] string toDate = null)
     {
         var filters = new List<QueryContainer>();
 
-        filters.Add(new TermQuery { Field = "accountId", Value = accountId });
+        filters.Add(new TermQuery { Field = "fromAccount.keyword", Value = accountId });
 
         if (!string.IsNullOrEmpty(fromDate))
         {
             filters.Add(new DateRangeQuery
             {
-                Field = "timestamp",
+                Field = "createdAt",
                 GreaterThanOrEqualTo = fromDate
             });
         }
@@ -37,53 +38,61 @@ public class TransactionsController : ControllerBase
         {
             filters.Add(new DateRangeQuery
             {
-                Field = "timestamp",
+                Field = "createdAt",
                 LessThanOrEqualTo = toDate
             });
         }
 
-        var query = new SearchDescriptor<TransactionDocument>()
-            .Index("transactions")
+        var query = new SearchDescriptor<TransactionCreatedEvent>()
+            .Index("transaction_history")
             .Query(q => q
                 .Bool(b => b
                     .Filter(filters.ToArray())
                 )
             )
+            .Collapse(c => c
+                .Field("transferId.keyword")
+            )
             .Sort(s => s
                 .Field(f => f
-                    .Field(doc => doc.Timestamp)
+                    .Field(doc => doc.CreatedAt)
                     .Order(SortOrder.Descending)
                 )
             );
 
-        var response = await elasticsearchClient.SearchAsync<TransactionDocument>(query);
+        var response = await elasticsearchClient.SearchAsync<TransactionCreatedEvent>(query);
+
+        // Log the query and response for debugging
+        Console.WriteLine($"Generated Query: {query}");
+        Console.WriteLine($"Elasticsearch Response: {response.DebugInformation}");
+
+        if (!response.IsValid)
+        {
+            return StatusCode(500, $"Elasticsearch query failed: {response.DebugInformation}");
+        }
 
         var transactions = response.Documents
             .Select(d => new TransactionResponse
             {
-                TransactionId = d.TransactionId,
-                AccountId = d.AccountId,
-                UserId = d.UserId,
+                TransactionId = d.TransferId,
+                FromAccount = d.FromAccount,
+                ToAccount = d.ToAccount,
                 TransactionAmount = d.Amount,
-                FinalBalance = d.FinalBalance,
-                TransactionType = d.TransactionType,
-                Timestamp = d.Timestamp
+                Description = d.Description,
+                Timestamp = d.CreatedAt
             })
-            .ToList(); // IMPORTANT
+            .ToList();
 
         return new OkObjectResult(transactions);
     }
 
-
-
     public class TransactionResponse
     {
         public string TransactionId { get; set; }
-        public int AccountId { get; set; }
-        public int UserId { get; set; }
+        public string FromAccount { get; set; }
+        public string ToAccount { get; set; }
         public decimal TransactionAmount { get; set; }
-        public decimal FinalBalance { get; set; }
-        public string TransactionType { get; set; }
+        public string Description { get; set; }
         public string Timestamp { get; set; }
     }
 }
