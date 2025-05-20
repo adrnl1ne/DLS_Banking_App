@@ -26,7 +26,10 @@ public class RabbitMqListener : BackgroundService
 
         var channel = _rabbit.Channel;
 
-        foreach (var queue in Queues.queueMap.Keys)
+        // These queues must match the ones published by the other services
+        var queues = new[] { "AccountEvents", "TransactionCreated", "FraudEvents" };
+
+        foreach (var queue in queues)
         {
             await channel.ExchangeDeclareAsync("banking.events", ExchangeType.Topic, durable: true);
             await channel.QueueDeclareAsync(queue: queue, durable: false, exclusive: false, autoDelete: false);
@@ -44,44 +47,20 @@ public class RabbitMqListener : BackgroundService
 
                 try
                 {
-                    if (Queues.queueMap.TryGetValue(capturedQueue, out var eventType))
+                    switch (capturedQueue)
                     {
-                        var evt = JsonSerializer.Deserialize(json, eventType);
-                        if (evt is null)
-                        {
-                            Console.WriteLine($"⚠️ Could not deserialize event for queue: {capturedQueue}");
-                            return;
-                        }
-
-                        switch (capturedQueue)
-                        {
-                            case "AccountEvents":
-                                await HandleAccountEvent(json);
-                                break;
-                            
-                            case "FraudEvents":
-                                await HandleFraudEvent(json);
-                                break;
-                            
-                            case "TransactionCreated":
-                                await HandleTransactionCreatedEvent(json);
-                                break;
-
-                            default:
-                                Console.WriteLine($"ℹ️ No specific handler for queue: {capturedQueue}");
-                                break;
-                        }
-
-                        // Common indexing logic (if needed for all events)
-                        var indexName = QueueIndexMapper.AccountEvents(capturedQueue.ToLowerInvariant());
-                        var response = await _elasticClient.IndexAsync<object>(evt, idx => idx.Index(indexName));
-                        Console.WriteLine(response.IsValid
-                            ? $"✅ Indexed event from [{capturedQueue}]"
-                            : $"❌ Elasticsearch indexing failed: {response.DebugInformation}");
-                    }
-                    else
-                    {
-                        Console.WriteLine($"⚠️ No event type mapped for queue: {capturedQueue}");
+                        case "AccountEvents":
+                            await HandleAccountEvent(json);
+                            break;
+                        case "TransactionCreated":
+                            await HandleTransactionCreatedEvent(json);
+                            break;
+                        case "FraudEvents":
+                            await HandleFraudEvent(json);
+                            break;
+                        default:
+                            Console.WriteLine($"ℹ️ No handler for queue: {capturedQueue}");
+                            break;
                     }
                 }
                 catch (Exception ex)
@@ -90,12 +69,13 @@ public class RabbitMqListener : BackgroundService
                 }
             };
 
-            await channel.BasicConsumeAsync(queue: capturedQueue, autoAck: false, consumer: consumer);
+            await channel.BasicConsumeAsync(queue: capturedQueue, autoAck: true, consumer: consumer);
         }
 
         await Task.CompletedTask;
     }
 
+    // Handles all account-related events (created, deleted, renamed, balance updated)
     private async Task HandleAccountEvent(string json)
     {
         using var doc = JsonDocument.Parse(json);
@@ -109,13 +89,9 @@ public class RabbitMqListener : BackgroundService
         {
             var historyResponse = await _elasticClient.IndexAsync(accountEvent, idx => idx.Index("account_events"));
             if (historyResponse.IsValid)
-            {
-                Console.WriteLine($"✅ Successfully indexed AccountEvent in history: {eventType}");
-            }
+                Console.WriteLine($"✅ Indexed AccountEvent in history: {eventType}");
             else
-            {
                 Console.WriteLine($"❌ Failed to index AccountEvent in history: {historyResponse.DebugInformation}");
-            }
         }
 
         // Update the "accounts" index (current state)
@@ -140,83 +116,52 @@ public class RabbitMqListener : BackgroundService
 
             case "AccountRenamed":
                 if (accountEvent != null)
-                {
-                    var updateResponse = await _elasticClient.UpdateAsync<AccountEvent>(accountId, u => u
-                        .Index("accounts")
-                        .Doc(new AccountEvent { Name = accountEvent.Name }));
-                    Console.WriteLine(updateResponse.IsValid
-                        ? $"✅ Account renamed in 'accounts' index."
-                        : $"❌ Failed to rename account in 'accounts' index: {updateResponse.DebugInformation}");
-                }
+					{
+						var updateResponse = await _elasticClient.UpdateAsync<AccountEvent>(accountId, u => u
+							.Index("accounts")
+							.Doc(new AccountEvent
+							{
+								EventType = accountEvent.EventType,
+								Name = accountEvent.Name,
+								Timestamp = accountEvent.Timestamp
+							})
+							.DocAsUpsert(true));
+						Console.WriteLine(updateResponse.IsValid
+							? $"✅ Account renamed in 'accounts' index."
+							: $"❌ Failed to rename account in 'accounts' index: {updateResponse.DebugInformation}");
+					}
                 break;
 
             case "AccountBalanceUpdated":
-                if (accountEvent != null)
-                {
-                    var updateResponse = await _elasticClient.UpdateAsync<AccountEvent>(accountId, u => u
-                        .Index("accounts")
-                        .Doc(new AccountEvent { Amount = accountEvent.Amount }));
-                    Console.WriteLine(updateResponse.IsValid
-                        ? $"✅ Account balance updated in 'accounts' index."
-                        : $"❌ Failed to update account balance in 'accounts' index: {updateResponse.DebugInformation}");
-                }
-                break;
-            
             case "AccountDeposited":
                 if (accountEvent != null)
-                {
-                    var updateResponse = await _elasticClient.UpdateAsync<AccountEvent>(accountId, u => u
-                        .Index("accounts")
-                        .Doc(new AccountEvent { Amount = accountEvent.Amount }));
-                    Console.WriteLine(updateResponse.IsValid
-                        ? $"✅ Account balance updated in 'accounts' index after deposit."
-                        : $"❌ Failed to update account balance in 'accounts' index: {updateResponse.DebugInformation}");
-                }
+					{
+						var updateResponse = await _elasticClient.UpdateAsync<AccountEvent>(accountId, u => u
+							.Index("accounts")
+							.Doc(new AccountEvent
+							{
+								EventType = accountEvent.EventType,
+								Amount = accountEvent.Amount,
+								Timestamp = accountEvent.Timestamp
+							})
+							.DocAsUpsert(true));
+						Console.WriteLine(updateResponse.IsValid
+							? $"✅ Account balance updated in 'accounts' index."
+							: $"❌ Failed to update account balance in 'accounts' index: {updateResponse.DebugInformation}");
+					}
                 break;
 
             default:
-                Console.WriteLine($"⚠️ Unknown event type: {eventType}");
+                Console.WriteLine($"⚠️ Unknown account event type: {eventType}");
                 break;
         }
     }
-    
-    private async Task HandleFraudEvent(string json)
-    {
-        try
-        {
-            // Parse the incoming message
-            var fraudEvent = JsonSerializer.Deserialize<CheckFraudEvent>(json);
-            if (fraudEvent == null)
-            {
-                Console.WriteLine("⚠️ Failed to deserialize fraud event.");
-                return;
-            }
 
-            // Log the event
-            Console.WriteLine($"📨 Processing FraudEvent: TransferId={fraudEvent.TransferId}, IsFraud={fraudEvent.IsFraud}, Status={fraudEvent.Status}");
-
-            // Index the fraud event in Elasticsearch
-            var response = await _elasticClient.IndexAsync(fraudEvent, idx => idx.Index("fraud"));
-            if (response.IsValid)
-            {
-                Console.WriteLine($"✅ Successfully indexed FraudEvent: TransferId={fraudEvent.TransferId}");
-            }
-            else
-            {
-                Console.WriteLine($"❌ Failed to index FraudEvent: {response.DebugInformation}");
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"❌ Error processing FraudEvent: {ex.Message}");
-        }
-    }
-    
+    // Handles transaction creation events
     private async Task HandleTransactionCreatedEvent(string json)
     {
         try
         {
-            // Deserialize the event
             var transactionEvent = JsonSerializer.Deserialize<TransactionCreatedEvent>(json);
             if (transactionEvent == null)
             {
@@ -224,39 +169,43 @@ public class RabbitMqListener : BackgroundService
                 return;
             }
 
-            // Log the event
             Console.WriteLine($"📨 Processing TransactionCreatedEvent: TransferId={transactionEvent.TransferId}, Amount={transactionEvent.Amount}");
 
-            // Index the event in Elasticsearch
             var response = await _elasticClient.IndexAsync(transactionEvent, idx => idx.Index("transaction_history"));
             if (response.IsValid)
-            {
-                Console.WriteLine($"✅ Successfully indexed TransactionCreatedEvent: TransferId={transactionEvent.TransferId}");
-            }
+                Console.WriteLine($"✅ Indexed TransactionCreatedEvent: TransferId={transactionEvent.TransferId}");
             else
-            {
                 Console.WriteLine($"❌ Failed to index TransactionCreatedEvent: {response.DebugInformation}");
-            }
         }
         catch (Exception ex)
         {
             Console.WriteLine($"❌ Error processing TransactionCreatedEvent: {ex.Message}");
         }
     }
-    
 
-    public class QueueIndexMapper
+    // Handles fraud detection results
+    private async Task HandleFraudEvent(string json)
     {
-        public static string AccountEvents(string queue)
+        try
         {
-            // You can map different queues to different index names if needed
-            return queue switch
+            var fraudEvent = JsonSerializer.Deserialize<CheckFraudEvent>(json);
+            if (fraudEvent == null)
             {
-                "account-created" => "account_created",
-                "transaction-initiated" => "transaction_initiated",
-                "account-events" => "account_events",
-                _ => queue
-            };
+                Console.WriteLine("⚠️ Failed to deserialize fraud event.");
+                return;
+            }
+
+            Console.WriteLine($"📨 Processing FraudEvent: TransferId={fraudEvent.TransferId}, IsFraud={fraudEvent.IsFraud}, Status={fraudEvent.Status}");
+
+            var response = await _elasticClient.IndexAsync(fraudEvent, idx => idx.Index("fraud"));
+            if (response.IsValid)
+                Console.WriteLine($"✅ Indexed FraudEvent: TransferId={fraudEvent.TransferId}");
+            else
+                Console.WriteLine($"❌ Failed to index FraudEvent: {response.DebugInformation}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"❌ Error processing FraudEvent: {ex.Message}");
         }
     }
 }

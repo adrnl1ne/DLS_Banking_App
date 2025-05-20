@@ -1,5 +1,6 @@
 using Nest;
 using QueryService;
+using QueryService.utils;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHealthChecks();
@@ -31,9 +32,9 @@ builder.Services.AddHostedService<RabbitMqListener>();
 builder.Services.AddSingleton<RabbitMqConnection>(sp =>
 {
     var config = builder.Configuration;
-    var hostName = config["RabbitMQ:HostName"];
-    var userName = config["RabbitMQ:UserName"];
-    var password = config["RabbitMQ:Password"];
+    var hostName = config["RabbitMQ:HostName"] ?? "localhost";
+    var userName = config["RabbitMQ:UserName"] ?? "guest";
+    var password = config["RabbitMQ:Password"] ?? "guest";
     return new RabbitMqConnection(hostName, userName, password);
 });
 
@@ -42,7 +43,6 @@ var app = builder.Build();
 await Helpers.EnsureElasticsearchIndicesAsync(app.Services);
 
 app.UseCors("AllowAll");
-
 app.MapGraphQL();
 app.MapHealthChecks("/health");
 

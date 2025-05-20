@@ -3,22 +3,22 @@
 namespace QueryService.DTO;
 
 public class AccountCreatedEvent
-{   
+{
     [JsonPropertyName("event_type")]
-    public string EventType { get; set; }  // From "event_type"
-    
+    public required string EventType { get; set; }
+
     [JsonPropertyName("accountId")]
     public int AccountId { get; set; }
-    
+
     [JsonPropertyName("userId")]
     public int UserId { get; set; }
-    
-    [JsonPropertyName("name")]
-    public string Name { get; set; }
-    
+
     [JsonPropertyName("amount")]
-    public double Amount { get; set; }
-    
+    public decimal Amount { get; set; }
+
+    [JsonPropertyName("name")]
+    public required string Name { get; set; }
+
     [JsonPropertyName("timestamp")]
-    public DateTime Timestamp { get; set; }
+    public required string Timestamp { get; set; }
 }

@@ -5,23 +5,23 @@ namespace QueryService.DTO;
 public class TransactionCreatedEvent
 {
     [JsonPropertyName("TransferId")]
-    public string TransferId { get; set; }
+    public required string TransferId { get; set; }
 
     [JsonPropertyName("Status")]
-    public string Status { get; set; }
+    public required string Status { get; set; }
 
     [JsonPropertyName("Amount")]
     public decimal Amount { get; set; }
 
     [JsonPropertyName("Description")]
-    public string Description { get; set; }
+    public required string Description { get; set; }
 
     [JsonPropertyName("FromAccount")]
-    public string FromAccount { get; set; } // Changed from int to string
+    public required string FromAccount { get; set; }
 
     [JsonPropertyName("ToAccount")]
-    public string ToAccount { get; set; }   // Changed from int to string
+    public required string ToAccount { get; set; }
 
     [JsonPropertyName("CreatedAt")]
-    public string CreatedAt { get; set; }
+    public required string CreatedAt { get; set; }
 }
