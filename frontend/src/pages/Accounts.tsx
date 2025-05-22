@@ -5,16 +5,13 @@ import { Separator } from '../components/ui/separator';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { useNavigate } from 'react-router-dom';
 import { getUserAccounts, Account } from '../api/accountApi';
-import { getCurrentUser } from '../api/authApi';
 
 const Accounts = () => {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [success, ] = useState('');
   const navigate = useNavigate();
-  const currentUser = getCurrentUser();
-  const isAdmin = currentUser?.user.role === 'admin';
 
   useEffect(() => {
     const fetchAccounts = async () => {
@@ -119,7 +116,7 @@ const Accounts = () => {
                 <div className="flex flex-col md:flex-row justify-between md:items-start mb-6">
                   <div className="space-y-2">
                     <div className="text-sm text-muted-foreground">Available Balance</div>
-                    <div className="text-3xl font-bold">{formatCurrency(account.amount)}</div>
+                    <div className="text-3xl font-bold">{formatCurrency(account.balance)}</div>
                   </div>
                   <div className="mt-4 md:mt-0 self-start bg-secondary/30 px-4 py-2 rounded-md">
                     <div className="text-sm text-muted-foreground">User ID</div>

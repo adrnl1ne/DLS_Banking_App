@@ -22,13 +22,10 @@ function App() {
     
     if (authStatus) {
       const currentUser = getCurrentUser();
-      console.log(currentUser?.user.role === 'admin')
       setIsAdmin(currentUser?.user.role === 'admin');
     }
   }, []);
-
-  console.log(isAdmin)
-
+  
   return (
     <Router>
       <div className="min-h-screen flex flex-col bg-background text-foreground">

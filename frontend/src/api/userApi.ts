@@ -1,4 +1,5 @@
 import axios from 'axios';
+import axiosInstance from './axiosConfig';
 
 // Define API URL
 const API_URL = 'http://localhost:8002/api/Token';
@@ -21,15 +22,7 @@ export interface UserRequest {
 
 export const createUser = async (user: UserRequest): Promise<User> => {
   try {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      throw new Error('Authentication required');
-    }
-    const response = await axios.post(`${API_URL}/users`, user, {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    });
+    const response = await axiosInstance.post(`${API_URL}/users`, user);
     return response.data;
   }
   catch (error) {
@@ -42,25 +35,10 @@ export const createUser = async (user: UserRequest): Promise<User> => {
 
 export const getUsers = async (): Promise<User[]> => {
   try {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      throw new Error('Authentication required');
-    }
-
-    const response = await axios.get(`${API_URL}/users`, {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    });
-    
+    const response = await axiosInstance.get(`${API_URL}/users`);
     return response.data;
   } catch (error) {
     if (axios.isAxiosError(error)) {
-      if (error.response?.status === 401) {
-        throw new Error('Authentication required');
-      } else if (error.response?.status === 403) {
-        throw new Error('You do not have permission to view users');
-      }
       throw new Error(error.response?.data || 'Failed to fetch users');
     }
     throw new Error('An unexpected error occurred');
