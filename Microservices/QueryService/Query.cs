@@ -1,4 +1,5 @@
 ﻿using Nest;
+using QueryService.DTO;
 
 namespace QueryService;
 
