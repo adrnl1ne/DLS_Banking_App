@@ -10,7 +10,7 @@ using BCrypt.Net;
 using UserAccountService.Shared.DTO;
 using AccountService.Database.Data;
 using UserAccountService.Models;
-
+using UserAccountService.Repository;
 namespace UserAccountService.Service;
 
 public class AuthService : IAuthService
@@ -18,13 +18,14 @@ public class AuthService : IAuthService
     private readonly UserAccountDbContext _context;
     private readonly IConfiguration _configuration;
     private readonly ILogger<AuthService> _logger;
+    private readonly IUserRepository _userRepository;
 
-    public AuthService(UserAccountDbContext context, IConfiguration configuration, ILogger<AuthService> logger)
+    public AuthService(UserAccountDbContext context, IConfiguration configuration, ILogger<AuthService> logger, IUserRepository userRepository)
     {
         _context = context;
         _configuration = configuration;
         _logger = logger;
-
+        _userRepository = userRepository;
         // Log configuration values for debugging
         _logger.LogInformation("AuthService initialized with JWT_ISSUER: {Issuer}, JWT_AUDIENCE: {Audience}", 
             configuration["JWT_ISSUER"], configuration["JWT_AUDIENCE"]);
@@ -131,5 +132,53 @@ public class AuthService : IAuthService
         var tokenString = new JwtSecurityTokenHandler().WriteToken(token);
         _logger.LogInformation("Generated service JWT token for {ServiceName}: {Token}", serviceName, tokenString);
         return tokenString;
+    }
+
+    public async Task<ActionResult> GetUsersAsync()
+    {
+        try
+        {
+            var users = await _userRepository.GetAllUsersAsync();
+            var userDtos = users.Select(u => new
+            {
+                u.Id,
+                u.Username,
+                u.Email,
+                u.CreatedAt,
+                u.UpdatedAt,
+                Role = u.Role.Name
+            }).ToList();
+
+            return new OkObjectResult(userDtos);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving users");
+            return new StatusCodeResult(500);
+        }
+    }
+    
+    public async Task<ActionResult> CreateUserAsync(UserRequest userRequest)
+    {
+        try
+        {
+            var user = new User
+            {
+                Username = userRequest.Username,
+                Email = userRequest.Email,
+                Password = BCrypt.Net.BCrypt.HashPassword(userRequest.Password),
+                RoleId = 1,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            await _userRepository.CreateUserAsync(user);
+            return new OkObjectResult(user);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error creating user");
+            return new StatusCodeResult(500);
+        }
     }
 }

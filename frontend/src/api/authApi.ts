@@ -1,4 +1,5 @@
 import axios from 'axios';
+import axiosInstance from './axiosConfig';
 
 // Use a relative URL for browser requests
 const API_URL = 'http://localhost:8002/api/Token';
@@ -39,7 +40,7 @@ interface User {
 export const login = async (credentials: LoginCredentials): Promise<LoginResponse> => {
   try {
     // Match the backend endpoint from AuthService.cs
-    const response = await axios.post(`${API_URL}/login`, {
+    const response = await axiosInstance.post(`${API_URL}/login`, {
       usernameOrEmail: credentials.email,
       password: credentials.password
     });
@@ -76,7 +77,7 @@ export const login = async (credentials: LoginCredentials): Promise<LoginRespons
 
 export const register = async (credentials: RegisterCredentials): Promise<RegisterResponse> => {
   try {
-    const response = await axios.post(`${API_URL}/register`, credentials);
+    const response = await axiosInstance.post(`${API_URL}/register`, credentials);
     return response.data;
   } catch (error) {
     if (axios.isAxiosError(error) && error.response) {

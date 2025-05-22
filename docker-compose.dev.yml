@@ -304,8 +304,8 @@ services:
       context: ./frontend
       dockerfile: Dockerfile.dev
     image: dls_banking_app-frontend:dev
-    mem_limit: 256m
-    cpus: "0.2"
+    mem_limit: 512m
+    cpus: "0.3"
     container_name: frontend
     restart: always
     ports:
@@ -314,9 +314,11 @@ services:
       - ./frontend:/app
       - /app/node_modules
     environment:
+      - NODE_OPTIONS=--max-old-space-size=512
       - VITE_API_URL=${VITE_API_URL}
       - VITE_USER_SERVICE_URL=${VITE_USER_SERVICE_URL}
       - VITE_QUERY_SERVICE_URL=${VITE_QUERY_SERVICE_URL}
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
     depends_on:
       - fraud-detection-service
     healthcheck:

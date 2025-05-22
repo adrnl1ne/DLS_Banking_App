@@ -19,6 +19,8 @@ export interface TransactionRequest {
   fromAccount: string;
   toAccount: string;
   amount: number;
+  description?: string;
+  transactionType: string;
 }
 
 // Get transactions for a specific account

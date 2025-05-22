@@ -7,22 +7,32 @@ import AccountDetails from './pages/AccountDetails'
 import Transactions from './pages/Transactions'
 import Login from './pages/Login'
 import Register from './pages/Register'
-import { isAuthenticated } from './api/authApi'
+import AdminPanel from './pages/AdminPanel'
+import { isAuthenticated, getCurrentUser } from './api/authApi'
 import './App.css'
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
 
   // Check authentication status on app load
   useEffect(() => {
     const authStatus = isAuthenticated();
     setIsLoggedIn(authStatus);
+    
+    if (authStatus) {
+      const currentUser = getCurrentUser();
+      console.log(currentUser);
+      setIsAdmin(currentUser?.user.role === 'admin');
+    }
   }, []);
 
+  console.log(isLoggedIn);
+  
   return (
     <Router>
       <div className="min-h-screen flex flex-col bg-background text-foreground">
-        <Navbar isAuthenticated={isLoggedIn} setIsAuthenticated={setIsLoggedIn} />
+        <Navbar isAuthenticated={isLoggedIn} setIsAuthenticated={setIsLoggedIn} isAdmin={isAdmin} />
         <main className="flex-1 flex justify-center py-10">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl">
             <Routes>
@@ -32,6 +42,7 @@ function App() {
               <Route path="/transactions" element={isLoggedIn ? <Transactions /> : <Navigate to="/login" />} />
               <Route path="/login" element={isLoggedIn ? <Navigate to="/" /> : <Login setIsAuthenticated={setIsLoggedIn} />} />
               <Route path="/register" element={isLoggedIn ? <Navigate to="/" /> : <Register />} />
+              <Route path="/admin" element={isLoggedIn && isAdmin ? <AdminPanel /> : <Navigate to="/" />} />
             </Routes>
           </div>
         </main>

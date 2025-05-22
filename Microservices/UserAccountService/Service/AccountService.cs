@@ -197,11 +197,17 @@ public class AccountService(
         RequestsTotal.WithLabels("CreateAccount").Inc();
         try
         {
+            if (currentUserService.Role != "admin")
+            {
+                logger.LogWarning("Non-admin user attempted to create account");
+                ErrorsTotal.WithLabels("CreateAccount").Inc();
+                throw new UnauthorizedAccessException("Only administrators can create accounts.");
+            }
+
             var account = new Account
             {
                 Name = request.Name,
-                UserId = currentUserService.UserId ??
-                         throw new InvalidOperationException("User ID is required to create an account.")
+                UserId = request.UserId
             };
 
             await accountRepository.AddAccountAsync(account);
@@ -479,7 +485,7 @@ public class AccountService(
                 {
                     logger.LogWarning("User is not authorized to update balance for account");
                     ErrorsTotal.WithLabels("UpdateBalance").Inc();
-                    throw new UnauthorizedAccessException("You are not authorized to update this account’s balance.");
+                    throw new UnauthorizedAccessException("You are not authorized to update this account's balance.");
                 }
             }
 
