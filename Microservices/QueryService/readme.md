@@ -53,7 +53,6 @@ The **QueryService** is a read-optimized microservice in the DLS Banking App arc
 | transaction_history  | TransactionCreatedEvent   | All transactions                            |
 | fraud                | CheckFraudEvent           | Fraud check results                         |
 | deleted_accounts     | DeletedAccount            | Tombstone records for deleted accounts      |
-| users                | UserDocument              | User data                                   |
 
 Index mappings are managed in [`utils/ES.cs`](utils/ES.cs) and created at startup by [`Helpers.cs`](Helpers.cs).
 
@@ -72,7 +71,7 @@ Index mappings are managed in [`utils/ES.cs`](utils/ES.cs) and created at startu
 
 ```graphql
 query {
-  getAccounts {
+  accounts {
     accountId
     userId
     name
@@ -86,7 +85,7 @@ query {
 
 ```graphql
 query {
-  getAccountHistory(accountId: 1) {
+  accountHistory(accountId: 1) {
     eventType
     accountId
     userId
@@ -103,7 +102,7 @@ query {
 
 ```graphql
 query {
-  getDeletedAccounts(userId: 1) {
+  deletedAccounts(userId: 1) {
     accountId
     userId
     name
@@ -116,7 +115,7 @@ query {
 
 ```graphql
 query {
-  getTransactions(accountId: "4") {
+  transactions(accountId: "4") {
     transferId
     fromAccount
     toAccount
@@ -132,7 +131,7 @@ query {
 
 ```graphql
 query {
-  getFraudEvents(transferId: "abc-123") {
+  fraudEvents(transferId: "abc-123") {
     transferId
     isFraud
     status
@@ -148,12 +147,7 @@ query {
 
 - **CQRS:** Strict separation of read and write models.
 - **Immutable Data:** All events are stored; deletions use the tombstone pattern (`deleted_accounts`).
-- **Snapshot Pattern:** The `accounts` index holds the latest state (snapshot) of each account.
 - **Tombstone Pattern:** Deleted accounts are written to `deleted_accounts` before removal from `accounts`.
-- **Idempotence:** Event handlers are designed to be idempotent (safe to process the same event multiple times).
-- **Commutative Handlers:** Event order does not affect the final state.
-- **Saga Pattern:** Supported via event-driven coordination (e.g., transaction + fraud + account update).
-- **Caching:** Elasticsearch acts as a high-performance cache for queries.
 
 ---
 
