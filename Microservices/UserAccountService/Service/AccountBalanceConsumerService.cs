@@ -89,7 +89,7 @@ namespace UserAccountService.Service
 
         private async Task<bool> ProcessMessageAsync(AccountBalanceUpdateMessage message)
         {
-            _logger.LogInformation("Processing balance update for account {AccountId}", message.AccountId);
+            _logger.LogInformation("Processing balance update for an account");
             
             try
             {
@@ -108,25 +108,22 @@ namespace UserAccountService.Service
                 
                 if (result.Success)
                 {
-                    _logger.LogInformation("Successfully processed balance update for account {AccountId}", 
-                        message.AccountId);
+                    _logger.LogInformation("Successfully processed balance update");
                     return true; // Message processed successfully
                 }
                 
                 if (result.ErrorCode == "ACCOUNT_NOT_FOUND" || result.ErrorCode == "INVALID_OPERATION")
                 {
-                    _logger.LogWarning("Permanent error processing message for account {AccountId}: {ErrorCode}", 
-                        message.AccountId, result.ErrorCode);
+                    _logger.LogWarning("Permanent error processing message: {ErrorCode}", result.ErrorCode);
                     return true; // Don't requeue for permanent errors
                 }
                 
-                _logger.LogWarning("Temporary error processing message for account {AccountId}: {ErrorMessage}", 
-                    message.AccountId, result.Message);
+                _logger.LogWarning("Temporary error processing message: {ErrorMessage}", result.Message);
                 return false; // Requeue for temporary errors
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing balance update for account {AccountId}", message.AccountId);
+                _logger.LogError(ex, "Error processing balance update");
                 return false; // Requeue on exception
             }
         }

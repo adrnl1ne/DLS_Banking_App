@@ -84,7 +84,7 @@ public class TransactionValidator(
 
                     if (fromAccount.Amount < request.Amount)
                     {
-                        logger.LogWarning("Insufficient funds in account {FromAccountId}", fromAccountId);
+                        logger.LogWarning("Insufficient funds in user account");
                         errorsTotal.WithLabels("CreateTransfer").Inc();
                         throw new InvalidOperationException("Insufficient funds for this transfer");
                     }
