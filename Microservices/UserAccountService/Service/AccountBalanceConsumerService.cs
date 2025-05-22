@@ -1,5 +1,4 @@
 using System;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,10 +14,11 @@ namespace UserAccountService.Service
     {
         private readonly IRabbitMqClient _rabbitMqClient;
         private readonly IServiceProvider _serviceProvider;
-        private const string QUEUE_NAME = "AccountBalanceUpdates";
         private readonly ILogger<AccountBalanceConsumerService> _logger;
         private readonly SemaphoreSlim _connectionSemaphore = new(1, 1);
-        private Timer _reconnectTimer;
+        private Timer? _reconnectTimer;
+        private const string QUEUE_NAME = "AccountBalanceUpdates";
+        private bool _isConnected;
 
         public AccountBalanceConsumerService(
             IRabbitMqClient rabbitMqClient,
@@ -32,50 +32,53 @@ namespace UserAccountService.Service
 
         protected override Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            _logger.LogInformation("AccountBalanceConsumerService started");
+            _logger.LogInformation("AccountBalanceConsumerService starting");
             
-            // Start a timer to periodically check and ensure we're connected
-            _reconnectTimer = new Timer(async _ => await EnsureConnectedAsync(),
-                null, TimeSpan.Zero, TimeSpan.FromSeconds(30));
+            // Add a short initial delay to ensure RabbitMQ is fully initialized
+            _reconnectTimer = new Timer(
+                async _ => await EnsureConnectedAsync(), 
+                null, 
+                TimeSpan.FromSeconds(10), // Initial delay before first connection attempt
+                TimeSpan.FromSeconds(5)); // Regular interval for reconnection attempts
             
             return Task.CompletedTask;
         }
 
         private async Task EnsureConnectedAsync()
         {
-            // Use semaphore to prevent multiple concurrent connection attempts
+            if (_isConnected && _rabbitMqClient.IsConnected)
+            {
+                return; // Already connected and subscribed
+            }
+
+            // Prevent multiple concurrent connection attempts
             if (!await _connectionSemaphore.WaitAsync(0))
             {
-                return; // Another connection attempt is in progress
+                return; // Another connection attempt is already in progress
             }
 
             try
             {
-                _logger.LogDebug("Checking RabbitMQ connection and consumer status");
+                _logger.LogInformation("Attempting to connect to RabbitMQ and subscribe to {QueueName}", QUEUE_NAME);
                 
                 try
                 {
-                    // Use the generic Subscribe<T> method with explicit type parameter
+                    // Ensure we have a valid connection
+                    _rabbitMqClient.EnsureConnection();
+
+                    // Subscribe to the queue with a handler that processes messages
                     _rabbitMqClient.Subscribe<AccountBalanceUpdateMessage>(
                         QUEUE_NAME, 
-                        async (message) => {
-                            try
-                            {
-                                await ProcessMessageAsync(message);
-                                return true; // Successfully processed
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger.LogError(ex, "Error processing message asynchronously");
-                                return false; // Failed to process, requeue
-                            }
-                        });
-                
-                    _logger.LogInformation("Successfully subscribed to {QueueName}", QUEUE_NAME);
+                        async message => await ProcessMessageAsync(message));
+                    
+                    _isConnected = true;
+                    _logger.LogInformation("Successfully connected to RabbitMQ and subscribed to {QueueName}", QUEUE_NAME);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to subscribe to RabbitMQ queue {QueueName}", QUEUE_NAME);
+                    _isConnected = false;
+                    _logger.LogError(ex, "Failed to connect to RabbitMQ or subscribe to {QueueName}", QUEUE_NAME);
+                    // We'll retry on the next timer tick
                 }
             }
             finally
@@ -86,7 +89,7 @@ namespace UserAccountService.Service
 
         private async Task<bool> ProcessMessageAsync(AccountBalanceUpdateMessage message)
         {
-            _logger.LogInformation("Processing balance update for account ID: {AccountId}", message.AccountId);
+            _logger.LogInformation("Processing balance update for account {AccountId}", message.AccountId);
             
             try
             {
@@ -105,37 +108,36 @@ namespace UserAccountService.Service
                 
                 if (result.Success)
                 {
-                    _logger.LogInformation("Successfully processed balance update for account: {AccountId}", 
+                    _logger.LogInformation("Successfully processed balance update for account {AccountId}", 
                         message.AccountId);
-                    return true; // Success
+                    return true; // Message processed successfully
                 }
-                else
+                
+                if (result.ErrorCode == "ACCOUNT_NOT_FOUND" || result.ErrorCode == "INVALID_OPERATION")
                 {
-                    if (result.ErrorCode == "ACCOUNT_NOT_FOUND" || result.ErrorCode == "INVALID_OPERATION")
-                    {
-                        _logger.LogWarning("Permanent error processing message: {ErrorCode}, {ErrorMessage}", 
-                            result.ErrorCode, result.Message);
-                        return true; // Acknowledge permanent errors
-                    }
-                    else
-                    {
-                        _logger.LogWarning("Temporary error processing message: {ErrorMessage}", result.Message);
-                        return false; // Requeue for temporary errors
-                    }
+                    _logger.LogWarning("Permanent error processing message for account {AccountId}: {ErrorCode}", 
+                        message.AccountId, result.ErrorCode);
+                    return true; // Don't requeue for permanent errors
                 }
+                
+                _logger.LogWarning("Temporary error processing message for account {AccountId}: {ErrorMessage}", 
+                    message.AccountId, result.Message);
+                return false; // Requeue for temporary errors
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing balance update for account: {AccountId}", message.AccountId);
-                return false; // Requeue on exceptions
+                _logger.LogError(ex, "Error processing balance update for account {AccountId}", message.AccountId);
+                return false; // Requeue on exception
             }
         }
-        
+
         public override Task StopAsync(CancellationToken cancellationToken)
         {
             _logger.LogInformation("AccountBalanceConsumerService stopping");
+            
             _reconnectTimer?.Change(Timeout.Infinite, 0);
             _reconnectTimer?.Dispose();
+            
             return base.StopAsync(cancellationToken);
         }
     }

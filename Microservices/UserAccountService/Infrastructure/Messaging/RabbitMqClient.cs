@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
-using RabbitMQ.Client.Exceptions;
 
 namespace UserAccountService.Infrastructure.Messaging
 {
@@ -16,8 +15,8 @@ namespace UserAccountService.Infrastructure.Messaging
         private readonly int _port;
         private readonly string _username;
         private readonly string _password;
-        private IConnection _connection;
-        private IModel _channel;
+        private IConnection? _connection;
+        private IModel? _channel;
         private bool _disposed;
         private readonly object _connectionLock = new object();
 
@@ -35,46 +34,20 @@ namespace UserAccountService.Infrastructure.Messaging
             _port = port;
             _username = username;
             _password = password;
-            
-            EnsureConnection();
         }
-        
+
         public void EnsureConnection()
         {
             if (IsConnected)
                 return;
-                
+
             lock (_connectionLock)
             {
                 if (IsConnected)
                     return;
-                    
-                if (_connection != null)
-                {
-                    try 
-                    { 
-                        _connection.Dispose(); 
-                        _connection = null;
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Error disposing existing connection");
-                    }
-                }
-                    
-                if (_channel != null)
-                {
-                    try 
-                    { 
-                        _channel.Dispose(); 
-                        _channel = null;
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Error disposing existing channel");
-                    }
-                }
-                    
+
+                _logger.LogInformation("Establishing connection to RabbitMQ at {Host}:{Port}", _hostName, _port);
+                
                 try
                 {
                     var factory = new ConnectionFactory
@@ -84,20 +57,20 @@ namespace UserAccountService.Infrastructure.Messaging
                         UserName = _username,
                         Password = _password,
                         RequestedHeartbeat = TimeSpan.FromSeconds(30),
-                        DispatchConsumersAsync = false, // Using sync consumer for simplicity
+                        DispatchConsumersAsync = true,
                         AutomaticRecoveryEnabled = true,
                         NetworkRecoveryInterval = TimeSpan.FromSeconds(10)
                     };
-                    
+
                     _connection = factory.CreateConnection();
                     _channel = _connection.CreateModel();
-                    
                     _connection.ConnectionShutdown += OnConnectionShutdown;
-                    _logger.LogInformation("RabbitMQ connection established to {Host}:{Port}", _hostName, _port);
+                    _logger.LogInformation("Successfully connected to RabbitMQ at {Host}:{Port}", _hostName, _port);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Could not connect to RabbitMQ");
+                    _logger.LogError(ex, "Failed to connect to RabbitMQ");
+                    CleanupConnection();
                     throw;
                 }
             }
@@ -105,187 +78,167 @@ namespace UserAccountService.Infrastructure.Messaging
 
         public void Publish<T>(string queueName, T message) where T : class
         {
-            string messageJson = JsonSerializer.Serialize(message);
-            Publish(queueName, messageJson);
-        }
-
-        public void Publish(string queueName, string messageJson)
-        {
             EnsureConnection();
-            
+
             try
             {
-                // Use passive declaration to check if queue exists with current settings
+                var json = JsonSerializer.Serialize(message);
+                var body = Encoding.UTF8.GetBytes(json);
+
+                // Use passive declare to check if queue exists
                 try
                 {
-                    _channel.QueueDeclarePassive(queueName);
-                    _logger.LogDebug("Queue {QueueName} exists", queueName);
+                    _channel!.QueueDeclarePassive(queueName);
+                    _logger.LogDebug("Using existing queue for publishing: {QueueName}", queueName);
                 }
-                catch
+                catch (Exception)
                 {
-                    // Queue doesn't exist or differs in properties, so create it
-                    _logger.LogInformation("Declaring queue {QueueName}", queueName);
-                    _channel.QueueDeclare(
+                    // Queue doesn't exist, create it as non-durable to match existing setup
+                    _channel!.QueueDeclare(
                         queue: queueName,
-                        durable: true, // Make queue persistent
+                        durable: false,
                         exclusive: false,
                         autoDelete: false,
                         arguments: null);
+                    _logger.LogInformation("Created queue for publishing: {QueueName}", queueName);
                 }
-                
-                var body = Encoding.UTF8.GetBytes(messageJson);
+
                 var properties = _channel.CreateBasicProperties();
-                properties.Persistent = true;  // Make messages persistent
-                properties.DeliveryMode = 2;   // Make messages persistent (2 = persistent)
-                
+                properties.Persistent = true;
+                properties.DeliveryMode = 2; // Persistent
+
                 _channel.BasicPublish(
                     exchange: "",
                     routingKey: queueName,
                     basicProperties: properties,
                     body: body);
-                
-                _logger.LogInformation("Message published to queue: {QueueName}", queueName);
+
+                _logger.LogInformation("Published message to queue: {QueueName}", queueName);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error while publishing message to {QueueName}", queueName);
+                _logger.LogError(ex, "Error publishing message to queue: {QueueName}", queueName);
                 throw;
             }
         }
-        
+
         public void Subscribe<T>(string queueName, Func<T, Task<bool>> handler) where T : class
         {
-            // Adapt the generic method to call the non-generic one
-            Subscribe(queueName, messageJson => 
-            {
-                try
-                {
-                    var message = JsonSerializer.Deserialize<T>(messageJson);
-                    if (message != null)
-                    {
-                        Task.Run(async () => 
-                        {
-                            try
-                            {
-                                await handler(message);
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger.LogError(ex, "Error in message handler");
-                                throw;
-                            }
-                        }).Wait();
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error deserializing message");
-                    throw;
-                }
-            });
-        }
-
-        public void Subscribe(string queueName, Action<string> handler)
-        {
             EnsureConnection();
-            
+
             try
             {
-                // Use passive declaration to check if queue exists with current settings
+                // Use passive declare to check if queue exists
                 try
                 {
-                    _channel.QueueDeclarePassive(queueName);
-                    _logger.LogDebug("Queue {QueueName} exists", queueName);
+                    _channel!.QueueDeclarePassive(queueName);
+                    _logger.LogDebug("Using existing queue for subscription: {QueueName}", queueName);
                 }
-                catch
+                catch (Exception)
                 {
-                    // Queue doesn't exist or differs in properties, so create it
-                    _logger.LogInformation("Declaring queue {QueueName}", queueName);
-                    _channel.QueueDeclare(
+                    // Queue doesn't exist, create it as non-durable to match existing setup
+                    _channel!.QueueDeclare(
                         queue: queueName,
-                        durable: true, // Make queue persistent
+                        durable: false,
                         exclusive: false,
                         autoDelete: false,
                         arguments: null);
+                    _logger.LogInformation("Created queue for subscription: {QueueName}", queueName);
                 }
-                
-                // Set prefetch count to 1 to ensure fair dispatching
-                _channel.BasicQos(0, 1, false);
-                
-                var consumer = new EventingBasicConsumer(_channel);
-                
-                // Register the basic consumer
-                consumer.Received += (sender, args) =>
+
+                // Set prefetch count to 1 to ensure one message is processed at a time
+                _channel!.BasicQos(0, 1, false);
+
+                var consumer = new AsyncEventingBasicConsumer(_channel);
+
+                consumer.Received += async (sender, ea) =>
                 {
-                    var messageId = Guid.NewGuid().ToString(); // For logging
-                    var body = args.Body.ToArray();
-                    var message = Encoding.UTF8.GetString(body);
-                    
-                    _logger.LogDebug("Received message {MessageId} from {QueueName}", messageId, queueName);
-                    
+                    string body = Encoding.UTF8.GetString(ea.Body.ToArray());
+                    bool success = false;
+                    T? message = default;
+
                     try
                     {
-                        // Process the message
-                        handler(message);
-                        
-                        // Acknowledge the message if no exception was thrown
-                        _channel.BasicAck(args.DeliveryTag, false);
-                        _logger.LogDebug("Message {MessageId} processed successfully", messageId);
+                        message = JsonSerializer.Deserialize<T>(body);
+                        if (message != null)
+                        {
+                            // Process the message
+                            success = await handler(message);
+                        }
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Error processing message {MessageId}", messageId);
-                        
-                        // Negative acknowledge and requeue the message to try again later
-                        _channel.BasicNack(args.DeliveryTag, false, true);
-                        _logger.LogDebug("Message {MessageId} requeued for retry", messageId);
+                        _logger.LogError(ex, "Error processing message from queue: {QueueName}", queueName);
+                    }
+                    finally
+                    {
+                        try
+                        {
+                            // Acknowledge or reject the message based on processing result
+                            if (success)
+                            {
+                                _channel.BasicAck(ea.DeliveryTag, false);
+                                _logger.LogDebug("Message acknowledged in queue: {QueueName}", queueName);
+                            }
+                            else
+                            {
+                                // Requeue the message
+                                _channel.BasicNack(ea.DeliveryTag, false, true);
+                                _logger.LogWarning("Message rejected and requeued in queue: {QueueName}", queueName);
+                            }
+                        }
+                        catch (Exception ackEx)
+                        {
+                            _logger.LogError(ackEx, "Error during message ack/nack in queue: {QueueName}", queueName);
+                        }
                     }
                 };
-                
-                // Start consuming, with explicit ack
-                _channel.BasicConsume(queue: queueName, autoAck: false, consumer: consumer);
-                _logger.LogInformation("Subscribed to {QueueName}", queueName);
+
+                _channel.BasicConsume(
+                    queue: queueName,
+                    autoAck: false,
+                    consumer: consumer);
+
+                _logger.LogInformation("Successfully subscribed to queue: {QueueName}", queueName);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error subscribing to queue {QueueName}", queueName);
+                _logger.LogError(ex, "Error subscribing to queue: {QueueName}", queueName);
                 throw;
             }
         }
-        
-        private void OnConnectionShutdown(object sender, ShutdownEventArgs e)
+
+        private void OnConnectionShutdown(object? sender, ShutdownEventArgs e)
         {
-            _logger.LogWarning("RabbitMQ connection shutdown. Reason: {0}", e.ReplyText);
-            
-            // Try to reconnect when the connection is lost
-            Task.Delay(TimeSpan.FromSeconds(5))
-                .ContinueWith(t => EnsureConnection());
+            _logger.LogWarning("RabbitMQ connection shutdown. Reason: {Reason}", e.ReplyText);
+            CleanupConnection();
         }
-        
-        public void Dispose()
+
+        private void CleanupConnection()
         {
-            if (_disposed) return;
-            
             try
             {
-                if (_channel?.IsOpen == true)
-                {
-                    _channel.Close();
-                    _channel.Dispose();
-                }
-                
-                if (_connection?.IsOpen == true)
-                {
-                    _connection.Close();
-                    _connection.Dispose();
-                }
+                _channel?.Dispose();
+                _connection?.Dispose();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error during RabbitMQ client disposal");
+                _logger.LogError(ex, "Error disposing RabbitMQ connections");
             }
-            
+            finally
+            {
+                _channel = null;
+                _connection = null;
+            }
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+                return;
+
             _disposed = true;
+            CleanupConnection();
             GC.SuppressFinalize(this);
         }
     }

@@ -188,21 +188,22 @@ builder.Services.AddSingleton<ConcurrentDictionary<string, FraudResult>>(_ =>
 builder.Services.AddScoped<IFraudDetectionService, FraudDetectionService>();
 builder.Services.AddScoped<ITransactionRepository, TransactionRepository>();
 builder.Services.AddScoped<TransactionValidator>();
-builder.Services.AddSingleton<IRabbitMqClient, RabbitMqClient>(sp =>
+// Register RabbitMQ client
+builder.Services.AddSingleton<IRabbitMqClient>(provider => 
 {
-    var logger = sp.GetRequiredService<ILogger<RabbitMqClient>>();
-    var config = sp.GetRequiredService<IConfiguration>();
+    var logger = provider.GetRequiredService<ILogger<RabbitMQClient>>();
+    var configuration = provider.GetRequiredService<IConfiguration>();
     
-    return new RabbitMqClient(
-        logger,
-        config["RabbitMQ:Host"] ?? "rabbitmq",
-        int.Parse(config["RabbitMQ:Port"] ?? "5672"),
-        config["RabbitMQ:Username"] ?? "guest",
-        config["RabbitMQ:Password"] ?? "guest"
-    );
+    var host = configuration["RabbitMQ:Host"] ?? "rabbitmq";
+    var port = int.TryParse(configuration["RabbitMQ:Port"], out var p) ? p : 5672;
+    var username = configuration["RabbitMQ:Username"] ?? "guest";
+    var password = configuration["RabbitMQ:Password"] ?? "guest";
+    
+    return new RabbitMQClient(logger, host, port, username, password);
 });
 builder.Services.AddScoped<ITransactionService, TransactionService.Services.TransactionService>();
 builder.Services.AddScoped<IAccountBalanceService, AccountBalanceMessageService>();
+builder.Services.AddScoped<AccountBalanceProcessingService>();
 
 // Register the consumer background service
 builder.Services.AddHostedService(sp => new AccountBalanceConsumerService(
@@ -210,9 +211,6 @@ builder.Services.AddHostedService(sp => new AccountBalanceConsumerService(
     sp,
     sp.GetRequiredService<ILogger<AccountBalanceConsumerService>>()
 ));
-
-// Register our balance processing service
-builder.Services.AddScoped<AccountBalanceProcessingService>();
 
 // Define and register metrics
 var requestsTotalCounter = Metrics.CreateCounter(

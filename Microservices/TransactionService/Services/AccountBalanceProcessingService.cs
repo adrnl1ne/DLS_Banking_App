@@ -1,8 +1,6 @@
+using Microsoft.Extensions.Logging;
 using System;
 using System.Threading.Tasks;
-using Microsoft.Extensions.Logging;
-using TransactionService.Models;
-using TransactionService.Services.Interface;
 
 namespace TransactionService.Services
 {
@@ -11,44 +9,29 @@ namespace TransactionService.Services
     /// </summary>
     public class AccountBalanceProcessingService
     {
-        private readonly IUserAccountClient _userAccountClient;
         private readonly ILogger<AccountBalanceProcessingService> _logger;
-
-        public AccountBalanceProcessingService(
-            IUserAccountClient userAccountClient,
-            ILogger<AccountBalanceProcessingService> logger)
+        
+        public AccountBalanceProcessingService(ILogger<AccountBalanceProcessingService> logger)
         {
-            _userAccountClient = userAccountClient;
             _logger = logger;
         }
 
-        public async Task<bool> ProcessBalanceUpdateAsync(AccountBalanceUpdateMessage message)
+        public Task<bool> ProcessBalanceUpdateAsync(AccountBalanceUpdateMessage message)
         {
-            _logger.LogInformation("Processing balance update request");
-                       
             try
             {
-                var request = new AccountBalanceRequest
-                {
-                    Amount = message.Amount,
-                    TransactionId = message.TransactionId,
-                    TransactionType = message.TransactionType,
-                    IsAdjustment = message.IsAdjustment
-                };
+                // In TransactionService, we just log receipt of the message
+                // The actual balance update happens in UserAccountService
+                _logger.LogInformation("Received balance update confirmation for account {AccountId}, transaction {TransactionId}",
+                    message.AccountId, message.TransactionId);
                 
-                await _userAccountClient.UpdateBalanceAsync(message.AccountId, request);
-                _logger.LogInformation("Balance update successful");
-                return true;
-            }
-            catch (InvalidOperationException ex) when (ex.Message.Contains("404") || ex.Message.Contains("NotFound"))
-            {
-                _logger.LogWarning("Account not found - won't retry");
-                return true;  // Acknowledge permanent errors
+                return Task.FromResult(true);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing balance update");
-                return false;  // Retry on exception
+                _logger.LogError(ex, "Error processing balance update for account {AccountId}, transaction {TransactionId}",
+                    message.AccountId, message.TransactionId);
+                return Task.FromResult(false);
             }
         }
     }

@@ -165,23 +165,21 @@ builder.Services.AddCors(options =>
     });
 });
 
-// Register RabbitMQ client - note we're using a different implementation than the existing
-// IEventPublisher to handle both publishing and subscribing
-builder.Services.AddSingleton<IRabbitMqClient>(sp =>
+// Register RabbitMQ client
+builder.Services.AddSingleton<IRabbitMqClient>(sp => 
 {
     var logger = sp.GetRequiredService<ILogger<RabbitMqClient>>();
     return new RabbitMqClient(
-        logger,
-        sp.GetRequiredService<IConfiguration>()["RabbitMQ:HostName"] ?? "rabbitmq",
-        int.Parse(sp.GetRequiredService<IConfiguration>()["RabbitMQ:Port"] ?? "5672"),
-        sp.GetRequiredService<IConfiguration>()["RabbitMQ:UserName"] ?? "guest",
-        sp.GetRequiredService<IConfiguration>()["RabbitMQ:Password"] ?? "guest");
+        logger, 
+        hostName: builder.Configuration.GetValue<string>("RabbitMQ:Host") ?? "rabbitmq",
+        port: builder.Configuration.GetValue<int>("RabbitMQ:Port", 5672),
+        username: builder.Configuration.GetValue<string>("RabbitMQ:Username") ?? "guest",
+        password: builder.Configuration.GetValue<string>("RabbitMQ:Password") ?? "guest"
+    );
 });
 
-// Register the consumer as a hosted service
+// Make sure to register the consumer as a hosted service
 builder.Services.AddHostedService<AccountBalanceConsumerService>();
-
-// Add these registrations
 
 // Register HTTP client factory
 builder.Services.AddHttpClient("InternalApi", client => {

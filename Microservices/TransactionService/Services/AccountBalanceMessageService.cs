@@ -68,7 +68,10 @@ namespace TransactionService.Services
         private readonly IRabbitMqClient _rabbitMqClient;
         private readonly IServiceProvider _serviceProvider;
         private readonly ILogger<AccountBalanceConsumerService> _logger;
+        private readonly SemaphoreSlim _connectionSemaphore = new(1, 1);
+        private Timer? _reconnectTimer;
         private const string QUEUE_NAME = "AccountBalanceUpdates";
+        private bool _isSubscribed;
 
         public AccountBalanceConsumerService(
             IRabbitMqClient rabbitMqClient,
@@ -82,55 +85,90 @@ namespace TransactionService.Services
 
         protected override Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            _logger.LogInformation("AccountBalanceConsumerService started");
+            _logger.LogInformation("AccountBalanceConsumerService starting");
             
-            // Fix: Convert to void delegate by not returning values
-            _rabbitMqClient.Subscribe(
-                QUEUE_NAME, 
-                async (messageJson) => {
-                    try {
-                        // Manually deserialize the message
-                        var message = JsonSerializer.Deserialize<AccountBalanceUpdateMessage>(messageJson);
-                        if (message == null) {
-                            _logger.LogWarning("Failed to deserialize message");
-                            return; // Just return without a value
-                        }
-                        
-                        // Process but don't return the result
-                        bool success = await ProcessMessageAsync(message);
-                        if (!success) {
-                            _logger.LogWarning("Message processing failed, will retry later");
-                        }
-                    }
-                    catch (JsonException ex) {
-                        _logger.LogError(ex, "Error deserializing message");
-                    }
-                });
+            // Delay initial connection attempt to ensure all services are ready
+            _reconnectTimer = new Timer(
+                async _ => await EnsureConnectedAsync(), 
+                null, 
+                TimeSpan.FromSeconds(5), // Initial delay
+                TimeSpan.FromSeconds(15)); // Regular interval
             
             return Task.CompletedTask;
         }
 
-        private async Task<bool> ProcessMessageAsync(AccountBalanceUpdateMessage message)
+        private async Task EnsureConnectedAsync()
         {
-            _logger.LogInformation("Processing balance update message");
-            
+            if (!await _connectionSemaphore.WaitAsync(0))
+            {
+                return; // Another connection attempt is in progress
+            }
+
             try
             {
-                using var scope = _serviceProvider.CreateScope();
-                var processingService = scope.ServiceProvider.GetRequiredService<AccountBalanceProcessingService>();
+                if (_isSubscribed && _rabbitMqClient.IsConnected)
+                {
+                    _logger.LogDebug("Already connected to RabbitMQ and subscribed to {QueueName}", QUEUE_NAME);
+                    return;
+                }
+
+                _logger.LogInformation("Connecting to RabbitMQ and subscribing to {QueueName}", QUEUE_NAME);
                 
-                return await processingService.ProcessBalanceUpdateAsync(message);
+                try
+                {
+                    _rabbitMqClient.EnsureConnection();
+
+                    _rabbitMqClient.Subscribe<AccountBalanceUpdateMessage>(
+                        QUEUE_NAME, 
+                        async message => await ProcessMessageAsync(message));
+                    
+                    _isSubscribed = true;
+                    _logger.LogInformation("Successfully subscribed to {QueueName}", QUEUE_NAME);
+                }
+                catch (Exception ex)
+                {
+                    _isSubscribed = false;
+                    _logger.LogError(ex, "Failed to connect to RabbitMQ or subscribe to {QueueName}", QUEUE_NAME);
+                }
+            }
+            finally
+            {
+                _connectionSemaphore.Release();
+            }
+        }
+
+        private async Task<bool> ProcessMessageAsync(AccountBalanceUpdateMessage message)
+        {
+            try
+            {
+                _logger.LogInformation("Processing balance update for account {AccountId}", message.AccountId);
+                
+                using var scope = _serviceProvider.CreateScope();
+                var accountBalanceProcessor = scope.ServiceProvider.GetRequiredService<AccountBalanceProcessingService>();
+                
+                var success = await accountBalanceProcessor.ProcessBalanceUpdateAsync(message);
+                
+                if (success)
+                {
+                    _logger.LogInformation("Successfully processed balance update");
+                    return true;
+                }
+                
+                _logger.LogWarning("Failed to process balance update");
+                return false; // Retry temporary errors
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error processing balance update message");
-                return false; // Requeue for unexpected errors
+                return false; // Retry on exception
             }
         }
         
         public override Task StopAsync(CancellationToken cancellationToken)
         {
             _logger.LogInformation("AccountBalanceConsumerService stopping");
+            _reconnectTimer?.Change(Timeout.Infinite, 0);
+            _reconnectTimer?.Dispose();
             return base.StopAsync(cancellationToken);
         }
     }

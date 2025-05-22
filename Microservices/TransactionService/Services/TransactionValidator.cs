@@ -11,22 +11,11 @@ public class TransactionValidator(
     IHttpClientFactory httpClientFactory,
     Counter errorsTotal)
 {
-
     public async Task<bool> IsUserAccountServiceAvailableAsync()
     {
-        try
-        {
-            var client = httpClientFactory.CreateClient("UserAccountClient");
-            var response = await client.GetAsync("/api/health");
-            response.EnsureSuccessStatusCode();
-            logger.LogInformation("User account service health check passed");
-            return true;
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "User account service is unavailable");
-            return false;
-        }
+        // We always return true to allow queueing when UserAccountService is down
+        logger.LogInformation("Skipping UserAccountService availability check to allow transaction queueing");
+        return true;
     }
 
     public async Task<(Account FromAccount, Account ToAccount)> ValidateTransferRequestAsync(TransactionRequest request)
@@ -70,7 +59,7 @@ public class TransactionValidator(
                 // Try to fetch source account with retry
                 fromAccount = await userAccountRetryPolicy.ExecuteAsync(async () =>
                     await userAccountClient.GetAccountAsync(fromAccountId));
-                    
+                
                 // Try to fetch destination account with retry
                 toAccount = await userAccountRetryPolicy.ExecuteAsync(async () =>
                     await userAccountClient.GetAccountAsync(toAccountId)); 
@@ -79,7 +68,7 @@ public class TransactionValidator(
                 if (fromAccount == null || toAccount == null)
                 {
                     logger.LogWarning("Source or destination account not found, but proceeding for queueing");
-                    // Create placeholder accounts with minimal data needed for queuing
+                    // Create placeholder accounts with minimal data needed for queueing
                     fromAccount ??= new Account { Id = fromAccountId, UserId = request.UserId };
                     toAccount ??= new Account { Id = toAccountId, UserId = 0 }; // Unknown user ID
                 }
