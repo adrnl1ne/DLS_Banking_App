@@ -20,4 +20,16 @@ public interface IUserRepository
     /// <param name="username">The username of the user.</param>
     /// <returns>The User object if found, otherwise null.</returns>
     Task<User?> GetUserByUsernameAsync(string username);
+
+    /// <summary>
+    /// Retrieves all users from the database.
+    /// </summary>
+    /// <returns>A list of all User objects.</returns>
+    Task<List<User>> GetAllUsersAsync();
+
+    /// <summary>
+    /// Creates a new user in the database.
+    /// </summary>
+    /// <param name="user">The User object to create.</param>
+    Task CreateUserAsync(User user);
 }

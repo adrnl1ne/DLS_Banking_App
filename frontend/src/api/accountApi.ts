@@ -13,6 +13,7 @@ export interface Account {
 
 export interface AccountCreationRequest {
   name: string;
+  userId: number;
 }
 
 export interface DepositRequest {

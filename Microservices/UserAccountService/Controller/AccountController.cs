@@ -79,8 +79,10 @@ public class AccountController(IAccountService accountService, ILogger<AccountCo
     /// Returns the created account.
     /// </returns>
     [HttpPost]
+    [Authorize(Roles = "admin")]
     [ProducesResponseType(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<AccountResponse>> CreateAccount([FromBody] AccountCreationRequest request)
     {
         return await accountService.CreateAccountAsync(request);

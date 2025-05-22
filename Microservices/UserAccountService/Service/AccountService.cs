@@ -199,8 +199,7 @@ public class AccountService(
             var account = new Account
             {
                 Name = request.Name,
-                UserId = currentUserService.UserId ??
-                         throw new InvalidOperationException("User ID is required to create an account.")
+                UserId = request.UserId
             };
 
             await accountRepository.AddAccountAsync(account);

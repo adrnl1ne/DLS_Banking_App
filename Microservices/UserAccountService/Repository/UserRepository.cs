@@ -32,4 +32,25 @@ public class UserRepository(UserAccountDbContext context) : IUserRepository
             .Include(u => u.Role)
             .FirstOrDefaultAsync(u => u.Username == username);
     }
+
+    /// <summary>
+    /// Retrieves all users from the database.
+    /// </summary>
+    /// <returns>A list of all User objects.</returns>
+    public async Task<List<User>> GetAllUsersAsync()
+    {
+        return await context.Users
+            .Include(u => u.Role)
+            .ToListAsync();
+    }
+
+    /// <summary>
+    /// Creates a new user in the database.
+    /// </summary>
+    /// <param name="user">The User object to create.</param>
+    public async Task CreateUserAsync(User user)
+    {
+        await context.Users.AddAsync(user);
+        await context.SaveChangesAsync();
+    }
 }

@@ -3,28 +3,18 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription }
 import { Button } from '../components/ui/button';
 import { Separator } from '../components/ui/separator';
 import { Alert, AlertDescription } from '../components/ui/alert';
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
-  DialogTitle, 
-  DialogFooter,
-  DialogTrigger 
-} from '../components/ui/dialog';
-import { Input } from '../components/ui/input';
-import { Label } from '../components/ui/label';
 import { useNavigate } from 'react-router-dom';
-import { getUserAccounts, createAccount, Account, AccountCreationRequest } from '../api/accountApi';
+import { getUserAccounts, Account } from '../api/accountApi';
+import { getCurrentUser } from '../api/authApi';
 
 const Accounts = () => {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [isCreating, setIsCreating] = useState(false);
-  const [newAccountName, setNewAccountName] = useState('');
   const [success, setSuccess] = useState('');
-  const [dialogOpen, setDialogOpen] = useState(false);
   const navigate = useNavigate();
+  const currentUser = getCurrentUser();
+  const isAdmin = currentUser?.user.role === 'admin';
 
   useEffect(() => {
     const fetchAccounts = async () => {
@@ -32,8 +22,6 @@ const Accounts = () => {
         setIsLoading(true);
         setError('');
         const data = await getUserAccounts();
-
-        console.log('Accounts:', data);
         
         setAccounts(data);
       } catch (err) {
@@ -60,59 +48,6 @@ const Accounts = () => {
     fetchAccounts();
   }, [navigate]);
 
-  const handleCreateAccount = async () => {
-    if (!newAccountName.trim()) {
-      setError('Please enter an account name');
-      return;
-    }
-    
-    try {
-      setIsCreating(true);
-      setError('');
-      setSuccess('');
-      
-      // Create the account request payload
-      const accountRequest: AccountCreationRequest = { 
-        name: newAccountName.trim() 
-      };
-      
-      // Make API call to create the account
-      console.log('Creating account with name:', accountRequest.name);
-      const newAccount = await createAccount(accountRequest);
-      console.log('Account created successfully:', newAccount);
-      
-      // Update the UI with the new account
-      setSuccess(`Account "${newAccount.name}" was created successfully!`);
-      setNewAccountName('');
-      setDialogOpen(false);
-      
-      // Refresh accounts list
-      const updatedAccounts = await getUserAccounts();
-      setAccounts(updatedAccounts);
-      
-      // Clear success message after 5 seconds
-      setTimeout(() => setSuccess(''), 5000);
-    } catch (err) {
-      console.error('Error creating account:', err);
-      
-      // Handle specific error cases
-      if (err instanceof Error) {
-        if (err.message.includes('Authentication required')) {
-          setError('Authentication required. Please log in again.');
-          navigate('/login');
-        } else if (err.message.includes('Failed to create account')) {
-          setError('Could not create account. Please try again later.');
-        } else {
-          setError(err.message);
-        }
-      } else {
-        setError('An unexpected error occurred');
-      }
-    } finally {
-      setIsCreating(false);
-    }
-  };
-
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -125,41 +60,8 @@ const Accounts = () => {
       <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
         <div className="space-y-2">
           <h1 className="text-2xl font-bold text-primary">My Accounts</h1>
-          <p className="text-muted-foreground">Manage your financial accounts</p>
+          <p className="text-muted-foreground">View your financial accounts</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="button-primary">Open New Account</Button>
-          </DialogTrigger>
-          <DialogContent className="bg-background border-2 shadow-lg">
-            <DialogHeader>
-              <DialogTitle className="text-primary">Create New Account</DialogTitle>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="name" className="text-right text-foreground/90">
-                  Account Name
-                </Label>
-                <Input
-                  id="name"
-                  value={newAccountName}
-                  onChange={(e) => setNewAccountName(e.target.value)}
-                  className="col-span-3 input-large"
-                  placeholder="e.g. Savings, Checking, Emergency Fund"
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button 
-                onClick={handleCreateAccount} 
-                disabled={isCreating || !newAccountName.trim()}
-                className="button-primary"
-              >
-                {isCreating ? 'Creating...' : 'Create Account'}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </div>
       
       {success && (
@@ -202,11 +104,10 @@ const Accounts = () => {
               </svg>
             </div>
             <h3 className="text-xl font-medium mb-2">You don't have any accounts yet</h3>
-            <p className="text-muted-foreground text-center max-w-md mb-6">Click the button below to open your first account.</p>
-            <Button onClick={() => setDialogOpen(true)} className="button-primary">Open New Account</Button>
+            <p className="text-muted-foreground text-center max-w-md mb-6">Please contact an administrator to create an account for you.</p>
           </CardContent>
         </Card>
-      ) : (
+      ) :
         <div className="grid gap-6">
           {accounts.map(account => (
             <Card key={account.id} className="card overflow-hidden">
@@ -229,35 +130,19 @@ const Accounts = () => {
               
               <Separator className="bg-border/60" />
               
-              <CardFooter className="flex flex-wrap gap-3 pt-6">
-                <Button size="sm" onClick={() => navigate(`/accounts/${account.id}`)} className="button-primary h-10">
-                  <svg className="mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                    <circle cx="12" cy="12" r="3"></circle>
-                  </svg>
+              <CardFooter className="pt-6">
+                <Button 
+                  variant="outline" 
+                  className="w-full justify-center"
+                  onClick={() => navigate(`/accounts/${account.id}`)}
+                >
                   View Details
-                </Button>
-                <Button variant="outline" size="sm" className="h-10">
-                  <svg className="mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                    <polyline points="14 2 14 8 20 8"></polyline>
-                    <line x1="16" y1="13" x2="8" y2="13"></line>
-                    <line x1="16" y1="17" x2="8" y2="17"></line>
-                    <polyline points="10 9 9 9 8 9"></polyline>
-                  </svg>
-                  View Statements
-                </Button>
-                <Button variant="outline" size="sm" className="h-10">
-                  <svg className="mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
-                  </svg>
-                  Transfer
                 </Button>
               </CardFooter>
             </Card>
           ))}
         </div>
-      )}
+      }
     </div>
   );
 };

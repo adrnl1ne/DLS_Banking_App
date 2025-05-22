@@ -2,9 +2,12 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Label } from '../components/ui/label';
-import { getAccountTransactions, Transaction as ApiTransaction } from '../api/transactionApi';
+import { getAccountTransactions, Transaction as ApiTransaction, createTransaction } from '../api/transactionApi';
 import { getUserAccounts, Account } from '../api/accountApi';
 import { format } from 'date-fns';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Alert } from '../components/ui/alert';
 
 interface TransactionWithAccountName extends ApiTransaction {
   accountName: string;
@@ -19,6 +22,11 @@ const Transactions = () => {
   const [filterAccount, setFilterAccount] = useState<string>('all');
   const [filterType, setFilterType] = useState<string>('all');
   const [backendError, setBackendError] = useState<boolean>(false);
+  const [transferAmount, setTransferAmount] = useState<string>('');
+  const [fromAccount, setFromAccount] = useState<string>('');
+  const [toAccount, setToAccount] = useState<string>('');
+  const [description, setDescription] = useState<string>('');
+  const [transferLoading, setTransferLoading] = useState<boolean>(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -93,6 +101,73 @@ const Transactions = () => {
     return true;
   });
 
+  const handleTransfer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    try {
+      setTransferLoading(true);
+      
+      await createTransaction({
+        fromAccount,
+        toAccount,
+        amount: parseFloat(transferAmount),
+        description: description,
+        transactionType: "withdrawal"
+      });
+      
+      Alert({
+        title: "Transfer successful",
+        variant: "default"
+      });
+      
+      // Reset form
+      setTransferAmount('');
+      setDescription('');
+      
+      // Refresh transactions
+      const userAccounts = await getUserAccounts();
+      const allTransactions: TransactionWithAccountName[] = [];
+      
+      for (const account of userAccounts) {
+        try {
+          const accountTransactions = await getAccountTransactions(account.id.toString());
+          
+          if (accountTransactions.length === 0) {
+            continue;
+          }
+          
+          const enhancedTransactions = accountTransactions.map(transaction => {
+            const type: 'credit' | 'debit' = transaction.toAccount === account.id.toString() ? 'credit' : 'debit';
+            return {
+              ...transaction,
+              accountName: account.name,
+              type
+            };
+          });
+          
+          allTransactions.push(...enhancedTransactions);
+        } catch (err) {
+          console.error(`Error fetching transactions for account ${account.id}:`, err);
+        }
+      }
+      
+      allTransactions.sort((a, b) => 
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+      
+      setTransactions(allTransactions);
+      
+    } catch (err: Error | unknown) {
+      Alert({
+        title: "Transfer failed",
+        variant: "destructive"
+      });
+      console.error(err);
+    } finally {
+      setTransferLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="py-16 flex justify-center items-center">
@@ -117,6 +192,95 @@ const Transactions = () => {
         <h1 className="text-2xl font-bold text-primary">Transaction History</h1>
         <p className="text-muted-foreground">View and filter your account transactions</p>
       </div>
+      
+      <Card className="card">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-xl text-primary">Transfer Money</CardTitle>
+          <CardDescription>Send money between your accounts</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleTransfer} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <Label htmlFor="from-account" className="text-foreground/90">From Account</Label>
+              <select 
+                id="from-account"
+                className="w-full p-2 border border-input rounded-md bg-background transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                value={fromAccount}
+                onChange={(e) => setFromAccount(e.target.value)}
+                required
+              >
+                <option value="">Select account</option>
+                {accounts.map(account => (
+                  <option key={`from-${account.id}`} value={account.id.toString()}>
+                    {account.name} (${account.amount.toFixed(2)})
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="to-account" className="text-foreground/90">To Account</Label>
+              <select 
+                id="to-account"
+                className="w-full p-2 border border-input rounded-md bg-background transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                value={toAccount}
+                onChange={(e) => setToAccount(e.target.value)}
+                required
+              >
+                <option value="">Select account</option>
+                {accounts.map(account => (
+                  <option key={`to-${account.id}`} value={account.id.toString()}>
+                    {account.name} (${account.amount.toFixed(2)})
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="amount" className="text-foreground/90">Amount</Label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
+                <Input
+                  id="amount"
+                  type="number"
+                  placeholder="0.00"
+                  min="0.01"
+                  step="0.01"
+                  className="pl-8"
+                  value={transferAmount}
+                  onChange={(e) => setTransferAmount(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="description" className="text-foreground/90">Description (Optional)</Label>
+              <Input
+                id="description"
+                placeholder="What's this transfer for?"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            </div>
+            
+            <div className="md:col-span-2 flex justify-end">
+              <Button 
+                type="submit" 
+                disabled={transferLoading || !fromAccount || !toAccount || !transferAmount}
+                className="w-full md:w-auto"
+              >
+                {transferLoading ? (
+                  <>
+                    <span className="animate-spin mr-2 h-4 w-4 border-2 border-background border-r-transparent rounded-full"></span>
+                    Processing...
+                  </>
+                ) : "Send Money"}
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
       
       <Card className="card">
         <CardHeader className="pb-2">

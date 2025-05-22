@@ -6,6 +6,7 @@ import { logout, getCurrentUser } from '../api/authApi';
 interface NavbarProps {
   isAuthenticated: boolean;
   setIsAuthenticated: (value: boolean) => void;
+  isAdmin: boolean;
 }
 
 const Navbar = ({ isAuthenticated, setIsAuthenticated }: NavbarProps) => {
@@ -55,6 +56,9 @@ const Navbar = ({ isAuthenticated, setIsAuthenticated }: NavbarProps) => {
                 <Link to="/" className="navbar-link text-sm font-medium">Dashboard</Link>
                 <Link to="/accounts" className="navbar-link text-sm font-medium">Accounts</Link>
                 <Link to="/transactions" className="navbar-link text-sm font-medium">Transactions</Link>
+                {user?.role === 'admin' && (
+                  <Link to="/admin" className="navbar-link text-sm font-medium">Admin Panel</Link>
+                )}
               </div>
               <div className="flex items-center gap-4">
                 <Avatar className="h-10 w-10 navbar-avatar">
