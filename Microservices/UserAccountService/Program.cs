@@ -7,11 +7,12 @@ using AccountService.Database.Data;
 using AccountService.Repository;
 using AccountService.Services;
 using UserAccountService.Repository;
-using UserAccountService.Service;
+using UserAccountService.Service; // Changed from UserAccountService.Services
 using Microsoft.OpenApi.Models;
 using Prometheus;
 using StackExchange.Redis;
-using Microsoft.Extensions.Logging; // Add this for logging
+using Microsoft.Extensions.Logging;
+using UserAccountService.Infrastructure.Messaging;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -163,6 +164,31 @@ builder.Services.AddCors(options =>
             .AllowAnyHeader();
     });
 });
+
+// Register RabbitMQ client
+builder.Services.AddSingleton<IRabbitMqClient>(sp => 
+{
+    var logger = sp.GetRequiredService<ILogger<RabbitMqClient>>();
+    return new RabbitMqClient(
+        logger, 
+        hostName: builder.Configuration.GetValue<string>("RabbitMQ:Host") ?? "rabbitmq",
+        port: builder.Configuration.GetValue<int>("RabbitMQ:Port", 5672),
+        username: builder.Configuration.GetValue<string>("RabbitMQ:Username") ?? "guest",
+        password: builder.Configuration.GetValue<string>("RabbitMQ:Password") ?? "guest"
+    );
+});
+
+// Make sure to register the consumer as a hosted service
+builder.Services.AddHostedService<AccountBalanceConsumerService>();
+
+// Register HTTP client factory
+builder.Services.AddHttpClient("InternalApi", client => {
+    client.BaseAddress = new Uri("http://localhost:80"); // Points to the service itself
+    client.DefaultRequestHeaders.Add("X-Internal-Request", "true");
+});
+
+// Register our balance processing service
+builder.Services.AddScoped<AccountBalanceProcessingService>();
 
 var app = builder.Build();
 app.UseMetricServer();

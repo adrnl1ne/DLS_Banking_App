@@ -1,3 +1,4 @@
+using System;
 using System.Text.Json;
 using AccountService.Database.Data;
 using AccountService.Repository;
@@ -106,7 +107,7 @@ public class AccountService(
             {
                 logger.LogWarning("Account not found");
                 ErrorsTotal.WithLabels("GetAccount").Inc();
-                throw new InvalidOperationException($"Account {id} not found.");
+                throw new InvalidOperationException("Account not found.");
             }
 
             if (currentUserService.Role == "service")
@@ -259,7 +260,7 @@ public class AccountService(
 			{
 				logger.LogWarning("Account not found");
 				ErrorsTotal.WithLabels("DeleteAccount").Inc();
-				throw new InvalidOperationException($"Account {id} not found.");
+				throw new InvalidOperationException("Account not found.");
 			}
 
 			if (currentUserService.Role != "admin" && account.UserId != currentUserService.UserId)
@@ -330,7 +331,7 @@ public class AccountService(
             {
                 logger.LogWarning("Account not found");
                 ErrorsTotal.WithLabels("RenameAccount").Inc();
-                throw new InvalidOperationException($"Account {id} not found.");
+                throw new InvalidOperationException("Account not found.");
             }
 
             if (currentUserService.UserId == null)
@@ -446,7 +447,7 @@ public class AccountService(
             {
                 logger.LogWarning("Account not found");
                 ErrorsTotal.WithLabels("UpdateBalance").Inc();
-                throw new InvalidOperationException($"Account {id} not found.");
+                throw new InvalidOperationException("Account not found.");
             }
 
             var redisDb = redis.GetDatabase();
@@ -496,7 +497,7 @@ public class AccountService(
 
             if (newBalance < 0)
             {
-                logger.LogWarning("Invalid balance update: New balance cannot be negative");
+                logger.LogWarning("Invalid balance update: Negative balance not allowed");
                 ErrorsTotal.WithLabels("UpdateBalance").Inc();
                 throw new InvalidOperationException("Balance cannot be negative.");
             }
@@ -583,7 +584,7 @@ public class AccountService(
             {
                 logger.LogWarning("Account not found");
                 ErrorsTotal.WithLabels("DepositToAccount").Inc();
-                throw new InvalidOperationException($"Account {id} not found.");
+                throw new InvalidOperationException("Account not found.");
             }
 
             if (currentUserService.UserId == null)
@@ -672,6 +673,130 @@ public class AccountService(
             ErrorsTotal.WithLabels("DepositToAccount").Inc();
             logger.LogError(ex, "Failed to deposit to account");
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Updates account balance when initiated by the system (not a user request)
+    /// Used by background services like RabbitMQ consumers
+    /// </summary>
+    public async Task<ApiResponse<Account>> UpdateBalanceAsSystemAsync(int accountId, AccountBalanceRequest request)
+    {
+        RequestsTotal.WithLabels("SystemBalanceUpdate").Inc();
+        try
+        {
+            // Validate the transaction ID
+            if (string.IsNullOrEmpty(request.TransactionId))
+            {
+                logger.LogWarning("TransactionId is missing for system balance update");
+                ErrorsTotal.WithLabels("SystemBalanceUpdate").Inc();
+                return new ApiResponse<Account> { Success = false, Message = "TransactionId is required", ErrorCode = "INVALID_REQUEST" };
+            }
+
+            // Check for idempotence using Redis
+            var redisDb = redis.GetDatabase();
+            var redisKey = $"account:transaction:{request.TransactionId}";
+            if (await redisDb.KeyExistsAsync(redisKey))
+            {
+                logger.LogInformation("Duplicate transaction detected: {TransactionId}", request.TransactionId);
+                IdempotentRequestsTotal.Inc();
+
+                // Get the account to return in the response
+                var existingAccount = await accountRepository.GetAccountByIdAsync(accountId);
+                return new ApiResponse<Account> { Success = true, Data = existingAccount, Message = "Transaction already processed" };
+            }
+
+            // Get the account
+            var account = await accountRepository.GetAccountByIdAsync(accountId);
+            if (account == null)
+            {
+                ErrorsTotal.WithLabels("SystemBalanceUpdate").Inc();
+                return new ApiResponse<Account> { Success = false, Message = "Account not found", ErrorCode = "ACCOUNT_NOT_FOUND" };
+            }
+            
+            // Validate amount
+            if (request.Amount < 0)
+            {
+                logger.LogWarning("Invalid balance update: Amount cannot be negative");
+                ErrorsTotal.WithLabels("SystemBalanceUpdate").Inc();
+                return new ApiResponse<Account> { Success = false, Message = "Amount cannot be negative", ErrorCode = "INVALID_AMOUNT" };
+            }
+            
+            // Handle the balance update based on transaction type
+            decimal newBalance = account.Amount;
+            
+            if (request.TransactionType.Equals("Deposit", StringComparison.OrdinalIgnoreCase))
+            {
+                newBalance += request.Amount;
+            }
+            else if (request.TransactionType.Equals("Withdrawal", StringComparison.OrdinalIgnoreCase))
+            {
+                newBalance -= request.Amount;
+                
+                // Check for negative balance
+                if (newBalance < 0)
+                {
+                    logger.LogWarning("System update would result in negative balance for account");
+                    ErrorsTotal.WithLabels("SystemBalanceUpdate").Inc();
+                    return new ApiResponse<Account> { Success = false, Message = "Balance cannot be negative", ErrorCode = "INSUFFICIENT_FUNDS" };
+                }
+            }
+            else
+            {
+                return new ApiResponse<Account> { Success = false, Message = "Invalid transaction type", ErrorCode = "INVALID_OPERATION" };
+            }
+            
+            // Update account balance within a transaction
+            await using var transaction = await context.Database.BeginTransactionAsync();
+            try
+            {
+                // Update the account balance
+                account.Amount = newBalance;
+                await accountRepository.SaveChangesAsync();
+                
+                // Store the transaction ID in Redis for idempotence
+                await redisDb.StringSetAsync(redisKey, "processed", TimeSpan.FromDays(7));
+                
+                await transaction.CommitAsync();
+                
+                // Publish event for the balance update
+                var eventMessage = new
+                {
+                    event_type = "AccountBalanceUpdated",
+                    accountId = account.Id,
+                    userId = account.UserId,
+                    amount = account.Amount,
+                    transactionId = request.TransactionId,
+                    transactionType = request.TransactionType,
+                    timestamp = DateTime.UtcNow.ToString("o")
+                };
+                
+                try
+                {
+                    eventPublisher.Publish("AccountEvents", JsonSerializer.Serialize(eventMessage));
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Failed to publish AccountBalanceUpdated event");
+                    // Continue processing as this is not critical
+                }
+                
+                SuccessesTotal.WithLabels("SystemBalanceUpdate").Inc();
+                return new ApiResponse<Account> { Success = true, Data = account };
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                logger.LogError(ex, "Error processing system balance update");
+                ErrorsTotal.WithLabels("SystemBalanceUpdate").Inc();
+                return new ApiResponse<Account> { Success = false, Message = ex.Message, ErrorCode = "PROCESSING_ERROR" };
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unexpected error in system balance update");
+            ErrorsTotal.WithLabels("SystemBalanceUpdate").Inc();
+            return new ApiResponse<Account> { Success = false, Message = "An unexpected error occurred", ErrorCode = "SYSTEM_ERROR" };
         }
     }
 }

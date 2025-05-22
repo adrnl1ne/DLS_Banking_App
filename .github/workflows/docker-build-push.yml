@@ -39,7 +39,7 @@ jobs:
         continue-on-error: false
 
       - name: Run tests for TransactionService
-        run: dotnet test Microservices/TransactionService/TransactionService.Tests/TransactionService.Tests.csproj --logger "trx;LogFileName=transactionservice_test_results.trx"
+        run: dotnet test Microservices/TransactionService.Tests/TransactionService.Tests.csproj --logger "trx;LogFileName=transactionservice_test_results.trx"
         continue-on-error: false
         
       - name: Upload UserAccountService Test Results
@@ -49,12 +49,13 @@ jobs:
           name: useraccountservice-test-results
           path: Microservices/UserAccountService.Tests/TestResults/useraccountservice_test_results.trx
 
-      - name: Upload TransactionService Test Results
+      - name: Upload TransactionService test results
         uses: actions/upload-artifact@v4
-        if: always() # Always run this step to upload results even if tests fail
+        if: always()
         with:
           name: transactionservice-test-results
-          path: Microservices/TransactionService/TransactionService.Tests/TestResults/transactionservice_test_results.trx
+          path: Microservices/TransactionService.Tests/TestResults/transactionservice_test_results.trx
+          if-no-files-found: warn
 
       - name: Build and push multi-architecture images
         env:

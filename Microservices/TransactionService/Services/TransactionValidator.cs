@@ -11,22 +11,11 @@ public class TransactionValidator(
     IHttpClientFactory httpClientFactory,
     Counter errorsTotal)
 {
-
     public async Task<bool> IsUserAccountServiceAvailableAsync()
     {
-        try
-        {
-            var client = httpClientFactory.CreateClient("UserAccountClient");
-            var response = await client.GetAsync("/api/health");
-            response.EnsureSuccessStatusCode();
-            logger.LogInformation("User account service health check passed");
-            return true;
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "User account service is unavailable");
-            return false;
-        }
+        // We always return true to allow queueing when UserAccountService is down
+        logger.LogInformation("Skipping UserAccountService availability check to allow transaction queueing");
+        return true;
     }
 
     public async Task<(Account FromAccount, Account ToAccount)> ValidateTransferRequestAsync(TransactionRequest request)
@@ -43,7 +32,7 @@ public class TransactionValidator(
         // Check if from and to accounts are the same
         if (fromAccountId == toAccountId)
         {
-            logger.LogWarning("Cannot transfer to the same account - AccountId: {FromAccountId}", fromAccountId);
+            logger.LogWarning("Cannot transfer to the same account");
             errorsTotal.WithLabels("CreateTransfer").Inc();
             throw new InvalidOperationException("Cannot transfer funds to the same account");
         }
@@ -52,76 +41,70 @@ public class TransactionValidator(
         var userAccountRetryPolicy = Policy
             .Handle<Exception>()
             .WaitAndRetryAsync(
-                retryCount: 3, // Retry 3 times
-                sleepDurationProvider: _ => TimeSpan.FromSeconds(2), // Wait 2 seconds between retries
+                retryCount: 2, // Reduced retries to fail faster
+                sleepDurationProvider: _ => TimeSpan.FromSeconds(1),
                 onRetry: (exception, _, retryCount, _) =>
                 {
                     logger.LogWarning("Retry {RetryCount} for user account service call due to {ExceptionMessage}",
                         retryCount, exception.Message);
                 });
 
-        // Check if the user account service is available (simplified health check)
-        async Task<bool> IsUserAccountServiceAvailable()
+        try
         {
+            // Try to fetch accounts but don't fail the transaction if unavailable
+            Account fromAccount, toAccount;
+            
             try
             {
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                await userAccountClient.GetAccountAsync(fromAccountId);
-                return true;
+                // Try to fetch source account with retry
+                fromAccount = await userAccountRetryPolicy.ExecuteAsync(async () =>
+                    await userAccountClient.GetAccountAsync(fromAccountId));
+                
+                // Try to fetch destination account with retry
+                toAccount = await userAccountRetryPolicy.ExecuteAsync(async () =>
+                    await userAccountClient.GetAccountAsync(toAccountId)); 
+                    
+                // Validate accounts are valid if we got them
+                if (fromAccount == null || toAccount == null)
+                {
+                    logger.LogWarning("Source or destination account not found, but proceeding for queueing");
+                    // Create placeholder accounts with minimal data needed for queueing
+                    fromAccount ??= new Account { Id = fromAccountId, UserId = request.UserId };
+                    toAccount ??= new Account { Id = toAccountId, UserId = 0 }; // Unknown user ID
+                }
+                else
+                {
+                    // Only validate ownership and balance if we got actual account data
+                    if (fromAccount.UserId != request.UserId)
+                    {
+                        logger.LogWarning("User does not own the source account");
+                        errorsTotal.WithLabels("CreateTransfer").Inc();
+                        throw new UnauthorizedAccessException("You can only transfer funds from your own accounts");
+                    }
+
+                    if (fromAccount.Amount < request.Amount)
+                    {
+                        logger.LogWarning("Insufficient funds in account");
+                        errorsTotal.WithLabels("CreateTransfer").Inc();
+                        throw new InvalidOperationException("Insufficient funds for this transfer");
+                    }
+                }
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "User account service is unavailable");
-                return false;
+                logger.LogWarning(ex, "Error fetching account details, creating placeholder accounts for queueing");
+                // Create placeholder accounts with minimal data needed for queueing
+                fromAccount = new Account { Id = fromAccountId, UserId = request.UserId };
+                toAccount = new Account { Id = toAccountId, UserId = 0 }; // Unknown user ID
             }
-        }
 
-        // Verify user account service availability
-        if (!await IsUserAccountServiceAvailable())
+            return (fromAccount, toAccount);
+        }
+        catch (Exception ex)
         {
-            logger.LogWarning("User account service is down, rejecting transaction");
             errorsTotal.WithLabels("CreateTransfer").Inc();
-            throw new InvalidOperationException("Something went wrong, please try again later.");
+            logger.LogError(ex, "Error validating transfer request");
+            throw;
         }
-
-        // Fetch source account with retry
-        var fromAccount = await userAccountRetryPolicy.ExecuteAsync(async () =>
-            await userAccountClient.GetAccountAsync(fromAccountId));
-
-        if (fromAccount == null)
-        {
-            logger.LogWarning("Source account not found");
-            errorsTotal.WithLabels("CreateTransfer").Inc();
-            throw new InvalidOperationException("Source account not found");
-        }
-
-        // Check if user owns the source account
-        if (fromAccount.UserId != request.UserId)
-        {
-            logger.LogWarning("User does not own the source account");
-            errorsTotal.WithLabels("CreateTransfer").Inc();
-            throw new UnauthorizedAccessException("You can only transfer funds from your own accounts");
-        }
-
-        // Check sufficient balance for withdrawal/transfer
-        if (fromAccount.Amount < request.Amount)
-        {
-            logger.LogWarning("Insufficient funds in account {FromAccountId}", fromAccountId);
-            errorsTotal.WithLabels("CreateTransfer").Inc();
-            throw new InvalidOperationException("Insufficient funds for this transfer");
-        }
-
-        // Fetch destination account with retry
-        var toAccount = await userAccountRetryPolicy.ExecuteAsync(async () =>
-            await userAccountClient.GetAccountAsync(toAccountId));
-
-        if (toAccount == null)
-        {
-            logger.LogWarning("Destination account not found");
-            errorsTotal.WithLabels("CreateTransfer").Inc();
-            throw new InvalidOperationException($"Destination account {toAccountId} not found");
-        }
-
-        return (fromAccount, toAccount);
     }
 }

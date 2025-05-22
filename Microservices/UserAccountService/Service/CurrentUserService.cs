@@ -41,18 +41,21 @@ public class CurrentUserService : ICurrentUserService
     {
         get
         {
-            var user = _httpContextAccessor.HttpContext?.User;
-            if (user == null)
+            // Check if we're in an HTTP context
+            if (_httpContextAccessor.HttpContext == null)
             {
-                throw new InvalidOperationException("HttpContext.User is null.");
+                // Return a system role for background processes
+                return "system";
             }
 
-            var roleClaim = user.FindFirst("role")?.Value ?? user.FindFirst(ClaimTypes.Role)?.Value;
-            if (string.IsNullOrEmpty(roleClaim))
+            // Normal HTTP context code
+            if (_httpContextAccessor.HttpContext.User == null)
             {
-                throw new InvalidOperationException("Role claim is missing. Expected 'role' or 'http://schemas.microsoft.com/ws/2008/06/identity/claims/role'.");
+                return "anonymous";
             }
-            return roleClaim;
+
+            var role = _httpContextAccessor.HttpContext.User.FindFirst(ClaimTypes.Role)?.Value;
+            return role ?? "user";
         }
     }
 }
