@@ -10,12 +10,19 @@ using TransactionService.Infrastructure.Messaging.RabbitMQ;
 using TransactionService.Models;
 using TransactionService.Services;
 using TransactionService.Services.Interface;
-using TransactionService.Infrastructure.Data.Repositories; // Add this for ITransactionRepository
-using TransactionService.Infrastructure.Data; // Add if needed for other data types
+using TransactionService.Infrastructure.Data.Repositories;
 using Xunit;
 
 namespace TransactionService.Tests.Services
 {
+    // Add this class to fix the missing FraudCheckResult issue
+    public class FraudCheckResult
+    {
+        public bool IsFraud { get; set; }
+        public string Status { get; set; }
+        public string Reason { get; set; }
+    }
+
     public class TransactionServiceTests
     {
         private readonly Mock<ILogger<TransactionService.Services.TransactionService>> _mockLogger;
@@ -23,9 +30,9 @@ namespace TransactionService.Tests.Services
         private readonly Mock<IUserAccountClient> _mockUserAccountClient;
         private readonly Mock<IFraudDetectionService> _mockFraudDetectionService;
         private readonly Mock<TransactionValidator> _mockValidator;
-        private readonly Mock<Counter> _mockRequestsTotal;
-        private readonly Mock<Counter> _mockSuccessesTotal;
-        private readonly Mock<Counter> _mockErrorsTotal;
+        private readonly Mock<Counter.Child> _mockRequestsTotal; // Changed to Counter.Child
+        private readonly Mock<Counter.Child> _mockSuccessesTotal; // Changed to Counter.Child
+        private readonly Mock<Counter.Child> _mockErrorsTotal; // Changed to Counter.Child
         private readonly Mock<IRabbitMqClient> _mockRabbitMqClient;
         private readonly Mock<Histogram> _mockHistogram;
         private readonly TransactionService.Services.TransactionService _service;
@@ -37,16 +44,18 @@ namespace TransactionService.Tests.Services
             _mockUserAccountClient = new Mock<IUserAccountClient>();
             _mockFraudDetectionService = new Mock<IFraudDetectionService>();
             _mockValidator = new Mock<TransactionValidator>();
-            _mockRequestsTotal = new Mock<Counter>();
-            _mockSuccessesTotal = new Mock<Counter>();
-            _mockErrorsTotal = new Mock<Counter>();
+            
+            // Change these to Counter.Child instead of Counter
+            _mockRequestsTotal = new Mock<Counter.Child>();
+            _mockSuccessesTotal = new Mock<Counter.Child>();
+            _mockErrorsTotal = new Mock<Counter.Child>();
+            
+            // Setup Counter mocks differently
+            var mockCounter = new Mock<Counter>();
+            mockCounter.Setup(c => c.WithLabels(It.IsAny<string>())).Returns(_mockRequestsTotal.Object);
+            
             _mockRabbitMqClient = new Mock<IRabbitMqClient>();
             _mockHistogram = new Mock<Histogram>();
-
-            // Configure counter and histogram methods
-            _mockRequestsTotal.Setup(c => c.WithLabels(It.IsAny<string>())).Returns(_mockRequestsTotal.Object);
-            _mockSuccessesTotal.Setup(c => c.WithLabels(It.IsAny<string>())).Returns(_mockSuccessesTotal.Object);
-            _mockErrorsTotal.Setup(c => c.WithLabels(It.IsAny<string>())).Returns(_mockErrorsTotal.Object);
 
             _service = new TransactionService.Services.TransactionService(
                 _mockLogger.Object,
@@ -74,7 +83,8 @@ namespace TransactionService.Tests.Services
                 FromAccount = "4",
                 ToAccount = "2",
                 Amount = 100m,
-                Description = "Test transfer"
+                Description = "Test transfer",
+                TransactionType = "transfer" // Add required field
             };
 
             var fromAccount = new Account { Id = 4, UserId = 1, Amount = 500m };
@@ -89,37 +99,7 @@ namespace TransactionService.Tests.Services
                 Amount = request.Amount,
                 Status = "pending",
                 TransactionType = "transfer",
-                Description = request.Description,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
-
-            var withdrawalTransaction = new Transaction
-            {
-                Id = Guid.NewGuid().ToString(),
-                TransferId = transaction.TransferId + "-withdrawal",
-                UserId = transaction.UserId,
-                FromAccount = transaction.FromAccount,
-                ToAccount = transaction.FromAccount,
-                Amount = transaction.Amount,
-                Status = "pending",
-                TransactionType = "withdrawal",
-                Description = $"Withdrawal from account {fromAccount.Id} for transfer {transaction.TransferId}",
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
-
-            var depositTransaction = new Transaction
-            {
-                Id = Guid.NewGuid().ToString(),
-                TransferId = transaction.TransferId + "-deposit",
-                UserId = toAccount.UserId,
-                FromAccount = transaction.ToAccount,
-                ToAccount = transaction.ToAccount,
-                Amount = transaction.Amount,
-                Status = "pending",
-                TransactionType = "deposit",
-                Description = $"Deposit to account {toAccount.Id} from transfer {transaction.TransferId}",
+                Description = request.Description, // Add required field
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
@@ -127,7 +107,10 @@ namespace TransactionService.Tests.Services
             _mockFraudDetectionService.Setup(s => s.IsServiceAvailableAsync())
                 .ReturnsAsync(true);
                 
-            _mockValidator.Setup(v => v.ValidateTransferRequestAsync(request))
+            _mockValidator.Setup(v => v.ValidateTransferRequestAsync(It.Is<TransactionRequest>(r => 
+                r.UserId == request.UserId &&
+                r.FromAccount == request.FromAccount &&
+                r.ToAccount == request.ToAccount)))
                 .ReturnsAsync((fromAccount, toAccount));
 
             _mockRepository.Setup(r => r.CreateTransactionAsync(It.IsAny<Transaction>()))
@@ -163,7 +146,9 @@ namespace TransactionService.Tests.Services
                 UserId = 1,
                 FromAccount = "4",
                 ToAccount = "2",
-                Amount = 100m
+                Amount = 100m,
+                Description = "Test transfer", // Add required fields
+                TransactionType = "transfer" 
             };
 
             _mockFraudDetectionService.Setup(s => s.IsServiceAvailableAsync())
