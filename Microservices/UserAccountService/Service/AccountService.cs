@@ -249,47 +249,58 @@ public class AccountService(
     /// <exception cref="InvalidOperationException">Thrown if the account with the specified ID is not found.</exception>
     /// <exception cref="UnauthorizedAccessException">Thrown if the current user is not authorized to delete the account.</exception>
     public async Task DeleteAccountAsync(int id)
-    {
-        RequestsTotal.WithLabels("DeleteAccount").Inc();
-        try
-        {
-            var account = await context.Accounts.FindAsync(id);
-            if (account == null)
-            {
-                logger.LogWarning("Account not found");
-                ErrorsTotal.WithLabels("DeleteAccount").Inc();
-                throw new InvalidOperationException($"Account {id} not found.");
-            }
+	{
+		RequestsTotal.WithLabels("DeleteAccount").Inc();
+		try
+		{
+			var account = await context.Accounts.FindAsync(id);
+			if (account == null)
+			{
+				logger.LogWarning("Account not found");
+				ErrorsTotal.WithLabels("DeleteAccount").Inc();
+				throw new InvalidOperationException($"Account {id} not found.");
+			}
 
-            if (currentUserService.Role != "admin" && account.UserId != currentUserService.UserId)
-            {
-                logger.LogWarning("User is not authorized to delete account");
-                ErrorsTotal.WithLabels("DeleteAccount").Inc();
-                throw new UnauthorizedAccessException("You are not authorized to delete this account.");
-            }
+			if (currentUserService.Role != "admin" && account.UserId != currentUserService.UserId)
+			{
+				logger.LogWarning("User is not authorized to delete account");
+				ErrorsTotal.WithLabels("DeleteAccount").Inc();
+				throw new UnauthorizedAccessException("You are not authorized to delete this account.");
+			}
 
-            context.Accounts.Remove(account);
-            await context.SaveChangesAsync();
+			// Tombstone pattern: Copy to DeletedAccounts before deleting
+			var deleted = new DeletedAccount
+			{
+				AccountId = account.Id,
+				UserId = account.UserId,
+				Name = account.Name,
+				Amount = account.Amount,
+				DeletedAt = DateTime.UtcNow
+			};
+			context.DeletedAccounts.Add(deleted);
 
-            var eventMessage = new
-            {
-                event_type = "AccountDeleted",
-                accountId = account.Id,
-                userId = account.UserId,
-                name = account.Name,
-                timestamp = DateTime.UtcNow.ToString("o")
-            };
-            eventPublisher.Publish("AccountEvents", JsonSerializer.Serialize(eventMessage));
+			context.Accounts.Remove(account);
+			await context.SaveChangesAsync();
 
-            SuccessesTotal.WithLabels("DeleteAccount").Inc();
-        }
-        catch (Exception ex)
-        {
-            ErrorsTotal.WithLabels("DeleteAccount").Inc();
-            logger.LogError(ex, "Failed to delete account");
-            throw;
-        }
-    }
+			var eventMessage = new
+			{
+				event_type = "AccountDeleted",
+				accountId = account.Id,
+				userId = account.UserId,
+				name = account.Name,
+				timestamp = DateTime.UtcNow.ToString("o")
+			};
+			eventPublisher.Publish("AccountEvents", JsonSerializer.Serialize(eventMessage));
+
+			SuccessesTotal.WithLabels("DeleteAccount").Inc();
+		}
+		catch (Exception ex)
+		{
+			ErrorsTotal.WithLabels("DeleteAccount").Inc();
+			logger.LogError(ex, "Failed to delete account");
+			throw;
+		}
+	}
 
     /// <summary>
     /// Renames an existing account.
