@@ -1,7 +1,4 @@
-﻿
-
-using System.Transactions;
-using Nest;
+﻿using Nest;
 using QueryService.DTO;
 using QueryService.utils;
 
@@ -38,10 +35,14 @@ public class Helpers
                 {
                     await CreateIndexGeneric<TransactionCreatedEvent>(elasticClient, indexName);
                 }
-                else
+				else if (type == typeof(DeletedAccount))
                 {
-                    Console.WriteLine($"❌ Unknown type for index: {indexName}");
+                    await CreateIndexGeneric<DeletedAccount>(elasticClient, indexName);
                 }
+                else
+				{
+					Console.WriteLine($"❌ Unknown type for index: {indexName}");
+				}
             }
             else
             {

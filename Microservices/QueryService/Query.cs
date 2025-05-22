@@ -5,33 +5,33 @@ namespace QueryService;
 
 public class Query
 {
-    public async Task<List<AccountEvent>> GetAccounts(
-        [Service] IElasticClient elasticClient,
-        int? userId = null)
-    {
-        var search = await elasticClient.SearchAsync<AccountEvent>(s => s
-            .Index("accounts")
-            .Query(q => userId.HasValue
-                ? q.Term(t => t.UserId, userId.Value)
-                : q.MatchAll()
-            )
-        );
-        return search.Documents.ToList();
-    }
-	
-	public async Task<List<AccountEvent>> GetAccountHistory(
-        [Service] IElasticClient elasticClient,
-        int accountId)
-    {
-        var search = await elasticClient.SearchAsync<AccountEvent>(s => s
-            .Index("account_events")
-            .Query(q => q.Term(t => t.AccountId, accountId))
-            .Sort(srt => srt.Ascending(f => f.Timestamp))
-        );
-        return search.Documents.ToList();
-    }
+	public async Task<List<AccountEvent>> GetAccounts(
+		[Service] IElasticClient elasticClient,
+		int? userId = null)
+	{
+		var search = await elasticClient.SearchAsync<AccountEvent>(s => s
+			.Index("accounts")
+			.Query(q => userId.HasValue
+				? q.Term(t => t.UserId, userId.Value)
+				: q.MatchAll()
+			)
+		);
+		return search.Documents.ToList();
+	}
 
-    public async Task<List<TransactionCreatedEvent>> GetTransactions(
+	public async Task<List<AccountEvent>> GetAccountHistory(
+		[Service] IElasticClient elasticClient,
+		int accountId)
+	{
+		var search = await elasticClient.SearchAsync<AccountEvent>(s => s
+			.Index("account_events")
+			.Query(q => q.Term(t => t.AccountId, accountId))
+			.Sort(srt => srt.Ascending(f => f.Timestamp))
+		);
+		return search.Documents.ToList();
+	}
+
+	public async Task<List<TransactionCreatedEvent>> GetTransactions(
 		[Service] IElasticClient elasticClient,
 		string? accountId = null)
 	{
@@ -45,7 +45,7 @@ public class Query
 		return search.Documents.ToList();
 	}
 
-    public async Task<List<CheckFraudEvent>> GetFraudEvents(
+	public async Task<List<CheckFraudEvent>> GetFraudEvents(
 		[Service] IElasticClient elasticClient,
 		string? transferId = null)
 	{
@@ -68,4 +68,19 @@ public class Query
 			return new List<CheckFraudEvent>();
 		}
 	}
+	
+	public async Task<List<DeletedAccount>> GetDeletedAccounts(
+        [Service] IElasticClient elasticClient,
+        int? userId = null)
+    {
+        var search = await elasticClient.SearchAsync<DeletedAccount>(s => s
+            .Index("deleted_accounts")
+            .Query(q => userId.HasValue
+                ? q.Term(t => t.UserId, userId.Value)
+                : q.MatchAll()
+            )
+            .Sort(srt => srt.Descending(f => f.Timestamp))
+        );
+        return search.Documents.ToList();
+    }
 }
