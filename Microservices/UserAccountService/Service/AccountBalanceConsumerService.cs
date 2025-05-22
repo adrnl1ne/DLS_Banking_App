@@ -30,17 +30,35 @@ namespace UserAccountService.Service
             _logger = logger;
         }
 
-        protected override Task ExecuteAsync(CancellationToken stoppingToken)
+        public override Task StartAsync(CancellationToken cancellationToken)
         {
             _logger.LogInformation("AccountBalanceConsumerService starting");
             
-            // Add a short initial delay to ensure RabbitMQ is fully initialized
+            // Ensure the queue is created immediately at startup
+            try
+            {
+                _rabbitMqClient.EnsureQueueExists("AccountBalanceUpdates", true);
+                _logger.LogInformation("AccountBalanceUpdates queue created or confirmed");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to create AccountBalanceUpdates queue");
+                // Don't throw here, we'll retry later
+            }
+            
+            // Continue with subscription in the background
             _reconnectTimer = new Timer(
                 async _ => await EnsureConnectedAsync(), 
                 null, 
-                TimeSpan.FromSeconds(10), // Initial delay before first connection attempt
-                TimeSpan.FromSeconds(5)); // Regular interval for reconnection attempts
+                TimeSpan.FromSeconds(5), 
+                TimeSpan.FromSeconds(5)); // Retry more frequently
             
+            return Task.CompletedTask;
+        }
+
+        protected override Task ExecuteAsync(CancellationToken stoppingToken)
+        {
+            // No longer needed, connection logic is in StartAsync
             return Task.CompletedTask;
         }
 

@@ -9,5 +9,6 @@ namespace UserAccountService.Infrastructure.Messaging
         void Publish<T>(string queueName, T message) where T : class;
         bool IsConnected { get; }
         void EnsureConnection();
+        void EnsureQueueExists(string queueName, bool durable);
     }
 }

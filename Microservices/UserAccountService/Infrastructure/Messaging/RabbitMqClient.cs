@@ -143,23 +143,15 @@ namespace UserAccountService.Infrastructure.Messaging
 
             try
             {
-                // Use passive declare to check if queue exists
-                try
-                {
-                    _channel!.QueueDeclarePassive(queueName);
-                    _logger.LogDebug("Using existing queue for subscription: {QueueName}", queueName);
-                }
-                catch (Exception)
-                {
-                    // Queue doesn't exist, create it as non-durable to match existing setup
-                    _channel!.QueueDeclare(
-                        queue: queueName,
-                        durable: false,
-                        exclusive: false,
-                        autoDelete: false,
-                        arguments: null);
-                    _logger.LogInformation("Created queue for subscription: {QueueName}", queueName);
-                }
+                // CHANGE THIS SECTION: Always declare queue (don't use passive)
+                _channel!.QueueDeclare(
+                    queue: queueName,
+                    durable: true,         // Make it persistent
+                    exclusive: false,
+                    autoDelete: false,
+                    arguments: null);
+                
+                _logger.LogInformation("Created or confirmed queue for subscription: {QueueName}", queueName);
 
                 // Set prefetch count to 1 to ensure one message is processed at a time
                 _channel!.BasicQos(0, 1, false);
@@ -219,6 +211,29 @@ namespace UserAccountService.Infrastructure.Messaging
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error subscribing to queue: {QueueName}", queueName);
+                throw;
+            }
+        }
+
+        // Add this new method for explicitly creating queues
+        public void EnsureQueueExists(string queueName, bool durable)
+        {
+            EnsureConnection();
+            
+            try
+            {
+                _channel!.QueueDeclare(
+                    queue: queueName,
+                    durable: durable,
+                    exclusive: false,
+                    autoDelete: false,
+                    arguments: null);
+                
+                _logger.LogInformation("Queue {QueueName} exists or was created", queueName);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to ensure queue exists: {QueueName}", queueName);
                 throw;
             }
         }

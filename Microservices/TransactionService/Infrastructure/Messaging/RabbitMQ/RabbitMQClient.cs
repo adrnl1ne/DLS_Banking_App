@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using RabbitMQ.Client.Exceptions; // Add this import for RabbitMQ exceptions
 
 namespace TransactionService.Infrastructure.Messaging.RabbitMQ
 {
@@ -79,10 +80,10 @@ namespace TransactionService.Infrastructure.Messaging.RabbitMQ
         public void Publish(string queueName, string message)
         {
             EnsureConnection();
-
+            
             try
             {
-                // First try to passively check if queue exists without modifying it
+                // First try to use passive declaration to check if queue exists without changing properties
                 try
                 {
                     _channel!.QueueDeclarePassive(queueName);
@@ -90,29 +91,43 @@ namespace TransactionService.Infrastructure.Messaging.RabbitMQ
                 }
                 catch (Exception)
                 {
-                    // Queue doesn't exist, create with non-durable property to match existing setup
-                    _channel!.QueueDeclare(
-                        queue: queueName,
-                        durable: false, 
-                        exclusive: false,
-                        autoDelete: false,
-                        arguments: null);
-                    _logger.LogInformation("Created new queue: {QueueName}", queueName);
+                    // Queue doesn't exist yet, create it with desired parameters
+                    try
+                    {
+                        // Try first with durable
+                        _channel!.QueueDeclare(queue: queueName,
+                            durable: true,
+                            exclusive: false,
+                            autoDelete: false,
+                            arguments: null);
+                        _logger.LogInformation("Created durable queue: {QueueName}", queueName);
+                    }
+                    catch (OperationInterruptedException ex) when (ex.Message.Contains("inequivalent arg 'durable'"))
+                    {
+                        // Change this line - use the correct namespace
+                        // If that fails with durable mismatch, try with non-durable
+                        _channel!.QueueDeclare(queue: queueName,
+                            durable: false,
+                            exclusive: false,
+                            autoDelete: false,
+                            arguments: null);
+                        _logger.LogInformation("Created non-durable queue: {QueueName}", queueName);
+                    }
                 }
-                
+
                 var body = Encoding.UTF8.GetBytes(message);
                 
-                // Make messages persistent regardless of queue durability
-                var properties = _channel.CreateBasicProperties();
-                properties.Persistent = true;
-                properties.DeliveryMode = 2; // Persistent
-
+                // Create message properties
+                var properties = _channel!.CreateBasicProperties();
+                properties.Persistent = true; // Make message persistent regardless of queue durability
+                
+                // Publish the message
                 _channel.BasicPublish(
                     exchange: "",
                     routingKey: queueName,
                     basicProperties: properties,
                     body: body);
-
+                
                 _logger.LogInformation("Published message to queue: {QueueName}", queueName);
             }
             catch (Exception ex)
@@ -187,23 +202,15 @@ namespace TransactionService.Infrastructure.Messaging.RabbitMQ
 
             try
             {
-                // Try to use existing queue
-                try
-                {
-                    _channel!.QueueDeclarePassive(queueName);
-                    _logger.LogInformation("Using existing queue for subscription: {QueueName}", queueName);
-                }
-                catch (Exception)
-                {
-                    // If it doesn't exist, create it (using non-durable to match existing setup)
-                    _channel!.QueueDeclare(
-                        queue: queueName,
-                        durable: false,
-                        exclusive: false,
-                        autoDelete: false,
-                        arguments: null);
-                    _logger.LogInformation("Created queue for subscription: {QueueName}", queueName);
-                }
+                // CHANGE THIS SECTION: Always declare queue (don't use passive)
+                _channel!.QueueDeclare(
+                    queue: queueName,
+                    durable: true,         // Make it persistent
+                    exclusive: false,
+                    autoDelete: false,
+                    arguments: null);
+                
+                _logger.LogInformation("Created or confirmed queue for subscription: {QueueName}", queueName);
 
                 // Set prefetch count to 1 to ensure one message is processed at a time
                 _channel.BasicQos(0, 1, false);
