@@ -736,7 +736,7 @@ public class AccountService(
                 // Check for negative balance
                 if (newBalance < 0)
                 {
-                    logger.LogWarning("System update would result in negative balance for account {AccountId}", accountId);
+                    logger.LogWarning("System update would result in negative balance for account");
                     ErrorsTotal.WithLabels("SystemBalanceUpdate").Inc();
                     return new ApiResponse<Account> { Success = false, Message = "Balance cannot be negative", ErrorCode = "INSUFFICIENT_FUNDS" };
                 }
