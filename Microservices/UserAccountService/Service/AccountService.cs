@@ -688,14 +688,10 @@ public class AccountService(
             if (request.TransactionType.Equals("Deposit", StringComparison.OrdinalIgnoreCase))
             {
                 newBalance += request.Amount;
-                logger.LogInformation("Depositing {Amount} to account {AccountId}, new balance: {Balance}", 
-                    request.Amount, accountId, newBalance);
             }
             else if (request.TransactionType.Equals("Withdrawal", StringComparison.OrdinalIgnoreCase))
             {
                 newBalance -= request.Amount;
-                logger.LogInformation("Withdrawing {Amount} from account {AccountId}, new balance: {Balance}", 
-                    request.Amount, accountId, newBalance);
             }
             else
             {
@@ -706,15 +702,13 @@ public class AccountService(
             account.Amount = newBalance;
             await accountRepository.SaveChangesAsync();
             
-            // Log instead of using _auditLogger which doesn't exist
-            logger.LogInformation("System updated balance for account {AccountId} via {TransactionType}, amount: {Amount}", 
-                accountId, request.TransactionType, request.Amount);
+            /
             
             return new ApiResponse<Account> { Success = true, Data = account };
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to update balance for account {AccountId}", accountId);
+            logger.LogError(ex, "Error processing balance update");
             return new ApiResponse<Account> { Success = false, Message = ex.Message, ErrorCode = "PROCESSING_ERROR" };
         }
     }

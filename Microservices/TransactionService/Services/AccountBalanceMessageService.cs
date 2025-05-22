@@ -33,10 +33,6 @@ namespace TransactionService.Services
                 Timestamp = DateTime.UtcNow
             };
 
-            _logger.LogInformation(
-                "Publishing balance update request for account {AccountId}, transaction {TransactionId}", 
-                accountId, balanceRequest.TransactionId);
-
             try
             {
                 _rabbitMqClient.Publish(
@@ -47,9 +43,7 @@ namespace TransactionService.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, 
-                    "Failed to publish balance update for account {AccountId}, transaction {TransactionId}", 
-                    accountId, balanceRequest.TransactionId);
+                _logger.LogError(ex, "Error publishing account balance update message");
                 throw;
             }
         }
