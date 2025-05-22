@@ -173,25 +173,6 @@ services:
       retries: 12
       start_period: 60s
 
-  kibana:
-    image: docker.elastic.co/kibana/kibana:7.17.19
-    mem_limit: 256m
-    cpus: "0.2"
-    container_name: kibana
-    ports:
-      - "5601:5601"
-    environment:
-      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
-    depends_on:
-      elasticsearch:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5601/api/status"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-
   user-account-service:
     build:
       context: ./Microservices/UserAccountService

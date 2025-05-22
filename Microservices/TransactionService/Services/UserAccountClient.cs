@@ -51,8 +51,8 @@ public class UserAccountClientService : IUserAccountClient
     {
         try
         {
-            _logger.LogInformation("Updating account {AccountId} balance with type {TransactionType}", 
-                LogSanitizer.MaskAccountId(accountId), balanceRequest.TransactionType);
+            _logger.LogInformation("Updating account balance with operation type: {TransactionType}", 
+                balanceRequest.TransactionType);
                 
             // Serialize with proper content type
             var content = new StringContent(
@@ -67,14 +67,14 @@ public class UserAccountClientService : IUserAccountClient
             {
                 var errorContent = await response.Content.ReadAsStringAsync();
                 LogSanitizedError(errorContent);
-                throw new InvalidOperationException($"Failed to update balance for account {LogSanitizer.MaskAccountId(accountId)}. Status: {response.StatusCode}");
+                throw new InvalidOperationException($"Failed to update account balance. Status: {response.StatusCode}");
             }
             
-            _logger.LogInformation("Successfully updated account");
+            _logger.LogInformation("Successfully updated account balance");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating balance for account");
+            _logger.LogError(ex, "Error updating account balance");
             throw;
         }
     }
