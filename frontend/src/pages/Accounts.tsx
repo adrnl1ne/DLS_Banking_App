@@ -4,10 +4,11 @@ import { Button } from '../components/ui/button';
 import { Separator } from '../components/ui/separator';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { useNavigate } from 'react-router-dom';
-import { getUserAccounts, Account } from '../api/accountApi';
+import { getAccounts } from '../api/graphqlApi';
+import type { AccountEvent } from '../api/types';
 
 const Accounts = () => {
-  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [accounts, setAccounts] = useState<AccountEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, ] = useState('');
@@ -18,9 +19,18 @@ const Accounts = () => {
       try {
         setIsLoading(true);
         setError('');
-        const data = await getUserAccounts();
+        const data = await getAccounts();
+        console.log('Account data:', data);
         
-        setAccounts(data);
+        // Filter for only the latest account events
+        const latestAccounts = data.reduce((acc: { [key: number]: AccountEvent }, event: AccountEvent) => {
+          if (!acc[event.accountId] || new Date(event.timestamp) > new Date(acc[event.accountId].timestamp)) {
+            acc[event.accountId] = event;
+          }
+          return acc;
+        }, {});
+
+        setAccounts(Object.values(latestAccounts));
       } catch (err) {
         console.error('Error fetching accounts:', err);
         
@@ -107,16 +117,16 @@ const Accounts = () => {
       ) :
         <div className="grid gap-6">
           {accounts.map(account => (
-            <Card key={account.id} className="card overflow-hidden">
+            <Card key={account.accountId} className="card overflow-hidden">
               <CardHeader className="pb-2">
-                <CardTitle className="text-xl text-primary">{account.name}</CardTitle>
-                <CardDescription>Account #{account.id}</CardDescription>
+                <CardTitle className="text-xl text-primary">{account.name || `Account ${account.accountId}`}</CardTitle>
+                <CardDescription>Account #{account.accountId}</CardDescription>
               </CardHeader>
               <CardContent className="pt-4">
                 <div className="flex flex-col md:flex-row justify-between md:items-start mb-6">
                   <div className="space-y-2">
                     <div className="text-sm text-muted-foreground">Available Balance</div>
-                    <div className="text-3xl font-bold">{formatCurrency(account.balance)}</div>
+                    <div className="text-3xl font-bold">{formatCurrency(account.amount || 0)}</div>
                   </div>
                   <div className="mt-4 md:mt-0 self-start bg-secondary/30 px-4 py-2 rounded-md">
                     <div className="text-sm text-muted-foreground">User ID</div>
@@ -131,7 +141,7 @@ const Accounts = () => {
                 <Button 
                   variant="outline" 
                   className="w-full justify-center"
-                  onClick={() => navigate(`/accounts/${account.id}`)}
+                  onClick={() => navigate(`/accounts/${account.accountId}`)}
                 >
                   View Details
                 </Button>

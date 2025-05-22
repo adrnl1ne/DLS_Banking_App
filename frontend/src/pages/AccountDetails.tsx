@@ -3,6 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { getUserAccounts, Account, depositToAccount, DepositRequest } from '../api/accountApi';
+import { getAccountHistory } from '../api/graphqlApi';
+import type { AccountEvent } from '../api/types';
 import { 
   Dialog, 
   DialogContent, 
@@ -14,11 +16,20 @@ import {
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Alert } from '../components/ui/alert';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../components/ui/table";
 
 const AccountDetails = () => {
   const { accountId } = useParams();
   const navigate = useNavigate();
   const [account, setAccount] = useState<Account | null>(null);
+  const [accountHistory, setAccountHistory] = useState<AccountEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [depositAmount, setDepositAmount] = useState('');
@@ -41,6 +52,10 @@ const AccountDetails = () => {
         }
         
         setAccount(foundAccount);
+
+        // Fetch account history
+        const history = await getAccountHistory(Number(accountId));
+        setAccountHistory(history);
       } catch (err) {
         console.error('Error fetching account details:', err);
         if (err instanceof Error) {
@@ -311,6 +326,55 @@ const AccountDetails = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Account History Section */}
+      <Card className="mt-8">
+        <CardHeader>
+          <CardTitle className="text-xl text-primary">Account History</CardTitle>
+          <CardDescription>Transaction history and account events</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Date</TableHead>
+                <TableHead>Event Type</TableHead>
+                <TableHead>Transaction Type</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {accountHistory.map((event, index) => (
+                <TableRow key={`${event.accountId}-${event.timestamp}-${index}`}>
+                  <TableCell>
+                    {new Date(event.timestamp).toLocaleDateString('en-US', {
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </TableCell>
+                  <TableCell className="capitalize">{event.eventType.replace(/_/g, ' ').toLowerCase()}</TableCell>
+                  <TableCell className="capitalize">
+                    {event.transactionType ? event.transactionType.replace(/_/g, ' ').toLowerCase() : '-'}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {event.amount ? formatCurrency(event.amount) : '-'}
+                  </TableCell>
+                </TableRow>
+              ))}
+              {accountHistory.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center text-muted-foreground">
+                    No transaction history available
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
     </div>
   );
 };

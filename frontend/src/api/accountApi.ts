@@ -8,7 +8,7 @@ const API_URL = 'http://localhost:8002/api/Account';
 export interface Account {
   id: number;
   name: string;
-  balance: number;
+  amount: number;
   userId: number;
   createdAt: string;
   updatedAt: string;

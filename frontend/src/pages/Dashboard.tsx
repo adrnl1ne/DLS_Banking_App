@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Button } from '../components/ui/button';
-import { getUserAccounts, Account } from '../api/accountApi';
 import { getCurrentUser } from '../api/authApi';
 import { Link } from 'react-router-dom';
+import { getAccounts } from '@/api/graphqlApi';
+import type { AccountEvent } from '@/api/types';
 
 const Dashboard = () => {
-  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [accounts, setAccounts] = useState<AccountEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [totalBalance, setTotalBalance] = useState(0);
@@ -15,12 +16,20 @@ const Dashboard = () => {
   useEffect(() => {
     const fetchAccounts = async () => {
       try {
-        setIsLoading(true);
-        const data = await getUserAccounts();
-        setAccounts(data);
+        const data = await getAccounts();
         
+        // Filter for only the latest account events
+        const latestAccounts = data.reduce((acc: { [key: number]: AccountEvent }, event: AccountEvent) => {
+          if (!acc[event.accountId] || new Date(event.timestamp) > new Date(acc[event.accountId].timestamp)) {
+            acc[event.accountId] = event;
+          }
+          return acc;
+        }, {});
+
+        setAccounts(Object.values(latestAccounts));
+
         // Calculate total balance across all accounts
-        const total = data.reduce((sum, account) => sum + account.amount, 0);
+        const total = data.reduce((sum, account) => sum + (account.amount || 0), 0);
         setTotalBalance(total);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load accounts');
@@ -77,13 +86,13 @@ const Dashboard = () => {
                   </div>
                   
                   {accounts.slice(0, 3).map((account) => (
-                    <div key={account.id} className="account-item">
+                    <div key={account.accountId} className="account-item">
                       <div className="flex justify-between items-center">
                         <div>
                           <h3 className="font-medium">{account.name}</h3>
-                          <p className="text-sm text-muted-foreground account-label">Account #{account.id}</p>
+                          <p className="text-sm text-muted-foreground account-label">Account #{account.accountId}</p>
                         </div>
-                        <span className="font-semibold">{formatCurrency(account.amount)}</span>
+                        <span className="font-semibold">{formatCurrency(account.amount || 0)}</span>
                       </div>
                     </div>
                   ))}

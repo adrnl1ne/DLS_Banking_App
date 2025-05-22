@@ -22,9 +22,12 @@ function App() {
     
     if (authStatus) {
       const currentUser = getCurrentUser();
+      console.log(currentUser);
       setIsAdmin(currentUser?.user.role === 'admin');
     }
   }, []);
+
+  console.log(isLoggedIn);
   
   return (
     <Router>
