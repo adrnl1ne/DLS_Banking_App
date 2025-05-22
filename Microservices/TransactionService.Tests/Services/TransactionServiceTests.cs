@@ -15,16 +15,6 @@ using Xunit;
 
 namespace TransactionService.Tests.Services
 {
-    public class TestCounter : Counter
-    {
-        public TestCounter() : base("test_counter", "Test counter", new string[] { "action" }) { }
-    }
-    
-    public class TestHistogram : Histogram
-    {
-        public TestHistogram() : base("test_histogram", "Test histogram", new HistogramConfiguration()) { }
-    }
-
     public class TransactionServiceTests
     {
         private readonly Mock<ILogger<TransactionService.Services.TransactionService>> _mockLogger;
@@ -32,7 +22,11 @@ namespace TransactionService.Tests.Services
         private readonly Mock<IUserAccountClient> _mockUserAccountClient;
         private readonly Mock<IFraudDetectionService> _mockFraudDetectionService;
         private readonly Mock<TransactionValidator> _mockValidator;
+        private readonly Counter _requestsTotal;
+        private readonly Counter _successesTotal;
+        private readonly Counter _errorsTotal;
         private readonly Mock<IRabbitMqClient> _mockRabbitMqClient;
+        private readonly Histogram _histogram;
         private readonly TransactionService.Services.TransactionService _service;
 
         public TransactionServiceTests()
@@ -43,19 +37,36 @@ namespace TransactionService.Tests.Services
             _mockFraudDetectionService = new Mock<IFraudDetectionService>();
             _mockValidator = new Mock<TransactionValidator>();
             _mockRabbitMqClient = new Mock<IRabbitMqClient>();
+            
+            // Create real metrics with properly configured labels
+            _requestsTotal = Metrics.CreateCounter("test_requests_total", "Test requests counter", new CounterConfiguration { 
+                LabelNames = new[] { "action" }
+            });
+            
+            _successesTotal = Metrics.CreateCounter("test_successes_total", "Test successes counter", new CounterConfiguration { 
+                LabelNames = new[] { "action" }
+            });
+            
+            _errorsTotal = Metrics.CreateCounter("test_errors_total", "Test errors counter", new CounterConfiguration { 
+                LabelNames = new[] { "action" }
+            });
+            
+            _histogram = Metrics.CreateHistogram("test_histogram", "Test histogram", new HistogramConfiguration {
+                Buckets = new[] { 0.1, 0.5, 1, 2, 5 }
+            });
 
-            // Create the transaction service with test doubles for metrics
+            // Create the transaction service with real metrics objects
             _service = new TransactionService.Services.TransactionService(
                 _mockLogger.Object,
                 _mockRepository.Object,
                 _mockUserAccountClient.Object,
                 _mockFraudDetectionService.Object,
                 _mockValidator.Object,
-                new TestCounter(),
-                new TestCounter(),
-                new TestCounter(),
+                _requestsTotal,
+                _successesTotal,
+                _errorsTotal,
                 _mockRabbitMqClient.Object,
-                new TestHistogram()
+                _histogram
             );
         }
 
