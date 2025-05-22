@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -21,7 +22,7 @@ namespace TransactionService.Tests.Services
         private readonly Mock<ITransactionRepository> _mockRepository;
         private readonly Mock<IUserAccountClient> _mockUserAccountClient;
         private readonly Mock<IFraudDetectionService> _mockFraudDetectionService;
-        private readonly Mock<TransactionValidator> _mockValidator;
+        private readonly TransactionValidator _validator; // Real instance, not a mock
         private readonly Counter _requestsTotal;
         private readonly Counter _successesTotal;
         private readonly Counter _errorsTotal;
@@ -35,7 +36,11 @@ namespace TransactionService.Tests.Services
             _mockRepository = new Mock<ITransactionRepository>();
             _mockUserAccountClient = new Mock<IUserAccountClient>();
             _mockFraudDetectionService = new Mock<IFraudDetectionService>();
-            _mockValidator = new Mock<TransactionValidator>();
+            
+            // Create a real instance of TransactionValidator with its dependencies
+            var mockHttpClientFactory = new Mock<IHttpClientFactory>();
+            _validator = new TransactionValidator(mockHttpClientFactory.Object);
+            
             _mockRabbitMqClient = new Mock<IRabbitMqClient>();
             
             // Create real metrics with properly configured labels
@@ -55,13 +60,13 @@ namespace TransactionService.Tests.Services
                 Buckets = new[] { 0.1, 0.5, 1, 2, 5 }
             });
 
-            // Create the transaction service with real metrics objects
+            // Create service with real validator instead of mock
             _service = new TransactionService.Services.TransactionService(
                 _mockLogger.Object,
                 _mockRepository.Object,
                 _mockUserAccountClient.Object,
                 _mockFraudDetectionService.Object,
-                _mockValidator.Object,
+                _validator,
                 _requestsTotal,
                 _successesTotal,
                 _errorsTotal,
@@ -106,9 +111,12 @@ namespace TransactionService.Tests.Services
             _mockFraudDetectionService.Setup(s => s.IsServiceAvailableAsync())
                 .ReturnsAsync(true);
                 
-            _mockValidator.Setup(v => v.ValidateTransferRequestAsync(It.Is<TransactionRequest>(r => 
-                r.UserId == request.UserId)))
-                .ReturnsAsync((fromAccount, toAccount));
+            // Instead of mocking validator, we need to mock the UserAccountClient that the validator uses
+            _mockUserAccountClient.Setup(c => c.GetAccountAsync(It.Is<int>(id => id == int.Parse(request.FromAccount))))
+                .ReturnsAsync(fromAccount);
+                
+            _mockUserAccountClient.Setup(c => c.GetAccountAsync(It.Is<int>(id => id == int.Parse(request.ToAccount))))
+                .ReturnsAsync(toAccount);
 
             _mockRepository.Setup(r => r.CreateTransactionAsync(It.IsAny<Transaction>()))
                 .ReturnsAsync(transaction);
