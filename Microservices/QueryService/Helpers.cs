@@ -34,6 +34,10 @@ public class Helpers
                 {
                     await CreateIndexGeneric<CheckFraudEvent>(elasticClient, indexName);
                 }
+                else if (type == typeof(TransactionCreatedEvent))
+                {
+                    await CreateIndexGeneric<TransactionCreatedEvent>(elasticClient, indexName);
+                }
                 else
                 {
                     Console.WriteLine($"❌ Unknown type for index: {indexName}");

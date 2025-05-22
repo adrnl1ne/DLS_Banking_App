@@ -3,16 +3,16 @@
 namespace QueryService.DTO;
 
 public class Account
-{   
-    [JsonPropertyName("id")]
-    public int id { get; set; }
-    
-    [JsonPropertyName("name")]
-    public string name { get; set; }
-    
-    [JsonPropertyName("amount")]
-    public double amount { get; set; }
-    
+{
+    [JsonPropertyName("accountId")]
+    public int accountId { get; set; }
+
     [JsonPropertyName("userId")]
     public int userId { get; set; }
+
+    [JsonPropertyName("name")]
+    public required string name { get; set; }
+
+    [JsonPropertyName("balance")]
+    public decimal balance { get; set; }
 }
