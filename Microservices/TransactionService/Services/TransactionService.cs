@@ -350,7 +350,7 @@ public class TransactionService(
         catch (Exception ex)
         {
             errorsTotal.WithLabels("GetTransactionsByAccount").Inc();
-            logger.LogError(ex, "Error retrieving transactions for account {AccountId}", accountId);
+            logger.LogError(ex, "Error retrieving transactions for account");
             throw;
         }
     }
