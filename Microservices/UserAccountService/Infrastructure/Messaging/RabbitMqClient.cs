@@ -103,9 +103,24 @@ namespace UserAccountService.Infrastructure.Messaging
                     _logger.LogInformation("Created queue for publishing: {QueueName}", queueName);
                 }
 
+                // Add these properties to your messages
                 var properties = _channel.CreateBasicProperties();
                 properties.Persistent = true;
                 properties.DeliveryMode = 2; // Persistent
+                properties.ContentType = "application/json";
+                properties.Type = "AccountBalanceUpdate"; // Message type for clarity
+                properties.MessageId = Guid.NewGuid().ToString(); // Unique ID for traceability
+                properties.AppId = "UserAccountService"; // Service name for visibility
+                properties.Timestamp = new AmqpTimestamp(DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+                
+                // Add headers for additional context but WITHOUT sensitive data
+                properties.Headers = new Dictionary<string, object>
+                {
+                    { "message_type", "AccountBalanceUpdate" },
+                    { "source_service", "UserAccountService" },
+                    { "environment", Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development" },
+                    { "process_priority", "normal" }
+                };
 
                 _channel.BasicPublish(
                     exchange: "",

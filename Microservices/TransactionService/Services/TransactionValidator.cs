@@ -32,7 +32,7 @@ public class TransactionValidator(
         // Check if from and to accounts are the same
         if (fromAccountId == toAccountId)
         {
-            logger.LogWarning("Cannot transfer to the same account - AccountId: {FromAccountId}", fromAccountId);
+            logger.LogWarning("Cannot transfer to the same account");
             errorsTotal.WithLabels("CreateTransfer").Inc();
             throw new InvalidOperationException("Cannot transfer funds to the same account");
         }
@@ -84,7 +84,7 @@ public class TransactionValidator(
 
                     if (fromAccount.Amount < request.Amount)
                     {
-                        logger.LogWarning("Insufficient funds in user account");
+                        logger.LogWarning("Insufficient funds in account");
                         errorsTotal.WithLabels("CreateTransfer").Inc();
                         throw new InvalidOperationException("Insufficient funds for this transfer");
                     }

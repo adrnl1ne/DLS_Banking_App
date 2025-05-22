@@ -89,7 +89,7 @@ namespace UserAccountService.Service
 
         private async Task<bool> ProcessMessageAsync(AccountBalanceUpdateMessage message)
         {
-            _logger.LogInformation("Processing balance update for an account");
+            _logger.LogInformation("Processing balance update");
             
             try
             {

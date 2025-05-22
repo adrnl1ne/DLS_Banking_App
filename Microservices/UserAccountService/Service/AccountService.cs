@@ -107,7 +107,7 @@ public class AccountService(
             {
                 logger.LogWarning("Account not found");
                 ErrorsTotal.WithLabels("GetAccount").Inc();
-                throw new InvalidOperationException($"Account {id} not found.");
+                throw new InvalidOperationException("Account not found.");
             }
 
             if (currentUserService.Role == "service")
@@ -260,7 +260,7 @@ public class AccountService(
 			{
 				logger.LogWarning("Account not found");
 				ErrorsTotal.WithLabels("DeleteAccount").Inc();
-				throw new InvalidOperationException($"Account {id} not found.");
+				throw new InvalidOperationException("Account not found.");
 			}
 
 			if (currentUserService.Role != "admin" && account.UserId != currentUserService.UserId)
@@ -331,7 +331,7 @@ public class AccountService(
             {
                 logger.LogWarning("Account not found");
                 ErrorsTotal.WithLabels("RenameAccount").Inc();
-                throw new InvalidOperationException($"Account {id} not found.");
+                throw new InvalidOperationException("Account not found.");
             }
 
             if (currentUserService.UserId == null)
@@ -447,7 +447,7 @@ public class AccountService(
             {
                 logger.LogWarning("Account not found");
                 ErrorsTotal.WithLabels("UpdateBalance").Inc();
-                throw new InvalidOperationException($"Account {id} not found.");
+                throw new InvalidOperationException("Account not found.");
             }
 
             var redisDb = redis.GetDatabase();
@@ -497,7 +497,7 @@ public class AccountService(
 
             if (newBalance < 0)
             {
-                logger.LogWarning("Invalid balance update: New balance cannot be negative");
+                logger.LogWarning("Invalid balance update: Negative balance not allowed");
                 ErrorsTotal.WithLabels("UpdateBalance").Inc();
                 throw new InvalidOperationException("Balance cannot be negative.");
             }
@@ -584,7 +584,7 @@ public class AccountService(
             {
                 logger.LogWarning("Account not found");
                 ErrorsTotal.WithLabels("DepositToAccount").Inc();
-                throw new InvalidOperationException($"Account {id} not found.");
+                throw new InvalidOperationException("Account not found.");
             }
 
             if (currentUserService.UserId == null)
