@@ -64,6 +64,20 @@ CREATE TABLE IF NOT EXISTS `useraccount_db`.`account` (
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
 
+-- -----------------------------------------------------
+-- Table `useraccount_db`.`deleted_account`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `useraccount_db`.`deleted_account` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `account_id` INT NOT NULL,
+  `user_id` INT NOT NULL,
+  `name` VARCHAR(100) NOT NULL,
+  `amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  `deleted_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX `fk_DeletedAccount_User_idx` (`user_id` ASC) VISIBLE
+) ENGINE = InnoDB;
+
 
 SET SQL_MODE=@OLD_SQL_MODE;
 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS;
