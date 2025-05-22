@@ -204,6 +204,16 @@ builder.Services.AddSingleton<IRabbitMqClient, RabbitMqClient>(sp =>
 builder.Services.AddScoped<ITransactionService, TransactionService.Services.TransactionService>();
 builder.Services.AddScoped<IAccountBalanceService, AccountBalanceMessageService>();
 
+// Register the consumer background service
+builder.Services.AddHostedService(sp => new AccountBalanceConsumerService(
+    sp.GetRequiredService<IRabbitMqClient>(),
+    sp,
+    sp.GetRequiredService<ILogger<AccountBalanceConsumerService>>()
+));
+
+// Register our balance processing service
+builder.Services.AddScoped<AccountBalanceProcessingService>();
+
 // Define and register metrics
 var requestsTotalCounter = Metrics.CreateCounter(
     "requests_total",

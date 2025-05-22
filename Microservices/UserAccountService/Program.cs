@@ -7,13 +7,12 @@ using AccountService.Database.Data;
 using AccountService.Repository;
 using AccountService.Services;
 using UserAccountService.Repository;
-using UserAccountService.Service;
+using UserAccountService.Service; // Changed from UserAccountService.Services
 using Microsoft.OpenApi.Models;
 using Prometheus;
 using StackExchange.Redis;
-using Microsoft.Extensions.Logging; // Add this for logging
+using Microsoft.Extensions.Logging;
 using UserAccountService.Infrastructure.Messaging;
-using UserAccountService.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -171,18 +170,15 @@ builder.Services.AddCors(options =>
 builder.Services.AddSingleton<IRabbitMqClient>(sp =>
 {
     var logger = sp.GetRequiredService<ILogger<RabbitMqClient>>();
-    var config = builder.Configuration;
-    
     return new RabbitMqClient(
         logger,
-        config["RabbitMQ:Host"] ?? "rabbitmq",
-        int.Parse(config["RabbitMQ:Port"] ?? "5672"),
-        config["RabbitMQ:Username"] ?? "guest",
-        config["RabbitMQ:Password"] ?? "guest"
-    );
+        sp.GetRequiredService<IConfiguration>()["RabbitMQ:HostName"] ?? "rabbitmq",
+        int.Parse(sp.GetRequiredService<IConfiguration>()["RabbitMQ:Port"] ?? "5672"),
+        sp.GetRequiredService<IConfiguration>()["RabbitMQ:UserName"] ?? "guest",
+        sp.GetRequiredService<IConfiguration>()["RabbitMQ:Password"] ?? "guest");
 });
 
-// Register the consumer background service
+// Register the consumer as a hosted service
 builder.Services.AddHostedService<AccountBalanceConsumerService>();
 
 // Add these registrations

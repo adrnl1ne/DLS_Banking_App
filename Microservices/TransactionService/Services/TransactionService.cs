@@ -110,17 +110,10 @@ public class TransactionService(
         TransactionValidator validator,
         Counter errorsTotal)
     {
-        // Check user account service health
-        if (!await validator.IsUserAccountServiceAvailableAsync())
-        {
-            logger.LogWarning("User account service is down, rejecting transaction");
-            errorsTotal.WithLabels("CreateTransfer").Inc();
-            throw new ServiceUnavailableException(
-                "UserAccountService",
-                "The user account service is currently unavailable. Please try again later.");
-        }
-
-        // Check fraud detection service health
+        // Only check fraud detection service - skip user account service check
+        // We'll let messages queue up for UserAccountService
+        
+        // Check fraud detection service health - we still need this working
         if (!await fraudDetectionService.IsServiceAvailableAsync())
         {
             logger.LogWarning("Fraud detection service is down, rejecting transaction");
@@ -212,26 +205,10 @@ public class TransactionService(
         Account fromAccount,
         Account toAccount)
     {
-        logger.LogInformation("Updating balances for transaction {TransferId}", transaction.TransferId);
+        logger.LogInformation("Queueing balance updates for transaction {TransferId}", transaction.TransferId);
 
-        try 
+        try
         {
-            var fromBalanceRequest = new AccountBalanceRequest
-            {
-                Amount = transaction.Amount,
-                TransactionId = transaction.TransferId + "-withdrawal",
-                TransactionType = "Withdrawal",
-                IsAdjustment = true
-            };
-            
-            var toBalanceRequest = new AccountBalanceRequest
-            {
-                Amount = transaction.Amount,
-                TransactionId = transaction.TransferId + "-deposit",
-                TransactionType = "Deposit",
-                IsAdjustment = true
-            };
-            
             // Create messages for RabbitMQ
             var fromAccountMessage = new AccountBalanceUpdateMessage
             {
@@ -257,13 +234,13 @@ public class TransactionService(
             string fromAccountJson = System.Text.Json.JsonSerializer.Serialize(fromAccountMessage);
             string toAccountJson = System.Text.Json.JsonSerializer.Serialize(toAccountMessage);
 
-            // Publish to RabbitMQ queue
+            // Publish to RabbitMQ queue - this will work even if UserAccountService is down
             rabbitMqClient.Publish("AccountBalanceUpdates", fromAccountJson);
             rabbitMqClient.Publish("AccountBalanceUpdates", toAccountJson);
             
-            logger.LogInformation("Balance update requests queued for transaction {TransferId}", transaction.TransferId);
+            logger.LogInformation("Balance update messages queued successfully for transaction {TransferId}", 
+                transaction.TransferId);
             
-            // Make method actually async by returning a completed task
             await Task.CompletedTask;
         }
         catch (Exception ex)
