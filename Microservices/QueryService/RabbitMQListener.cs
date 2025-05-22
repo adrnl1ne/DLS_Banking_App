@@ -13,8 +13,6 @@ public class RabbitMqListener : BackgroundService
     private readonly RabbitMqConnection _rabbit;
     private readonly IElasticClient _elasticClient;
 
-    
-
     public RabbitMqListener(RabbitMqConnection rabbit, IElasticClient elasticClient)
     {
         _rabbit = rabbit;
@@ -28,12 +26,15 @@ public class RabbitMqListener : BackgroundService
 
         var channel = _rabbit.Channel;
 
-        foreach (var queue in Queues.queueMap.Keys)
+        // These queues must match the ones published by the other services
+        var queues = new[] { "AccountEvents", "TransactionCreated", "FraudEvents" };
+
+        foreach (var queue in queues)
         {
             await channel.ExchangeDeclareAsync("banking.events", ExchangeType.Topic, durable: true);
             await channel.QueueDeclareAsync(queue: queue, durable: false, exclusive: false, autoDelete: false);
             await channel.QueueBindAsync(queue: queue, exchange: "banking.events", routingKey: queue);
-            
+
             var consumer = new AsyncEventingBasicConsumer(channel);
             var capturedQueue = queue;
 
@@ -43,32 +44,23 @@ public class RabbitMqListener : BackgroundService
                 var json = Encoding.UTF8.GetString(body);
 
                 Console.WriteLine($"📨 Received from [{capturedQueue}]: {json}");
-                
 
-                
                 try
                 {
-                    if (Queues.queueMap.TryGetValue(capturedQueue, out var eventType))
+                    switch (capturedQueue)
                     {
-                        var evt = JsonSerializer.Deserialize(json, eventType);
-                        if (evt is AccountCreatedEvent accountCreated)
-                        {
-                            Console.WriteLine(
-                                $"Parsed event → AccountId: {accountCreated.AccountId}, UserId: {accountCreated.UserId}");
-                        }
-
-                        if (evt is not null)
-                        {
-                            var indexName = QueueIndexMapper.AccountEvents(capturedQueue.ToLowerInvariant());
-                            var response = await _elasticClient.IndexAsync<object>(evt, idx => idx.Index(indexName));
-                            Console.WriteLine(response.IsValid
-                                ? $"✅ Indexed event from [{capturedQueue}]"
-                                : $"❌ Elasticsearch indexing failed: {response.DebugInformation}");
-                        }
-                    }
-                    else
-                    {
-                        Console.WriteLine($"⚠️ No event type mapped for queue: {capturedQueue}");
+                        case "AccountEvents":
+                            await HandleAccountEvent(json);
+                            break;
+                        case "TransactionCreated":
+                            await HandleTransactionCreatedEvent(json);
+                            break;
+                        case "FraudEvents":
+                            await HandleFraudEvent(json);
+                            break;
+                        default:
+                            Console.WriteLine($"ℹ️ No handler for queue: {capturedQueue}");
+                            break;
                     }
                 }
                 catch (Exception ex)
@@ -77,7 +69,7 @@ public class RabbitMqListener : BackgroundService
                 }
             };
 
-            await channel.BasicConsumeAsync(queue: capturedQueue, autoAck: false, consumer: consumer);
+            await channel.BasicConsumeAsync(queue: capturedQueue, autoAck: true, consumer: consumer);
         }
 
         await Task.CompletedTask;
@@ -116,29 +108,10 @@ public class RabbitMqListener : BackgroundService
                 break;
 
             case "AccountDeleted":
-                if (accountEvent != null)
-				{
-					// Store tombstone in "deleted_accounts" index
-					var deletedAccount = new DeletedAccount
-					{
-						AccountId = accountEvent.AccountId,
-						UserId = accountEvent.UserId,
-						Name = accountEvent.Name,
-						Timestamp = accountEvent.Timestamp
-					};
-
-					var tombstoneResponse = await _elasticClient.IndexAsync(deletedAccount, idx => idx.Index("deleted_accounts"));
-					if (tombstoneResponse.IsValid)
-						Console.WriteLine($"✅ Tombstone written to 'deleted_accounts' for AccountId={accountEvent.AccountId}");
-					else
-						Console.WriteLine($"❌ Failed to write tombstone: {tombstoneResponse.DebugInformation}");
-
-					// Delete the actual account from "accounts" index
-					var deleteResponse = await _elasticClient.DeleteAsync<AccountEvent>(accountEvent.AccountId, d => d.Index("accounts"));
-					Console.WriteLine(deleteResponse.IsValid
-						? $"✅ Account deleted from 'accounts' index."
-						: $"❌ Failed to delete account from 'accounts' index: {deleteResponse.DebugInformation}");
-				}
+                var deleteResponse = await _elasticClient.DeleteAsync<AccountEvent>(accountId, d => d.Index("accounts"));
+                Console.WriteLine(deleteResponse.IsValid
+                    ? $"✅ Account deleted from 'accounts' index."
+                    : $"❌ Failed to delete account from 'accounts' index: {deleteResponse.DebugInformation}");
                 break;
 
             case "AccountRenamed":
@@ -163,36 +136,18 @@ public class RabbitMqListener : BackgroundService
             case "AccountDeposited":
                 if (accountEvent != null)
 					{
-						// Fetch the existing document
-						var getResponse = await _elasticClient.GetAsync<AccountEvent>(accountId, g => g.Index("accounts"));
-						var existing = getResponse.Source;
-
-						// If the document exists, update only the relevant fields
-						if (existing != null)
-						{
-							existing.Amount = accountEvent.Amount;
-							existing.Timestamp = accountEvent.Timestamp;
-							existing.EventType = accountEvent.EventType;
-
-							var updateResponse = await _elasticClient.IndexAsync(existing, idx => idx.Index("accounts").Id(accountId));
-							// handle response...
-						}
-						else
-						{
-							// If not found, create a new document with all required fields
-							var newDoc = new AccountEvent
+						var updateResponse = await _elasticClient.UpdateAsync<AccountEvent>(accountId, u => u
+							.Index("accounts")
+							.Doc(new AccountEvent
 							{
-								AccountId = accountEvent.AccountId,
-								UserId = accountEvent.UserId,
-								Name = accountEvent.Name,
+								EventType = accountEvent.EventType,
 								Amount = accountEvent.Amount,
-								Timestamp = accountEvent.Timestamp,
-								EventType = accountEvent.EventType
-								// ...set other required fields as needed
-							};
-							var createResponse = await _elasticClient.IndexAsync(newDoc, idx => idx.Index("accounts").Id(accountId));
-							// handle response...
-						}
+								Timestamp = accountEvent.Timestamp
+							})
+							.DocAsUpsert(true));
+						Console.WriteLine(updateResponse.IsValid
+							? $"✅ Account balance updated in 'accounts' index."
+							: $"❌ Failed to update account balance in 'accounts' index: {updateResponse.DebugInformation}");
 					}
                 break;
 
