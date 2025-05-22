@@ -1,7 +1,12 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Moq;
+using Prometheus;
+using TransactionService.Exceptions;
+using TransactionService.Infrastructure.Messaging.RabbitMQ;
 using TransactionService.Models;
 using TransactionService.Services;
 using TransactionService.Services.Interface;
@@ -13,11 +18,21 @@ namespace TransactionService.Tests.Services
     public class TransactionServiceTests
     {
         private readonly Mock<ITransactionRepository> _mockRepository;
+        private readonly Mock<IUserAccountClient> _mockUserAccountClient;
+        private readonly Mock<IFraudDetectionService> _mockFraudDetectionService;
+        private readonly Mock<IRabbitMqClient> _mockRabbitMqClient;
+        private readonly Mock<ILogger<TransactionService.Services.TransactionService>> _mockLogger;
         
         public TransactionServiceTests()
         {
             _mockRepository = new Mock<ITransactionRepository>();
+            _mockUserAccountClient = new Mock<IUserAccountClient>();
+            _mockFraudDetectionService = new Mock<IFraudDetectionService>();
+            _mockRabbitMqClient = new Mock<IRabbitMqClient>();
+            _mockLogger = new Mock<ILogger<TransactionService.Services.TransactionService>>();
         }
+
+        #region GetTransactionByTransferIdAsync Tests
 
         [Fact]
         public async Task GetTransactionByTransferIdAsync_ExistingTransaction_ReturnsTransaction()
@@ -41,8 +56,8 @@ namespace TransactionService.Tests.Services
 
             _mockRepository.Setup(r => r.GetTransactionByTransferIdAsync(transferId))
                 .ReturnsAsync(transaction);
-            
-            var service = CreateMinimalService();
+
+            var service = CreateService();
 
             // Act
             var result = await service.GetTransactionByTransferIdAsync(transferId);
@@ -65,7 +80,7 @@ namespace TransactionService.Tests.Services
             _mockRepository.Setup(r => r.GetTransactionByTransferIdAsync(transferId))
                 .ReturnsAsync((Transaction)null);
             
-            var service = CreateMinimalService();
+            var service = CreateService();
 
             // Act
             var result = await service.GetTransactionByTransferIdAsync(transferId);
@@ -73,7 +88,11 @@ namespace TransactionService.Tests.Services
             // Assert
             Assert.Null(result);
         }
-        
+
+        #endregion
+
+        #region GetTransactionsByAccountAsync Tests
+
         [Fact]
         public async Task GetTransactionsByAccountAsync_ExistingAccount_ReturnsTransactions()
         {
@@ -81,66 +100,117 @@ namespace TransactionService.Tests.Services
             var accountId = "123";
             var userId = 1;
             
-            var transactions = new[] {
+            var transactions = new List<Transaction> {
                 new Transaction {
                     Id = "1",
+                    TransferId = "transfer-1",
                     UserId = userId,
                     FromAccount = accountId,
                     ToAccount = "456",
-                    Amount = 100
+                    Amount = 100,
+                    Status = "completed",
+                    Description = "Test transaction 1",
+                    TransactionType = "transfer",
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
                 }
             };
             
-            _mockRepository.Setup(r => r.GetTransactionsByAccountIdAsync(accountId))
+            _mockRepository.Setup(r => r.GetTransactionsByAccountAsync(accountId))
                 .ReturnsAsync(transactions);
                 
-            var userAccountClient = new Mock<IUserAccountClient>();
-            userAccountClient.Setup(c => c.GetAccountAsync(123))
+            _mockUserAccountClient.Setup(c => c.GetAccountAsync(123))
                 .ReturnsAsync(new Account { Id = 123, UserId = userId });
             
-            var service = CreateMinimalService(userAccountClient: userAccountClient.Object);
+            var service = CreateService();
 
             // Act
             var result = await service.GetTransactionsByAccountAsync(accountId, userId);
 
             // Assert
+            Assert.NotNull(result);
             Assert.Single(result);
-            Assert.Equal(accountId, result[0].FromAccount);
+            var firstTransaction = result.First();
+            Assert.Equal(accountId, firstTransaction.FromAccount);
+            Assert.Equal("456", firstTransaction.ToAccount);
         }
-        
-        // Helper to create a minimal service with only the dependencies we need
-        private TransactionService.Services.TransactionService CreateMinimalService(
-            IUserAccountClient userAccountClient = null)
+
+        [Fact]
+        public async Task GetTransactionsByAccountAsync_UserNotOwningAccount_ThrowsUnauthorizedAccessException()
         {
-            var mockLogger = new Mock<ILogger<TransactionService.Services.TransactionService>>();
-            var mockUserClient = userAccountClient ?? new Mock<IUserAccountClient>().Object;
-            var mockFraudService = new Mock<IFraudDetectionService>().Object;
-            var mockRabbitMq = new Mock<Infrastructure.Messaging.RabbitMQ.IRabbitMqClient>().Object;
+            // Arrange
+            var accountId = "123";
+            var userId = 1;
+            var differentUserId = 2; // Different from account owner
             
-            // Create counters - actual instances but won't be used in the tests we're running
-            var counter1 = Prometheus.Metrics.CreateCounter("c1", "c1", new Prometheus.CounterConfiguration { LabelNames = new[] {"endpoint"} });
-            var counter2 = Prometheus.Metrics.CreateCounter("c2", "c2", new Prometheus.CounterConfiguration { LabelNames = new[] {"endpoint"} });
-            var counter3 = Prometheus.Metrics.CreateCounter("c3", "c3", new Prometheus.CounterConfiguration { LabelNames = new[] {"endpoint"} });
-            var histogram = Prometheus.Metrics.CreateHistogram("h", "h", new Prometheus.HistogramConfiguration { LabelNames = new[] {"endpoint"} });
+            _mockUserAccountClient.Setup(c => c.GetAccountAsync(123))
+                .ReturnsAsync(new Account { Id = 123, UserId = userId });
             
-            // Create validator - real instance but won't be used in our tests
-            var validatorLogger = new Mock<ILogger<TransactionValidator>>().Object;
-            var httpClient = new Mock<System.Net.Http.IHttpClientFactory>().Object;
-            var validatorCounter = Prometheus.Metrics.CreateCounter("vc", "vc");
-            var validator = new TransactionValidator(validatorLogger, mockUserClient, httpClient, validatorCounter);
+            var service = CreateService();
+
+            // Act & Assert
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(async () => 
+                await service.GetTransactionsByAccountAsync(accountId, differentUserId));
+        }
+
+        [Fact]
+        public async Task GetTransactionsByAccountAsync_NonExistentAccount_ThrowsInvalidOperationException()
+        {
+            // Arrange
+            var accountId = "123";
+            var userId = 1;
             
+            _mockUserAccountClient.Setup(c => c.GetAccountAsync(123))
+                .ReturnsAsync((Account)null);
+            
+            var service = CreateService();
+
+            // Act & Assert
+            await Assert.ThrowsAsync<InvalidOperationException>(async () => 
+                await service.GetTransactionsByAccountAsync(accountId, userId));
+        }
+
+        #endregion
+
+        // Helper method to create a properly configured service instance
+        private TransactionService.Services.TransactionService CreateService()
+        {
+            // Create required metrics objects
+            var requestCounter = Metrics.CreateCounter("test_requests", "Test requests", 
+                new CounterConfiguration { LabelNames = new[] { "endpoint" } });
+            
+            var successCounter = Metrics.CreateCounter("test_success", "Test success",
+                new CounterConfiguration { LabelNames = new[] { "endpoint" } });
+            
+            var errorCounter = Metrics.CreateCounter("test_errors", "Test errors",
+                new CounterConfiguration { LabelNames = new[] { "endpoint" } });
+            
+            var testHistogram = Metrics.CreateHistogram("test_histogram", "Test histogram",
+                new HistogramConfiguration { LabelNames = new[] { "endpoint" } });
+            
+            // Create a validator with mocks
+            var mockValidatorLogger = new Mock<ILogger<TransactionValidator>>();
+            var mockHttpClient = new Mock<System.Net.Http.IHttpClientFactory>();
+            var validatorCounter = Metrics.CreateCounter("validator_counter", "Validator counter");
+            
+            var validator = new TransactionValidator(
+                mockValidatorLogger.Object,
+                _mockUserAccountClient.Object,
+                mockHttpClient.Object,
+                validatorCounter);
+            
+            // Create and return the service
             return new TransactionService.Services.TransactionService(
-                mockLogger.Object,
+                _mockLogger.Object,
                 _mockRepository.Object,
-                mockUserClient,
-                mockFraudService,
+                _mockUserAccountClient.Object,
+                _mockFraudDetectionService.Object,
                 validator,
-                counter1,
-                counter2,
-                counter3,
-                mockRabbitMq,
-                histogram
-            );
+                requestCounter,
+                successCounter,
+                errorCounter,
+                _mockRabbitMqClient.Object,
+                testHistogram);
         }
     }
 }
