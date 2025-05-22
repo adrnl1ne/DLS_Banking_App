@@ -22,10 +22,7 @@ namespace TransactionService.Tests.Services
         private readonly Mock<ITransactionRepository> _mockRepository;
         private readonly Mock<IUserAccountClient> _mockUserAccountClient;
         private readonly Mock<IFraudDetectionService> _mockFraudDetectionService;
-        private readonly Mock<IHttpClientFactory> _mockHttpClientFactory;
         private readonly Mock<ILogger<TransactionValidator>> _mockValidatorLogger;
-        private readonly Counter _validatorCounter;
-        private readonly ITransactionValidator _validator; // Use interface instead
         private readonly Counter _requestsTotal;
         private readonly Counter _successesTotal;
         private readonly Counter _errorsTotal;
@@ -39,16 +36,12 @@ namespace TransactionService.Tests.Services
             _mockRepository = new Mock<ITransactionRepository>();
             _mockUserAccountClient = new Mock<IUserAccountClient>();
             _mockFraudDetectionService = new Mock<IFraudDetectionService>();
-            _mockHttpClientFactory = new Mock<IHttpClientFactory>();
+            var mockHttpClientFactory = new Mock<IHttpClientFactory>();
             _mockValidatorLogger = new Mock<ILogger<TransactionValidator>>();
             _mockRabbitMqClient = new Mock<IRabbitMqClient>();
             
-            // Create a mock validator instead of using the real class
-            var mockValidator = new Mock<ITransactionValidator>();
-            _validator = mockValidator.Object;
-            
-            // Create counters with labels - must match exactly what TransactionService expects
-            _validatorCounter = Metrics.CreateCounter("validator_counter", "Validator counter", new CounterConfiguration {
+            // Create counters with correct labels
+            var validatorCounter = Metrics.CreateCounter("validator_counter", "Validator counter", new CounterConfiguration {
                 LabelNames = new[] { "operation" }
             });
             
@@ -68,37 +61,33 @@ namespace TransactionService.Tests.Services
                 Buckets = new[] { 0.1, 0.5, 1, 2, 5 }
             });
 
-            // Initialize the service with the mock validator
+            // Set up account client to return specific accounts for our tests
+            _mockUserAccountClient.Setup(c => c.GetAccountAsync(4))
+                .ReturnsAsync(new Account { Id = 4, UserId = 1, Amount = 500m });
+                
+            _mockUserAccountClient.Setup(c => c.GetAccountAsync(2))
+                .ReturnsAsync(new Account { Id = 2, UserId = 2, Amount = 200m });
+
+            // Create a real validator - we'll use the real implementation since we've set up the mock dependencies
+            var validator = new TransactionValidator(
+                _mockValidatorLogger.Object,
+                _mockUserAccountClient.Object, 
+                mockHttpClientFactory.Object,
+                validatorCounter);
+
+            // Initialize the service with the real validator
             _service = new TransactionService.Services.TransactionService(
                 _mockLogger.Object,
                 _mockRepository.Object,
                 _mockUserAccountClient.Object,
                 _mockFraudDetectionService.Object,
-                _validator,
+                validator,
                 _requestsTotal,
                 _successesTotal,
                 _errorsTotal,
                 _mockRabbitMqClient.Object,
                 _histogram
             );
-
-            // Set up ValidateTransferRequestAsync for different test cases
-            mockValidator.Setup(v => v.ValidateTransferRequestAsync(It.Is<TransactionRequest>(r => 
-                r.UserId == 1 && r.FromAccount == "4" && r.Amount <= 500m)))
-                .ReturnsAsync((
-                    new Account { Id = 4, UserId = 1, Amount = 500m },
-                    new Account { Id = 2, UserId = 2, Amount = 200m }
-                ));
-            
-            // Setup for unauthorized access test
-            mockValidator.Setup(v => v.ValidateTransferRequestAsync(It.Is<TransactionRequest>(r => 
-                r.UserId != 2 && r.FromAccount == "4" && r.Amount <= 500m && r.Description == "Unauthorized test")))
-                .ThrowsAsync(new UnauthorizedAccessException("You do not own this account"));
-            
-            // Setup for insufficient funds test
-            mockValidator.Setup(v => v.ValidateTransferRequestAsync(It.Is<TransactionRequest>(r => 
-                r.Amount > 500m)))
-                .ThrowsAsync(new InvalidOperationException("Insufficient funds"));
         }
 
         #region CreateTransferAsync Tests
@@ -134,7 +123,7 @@ namespace TransactionService.Tests.Services
 
             _mockFraudDetectionService.Setup(s => s.IsServiceAvailableAsync())
                 .ReturnsAsync(true);
-                
+
             _mockRepository.Setup(r => r.CreateTransactionAsync(It.IsAny<Transaction>()))
                 .ReturnsAsync(transaction);
 
@@ -192,11 +181,11 @@ namespace TransactionService.Tests.Services
             // Arrange
             var request = new TransactionRequest
             {
-                UserId = 1,
+                UserId = 2, // Different from account owner (1)
                 FromAccount = "4", 
                 ToAccount = "2",
                 Amount = 100m,
-                Description = "Unauthorized test", // Matches setup in constructor
+                Description = "Test transfer",
                 TransactionType = "transfer"
             };
             
@@ -228,7 +217,6 @@ namespace TransactionService.Tests.Services
             await Assert.ThrowsAsync<InvalidOperationException>(() => _service.CreateTransferAsync(request));
         }
 
-        // More test methods here
         #endregion
 
         #region GetTransactionByTransferIdAsync Tests
