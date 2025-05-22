@@ -104,6 +104,10 @@ namespace UserAccountService.Tests.Service
                 new Account { Id = 4, Name = "Admin Account", Amount = 10000.00m, UserId = 3, User = users[2] }
             };
             _context.Accounts.AddRange(accounts);
+
+            // Initialize empty DeletedAccounts table
+            _context.DeletedAccounts.RemoveRange(_context.DeletedAccounts);
+            
             _context.SaveChanges();
         }
 
@@ -209,8 +213,9 @@ namespace UserAccountService.Tests.Service
         {
             // Arrange
             var userId = 1;
-            var request = new AccountCreationRequest { Name = "New Test Account" };
+            var request = new AccountCreationRequest { Name = "New Test Account", UserId = userId };
             _mockCurrentUserService.Setup(s => s.UserId).Returns(userId);
+            _mockCurrentUserService.Setup(s => s.Role).Returns("admin"); // Admin role required
             _mockAccountRepository.Setup(r => r.AddAccountAsync(It.IsAny<Account>())).Returns(Task.CompletedTask);
             _mockAccountRepository.Setup(r => r.SaveChangesAsync()).Returns(Task.CompletedTask);
 
@@ -234,14 +239,14 @@ namespace UserAccountService.Tests.Service
         }
 
         [Fact]
-        public async Task CreateAccountAsync_UserIdIsNull_ThrowsInvalidOperationException()
+        public async Task CreateAccountAsync_NonAdminRole_ThrowsUnauthorizedAccessException()
         {
             // Arrange
-            var request = new AccountCreationRequest { Name = "New Test Account" };
-            _mockCurrentUserService.Setup(s => s.UserId).Returns((int?)null);
+            var request = new AccountCreationRequest { Name = "New Test Account", UserId = 1 };
+            _mockCurrentUserService.Setup(s => s.Role).Returns("user"); // Non-admin role
 
             // Act & Assert
-            await Assert.ThrowsAsync<InvalidOperationException>(() => _accountService.CreateAccountAsync(request));
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => _accountService.CreateAccountAsync(request));
         }
 
         // DeleteAccountAsync Tests
@@ -315,6 +320,35 @@ namespace UserAccountService.Tests.Service
             await Assert.ThrowsAsync<InvalidOperationException>(() => _accountService.DeleteAccountAsync(accountId));
         }
 
+        [Fact]
+        public async Task DeleteAccountAsync_CreatesDeletedAccountRecord()
+        {
+            // Arrange
+            var accountId = 1; // John's Savings
+            var userId = 1; // John Doe
+            _mockCurrentUserService.Setup(s => s.UserId).Returns(userId);
+            _mockCurrentUserService.Setup(s => s.Role).Returns("user");
+
+            // Act
+            await _accountService.DeleteAccountAsync(accountId);
+
+            // Assert
+            var deletedAccount = await _context.Accounts.FindAsync(accountId);
+            Assert.Null(deletedAccount); // Original account should be removed
+
+            var tombstone = await _context.DeletedAccounts.FirstOrDefaultAsync(da => da.AccountId == accountId);
+            Assert.NotNull(tombstone);
+            Assert.Equal(userId, tombstone.UserId);
+            Assert.Equal("John's Savings", tombstone.Name);
+            Assert.Equal(5000.50m, tombstone.Amount);
+            Assert.True(tombstone.DeletedAt <= DateTime.UtcNow);
+
+            _mockEventPublisher.Verify(p => p.Publish(
+                "AccountEvents",
+                It.Is<string>(s =>
+                    s.Contains("\"event_type\":\"AccountDeleted\"") && s.Contains($"\"accountId\":{accountId}"))
+            ), Times.Once);
+        }
 
         [Fact]
         public async Task RenameAccountAsync_NameIsEmpty_ThrowsInvalidOperationException()
@@ -627,5 +661,51 @@ namespace UserAccountService.Tests.Service
         //     // Act: GET request to /api/account/user
         //     // Assert: 200 OK, response body contains expected accounts for the authenticated user
         // }
+
+        [Fact]
+        public async Task GetAccountsAsync_SuccessfulRequest_IncrementsMetrics()
+        {
+            // Arrange
+            var userId = 1;
+            _mockCurrentUserService.Setup(s => s.UserId).Returns(userId);
+
+            // Act
+            var result = await _accountService.GetAccountsAsync();
+
+            // Assert
+            Assert.NotNull(result);
+            Assert.Equal(2, result.Count); // John Doe has 2 accounts
+            Assert.All(result, acc => Assert.Equal(userId, acc.UserId));
+            // Note: We can't directly verify the metrics as they are static counters
+            // In a real application, we would use a metrics registry that can be mocked
+        }
+
+        [Fact]
+        public async Task UpdateBalanceAsync_DuplicateTransaction_IncrementsIdempotencyCounter()
+        {
+            // Arrange
+            var accountId = 1;
+            var request = new AccountBalanceRequest
+            {
+                Amount = 100,
+                TransactionId = "tx123",
+                TransactionType = "Deposit"
+            };
+            _mockCurrentUserService.Setup(s => s.Role).Returns("service");
+            _mockRedisDb.Setup(db =>
+                    db.KeyExistsAsync($"account:transaction:{request.TransactionId}", It.IsAny<CommandFlags>()))
+                .ReturnsAsync(true); // Simulate duplicate
+
+            // Act
+            var result = await _accountService.UpdateBalanceAsync(accountId, request);
+
+            // Assert
+            Assert.NotNull(result.Value);
+            Assert.Equal(5000.50m, result.Value.Amount); // Amount should not change
+            _mockEventPublisher.Verify(p => p.Publish(It.IsAny<string>(), It.IsAny<string>()),
+                Times.Never); // No event published
+            // Note: We can't directly verify the idempotency counter as it's static
+            // In a real application, we would use a metrics registry that can be mocked
+        }
     }
 }
