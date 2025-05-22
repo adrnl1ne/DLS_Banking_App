@@ -10,6 +10,8 @@ using TransactionService.Infrastructure.Messaging.RabbitMQ;
 using TransactionService.Models;
 using TransactionService.Services;
 using TransactionService.Services.Interface;
+using TransactionService.Infrastructure.Data.Repositories; // Add this for ITransactionRepository
+using TransactionService.Infrastructure.Data; // Add if needed for other data types
 using Xunit;
 
 namespace TransactionService.Tests.Services
