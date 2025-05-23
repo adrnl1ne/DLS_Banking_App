@@ -32,7 +32,8 @@ public class RabbitMqListener : BackgroundService
         foreach (var queue in queues)
         {
             await channel.ExchangeDeclareAsync("banking.events", ExchangeType.Topic, durable: true);
-            await channel.QueueDeclareAsync(queue: queue, durable: false, exclusive: false, autoDelete: false);
+            // Ensure queues are declared with durable: true to match publisher settings
+            await channel.QueueDeclareAsync(queue: queue, durable: true, exclusive: false, autoDelete: false);
             await channel.QueueBindAsync(queue: queue, exchange: "banking.events", routingKey: queue);
 
             var consumer = new AsyncEventingBasicConsumer(channel);

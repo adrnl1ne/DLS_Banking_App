@@ -211,6 +211,8 @@ builder.Services.AddHostedService(sp => new AccountBalanceConsumerService(
     sp,
     sp.GetRequiredService<ILogger<AccountBalanceConsumerService>>()
 ));
+builder.Services.AddHostedService<DelayedFraudCheckConsumer>();
+builder.Services.AddHostedService<BalanceUpdateCompletedConsumer>();
 
 // Define and register metrics
 var requestsTotalCounter = Metrics.CreateCounter(

@@ -166,20 +166,36 @@ builder.Services.AddCors(options =>
     });
 });
 
-// Register RabbitMQ client
-builder.Services.AddSingleton<IRabbitMqClient>(sp => 
+// Register RabbitMQ client with correct connection parameters
+builder.Services.AddSingleton<IRabbitMqClient>(provider =>
 {
-    var logger = sp.GetRequiredService<ILogger<RabbitMqClient>>();
-    return new RabbitMqClient(
-        logger, 
-        hostName: builder.Configuration.GetValue<string>("RabbitMQ:Host") ?? "rabbitmq",
-        port: builder.Configuration.GetValue<int>("RabbitMQ:Port", 5672),
-        username: builder.Configuration.GetValue<string>("RabbitMQ:Username") ?? "guest",
-        password: builder.Configuration.GetValue<string>("RabbitMQ:Password") ?? "guest"
-    );
+    var logger = provider.GetRequiredService<ILogger<RabbitMqClient>>();
+    
+    // Get RabbitMQ connection details from configuration or environment variables
+    var host = builder.Configuration.GetValue<string>("RabbitMQ:Host") ?? 
+                Environment.GetEnvironmentVariable("RABBITMQ_HOST") ?? 
+                "rabbitmq";
+                
+    var portStr = builder.Configuration.GetValue<string>("RabbitMQ:Port") ?? 
+                  Environment.GetEnvironmentVariable("RABBITMQ_PORT") ?? 
+                  "5672";
+    var port = int.TryParse(portStr, out var p) ? p : 5672;
+    
+    var username = builder.Configuration.GetValue<string>("RabbitMQ:Username") ?? 
+                   Environment.GetEnvironmentVariable("RABBITMQ_USERNAME") ?? 
+                   "guest";
+                   
+    var password = builder.Configuration.GetValue<string>("RabbitMQ:Password") ?? 
+                   Environment.GetEnvironmentVariable("RABBITMQ_PASSWORD") ?? 
+                   "guest";
+    
+    return new RabbitMqClient(logger, host, port, username, password);
 });
 
-// Make sure to register the consumer as a hosted service
+// Register message processing services
+builder.Services.AddScoped<AccountBalanceProcessingService>();
+
+// Register the consumer background service with appropriate lifetime
 builder.Services.AddHostedService<AccountBalanceConsumerService>();
 
 // Register HTTP client factory
@@ -187,9 +203,6 @@ builder.Services.AddHttpClient("InternalApi", client => {
     client.BaseAddress = new Uri("http://localhost:80"); // Points to the service itself
     client.DefaultRequestHeaders.Add("X-Internal-Request", "true");
 });
-
-// Register our balance processing service
-builder.Services.AddScoped<AccountBalanceProcessingService>();
 
 var app = builder.Build();
 app.UseMetricServer();

@@ -90,7 +90,7 @@ public class AuthService : IAuthService
             issuer: jwtIssuer,
             audience: jwtAudience,
             claims: claims,
-            expires: DateTime.Now.AddMinutes(30),
+            expires: DateTime.Now.AddDays(1),
             signingCredentials: credentials);
 
         var tokenString = new JwtSecurityTokenHandler().WriteToken(token);

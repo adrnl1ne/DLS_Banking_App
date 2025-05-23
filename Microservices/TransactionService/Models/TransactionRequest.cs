@@ -19,5 +19,4 @@ public class TransactionRequest
         
     public string? Description { get; set; }
         
-    public required string TransactionType { get; set; }
 }
