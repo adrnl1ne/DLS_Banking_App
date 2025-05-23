@@ -840,4 +840,35 @@ public class AccountService(
             return new ApiResponse<Account> { Success = false, Message = "An unexpected error occurred", ErrorCode = "SYSTEM_ERROR" };
         }
     }
+
+    /// <summary>
+    /// Retrieves all accounts in the system. This method is intended for service-to-service communication.
+    /// It does not check for user authorization since it's expected to be called by authenticated services.
+    /// </summary>
+    /// <returns>A list of <see cref="AccountResponse"/> objects representing all accounts in the system.</returns>
+    public async Task<List<AccountResponse>> GetAllAccountsAsServiceAsync()
+    {
+        RequestsTotal.WithLabels("GetAllAccountsAsService").Inc();
+        try
+        {
+            var accounts = await accountRepository.GetAllAccountsAsync();
+            
+            var response = accounts.Select(a => new AccountResponse
+            {
+                Id = a.Id,
+                Name = a.Name,
+                Amount = a.Amount,
+                UserId = a.UserId
+            }).ToList();
+
+            SuccessesTotal.WithLabels("GetAllAccountsAsService").Inc();
+            return response;
+        }
+        catch (Exception ex)
+        {
+            ErrorsTotal.WithLabels("GetAllAccountsAsService").Inc();
+            logger.LogError(ex, "Failed to get all accounts as service");
+            throw;
+        }
+    }
 }

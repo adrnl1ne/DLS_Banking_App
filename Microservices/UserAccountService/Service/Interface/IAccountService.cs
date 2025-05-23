@@ -17,4 +17,5 @@ public interface IAccountService
     Task<ActionResult<AccountResponse>> UpdateBalanceAsync(int id, AccountBalanceRequest request);
     Task<ActionResult<AccountResponse>> DepositToAccountAsync(int id, AccountDepositRequest request);
     Task<ApiResponse<Account>> UpdateBalanceAsSystemAsync(int accountId, AccountBalanceRequest request);
+    Task<List<AccountResponse>> GetAllAccountsAsServiceAsync();
 }

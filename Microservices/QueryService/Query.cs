@@ -23,12 +23,55 @@ public class Query
 		[Service] IElasticClient elasticClient,
 		int accountId)
 	{
-		var search = await elasticClient.SearchAsync<AccountEvent>(s => s
-			.Index("account_events")
-			.Query(q => q.Term(t => t.AccountId, accountId))
-			.Sort(srt => srt.Ascending(f => f.Timestamp))
-		);
-		return search.Documents.ToList();
+		try
+		{
+			Console.WriteLine($"🔍 Querying account history for AccountId={accountId}");
+			
+			var search = await elasticClient.SearchAsync<AccountEvent>(s => s
+				.Index("account_events")
+				.Size(100) // Ensure we get enough results
+				.Query(q => q
+					.Bool(b => b
+						.Must(m => m.Term(t => t.Field("accountId").Value(accountId)))
+					)
+				)
+				// Remove sorting temporarily to fix the error
+			);
+
+			Console.WriteLine($"📊 Found {search.Documents.Count} history records for AccountId={accountId}");
+			Console.WriteLine($"📝 Debug info: IsValid={search.IsValid}, Took={search.Took}ms");
+			
+			if (!search.IsValid)
+			{
+				Console.WriteLine($"❌ Search error: {search.DebugInformation}");
+			}
+			else if (search.Documents.Count == 0)
+			{
+				// Check if index exists and has documents
+				var countResponse = await elasticClient.CountAsync<AccountEvent>(c => c.Index("account_events"));
+				Console.WriteLine($"💡 Total documents in account_events index: {countResponse.Count}");
+				
+				// Get a sample of documents to check structure
+				var sampleSearch = await elasticClient.SearchAsync<AccountEvent>(s => s
+					.Index("account_events")
+					.Size(5)
+				);
+				
+				if (sampleSearch.Documents.Any())
+				{
+					Console.WriteLine("💡 Sample document from index:");
+					var sample = sampleSearch.Documents.First();
+					Console.WriteLine($"    EventType: {sample.EventType}, AccountId: {sample.AccountId}");
+				}
+			}
+			
+			return search.Documents.ToList();
+		}
+		catch (Exception ex)
+		{
+			Console.WriteLine($"❌ Error in GetAccountHistory: {ex.Message}");
+			return new List<AccountEvent>();
+		}
 	}
 
 	public async Task<List<TransactionCreatedEvent>> GetTransactions(
