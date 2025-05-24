@@ -20,7 +20,7 @@ namespace TransactionService.Tests.Services
         private readonly Mock<ITransactionRepository> _mockRepository;
         private readonly Mock<IUserAccountClient> _mockUserAccountClient;
         private readonly Mock<IFraudDetectionService> _mockFraudDetectionService;
-        private readonly Mock<IRabbitMqClient> _mockRabbitMqClient;
+        private readonly Mock<IRabbitMQClient> _mockRabbitMqClient; // Fix capitalization here
         private readonly Mock<ILogger<TransactionService.Services.TransactionService>> _mockLogger;
         
         public TransactionServiceTests()
@@ -28,7 +28,7 @@ namespace TransactionService.Tests.Services
             _mockRepository = new Mock<ITransactionRepository>();
             _mockUserAccountClient = new Mock<IUserAccountClient>();
             _mockFraudDetectionService = new Mock<IFraudDetectionService>();
-            _mockRabbitMqClient = new Mock<IRabbitMqClient>();
+            _mockRabbitMqClient = new Mock<IRabbitMQClient>(); // Fix capitalization here
             _mockLogger = new Mock<ILogger<TransactionService.Services.TransactionService>>();
         }
 
