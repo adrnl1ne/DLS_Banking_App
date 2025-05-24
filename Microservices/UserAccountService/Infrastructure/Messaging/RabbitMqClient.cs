@@ -5,10 +5,11 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using RabbitMQ.Client.Exceptions;
 
 namespace UserAccountService.Infrastructure.Messaging
 {
-    public class RabbitMqClient : IRabbitMqClient, IDisposable
+    public class RabbitMqClient : IRabbitMqClient
     {
         private readonly ILogger<RabbitMqClient> _logger;
         private readonly string _hostName;
@@ -18,9 +19,9 @@ namespace UserAccountService.Infrastructure.Messaging
         private IConnection? _connection;
         private IModel? _channel;
         private bool _disposed;
-        private readonly object _connectionLock = new object();
+        private bool _isConnected;
 
-        public bool IsConnected => _connection?.IsOpen == true && _channel?.IsOpen == true && !_disposed;
+        private readonly object _connectionLock = new();
 
         public RabbitMqClient(
             ILogger<RabbitMqClient> logger,
@@ -34,7 +35,13 @@ namespace UserAccountService.Infrastructure.Messaging
             _port = port;
             _username = username;
             _password = password;
+            _isConnected = false;
+
+            // Log connection parameters at startup
+            _logger.LogInformation("Connecting to RabbitMQ: Host={Host}, Port={Port}", hostName, port);
         }
+
+        public bool IsConnected => _connection?.IsOpen == true && _channel?.IsOpen == true && !_disposed;
 
         public void EnsureConnection()
         {
@@ -47,9 +54,11 @@ namespace UserAccountService.Infrastructure.Messaging
                     return;
 
                 _logger.LogInformation("Establishing connection to RabbitMQ at {Host}:{Port}", _hostName, _port);
-                
+
                 try
                 {
+                    CleanupConnection(); // Clean up any existing connection
+
                     var factory = new ConnectionFactory
                     {
                         HostName = _hostName,
@@ -57,7 +66,7 @@ namespace UserAccountService.Infrastructure.Messaging
                         UserName = _username,
                         Password = _password,
                         RequestedHeartbeat = TimeSpan.FromSeconds(30),
-                        DispatchConsumersAsync = true,
+                        DispatchConsumersAsync = true, // Enable async consumer dispatch for AsyncEventingConsumer
                         AutomaticRecoveryEnabled = true,
                         NetworkRecoveryInterval = TimeSpan.FromSeconds(10)
                     };
@@ -65,6 +74,7 @@ namespace UserAccountService.Infrastructure.Messaging
                     _connection = factory.CreateConnection();
                     _channel = _connection.CreateModel();
                     _connection.ConnectionShutdown += OnConnectionShutdown;
+                    _isConnected = true;
                     _logger.LogInformation("Successfully connected to RabbitMQ at {Host}:{Port}", _hostName, _port);
                 }
                 catch (Exception ex)
@@ -76,6 +86,12 @@ namespace UserAccountService.Infrastructure.Messaging
             }
         }
 
+        public IModel CreateChannel()
+        {
+            EnsureConnection();
+            return _connection!.CreateModel();
+        }
+
         public void Publish<T>(string queueName, T message) where T : class
         {
             EnsureConnection();
@@ -85,42 +101,24 @@ namespace UserAccountService.Infrastructure.Messaging
                 var json = JsonSerializer.Serialize(message);
                 var body = Encoding.UTF8.GetBytes(json);
 
-                // Use passive declare to check if queue exists
-                try
-                {
-                    _channel!.QueueDeclarePassive(queueName);
-                    _logger.LogDebug("Using existing queue for publishing: {QueueName}", queueName);
-                }
-                catch (Exception)
-                {
-                    // Queue doesn't exist, create it as non-durable to match existing setup
-                    _channel!.QueueDeclare(
-                        queue: queueName,
-                        durable: false,
-                        exclusive: false,
-                        autoDelete: false,
-                        arguments: null);
-                    _logger.LogInformation("Created queue for publishing: {QueueName}", queueName);
-                }
+                // Ensure the queue exists before publishing
+                _channel!.QueueDeclare(
+                    queue: queueName,
+                    durable: true, // Make sure queue is durable
+                    exclusive: false,
+                    autoDelete: false,
+                    arguments: null);
+                _logger.LogDebug("Queue {QueueName} declared or confirmed", queueName);
 
                 // Add these properties to your messages
                 var properties = _channel.CreateBasicProperties();
                 properties.Persistent = true;
                 properties.DeliveryMode = 2; // Persistent
                 properties.ContentType = "application/json";
-                properties.Type = "AccountBalanceUpdate"; // Message type for clarity
+                properties.Type = message.GetType().Name; // Message type for clarity
                 properties.MessageId = Guid.NewGuid().ToString(); // Unique ID for traceability
                 properties.AppId = "UserAccountService"; // Service name for visibility
                 properties.Timestamp = new AmqpTimestamp(DateTimeOffset.UtcNow.ToUnixTimeSeconds());
-                
-                // Add headers for additional context but WITHOUT sensitive data
-                properties.Headers = new Dictionary<string, object>
-                {
-                    { "message_type", "AccountBalanceUpdate" },
-                    { "source_service", "UserAccountService" },
-                    { "environment", Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development" },
-                    { "process_priority", "normal" }
-                };
 
                 _channel.BasicPublish(
                     exchange: "",
@@ -137,71 +135,164 @@ namespace UserAccountService.Infrastructure.Messaging
             }
         }
 
-        public void Subscribe<T>(string queueName, Func<T, Task<bool>> handler) where T : class
+        public void EnsureQueueExists(string queueName, bool durable)
         {
-            EnsureConnection();
-
             try
             {
-                // CHANGE THIS SECTION: Always declare queue (don't use passive)
-                _channel!.QueueDeclare(
+                // Make sure we have a connection first
+                EnsureConnection();
+
+                // Always create a fresh channel for queue declarations
+                using var freshChannel = _connection!.CreateModel();
+
+                _logger.LogInformation("Ensuring queue {QueueName} exists with durable={Durable}", queueName, durable);
+
+                // Never use passive declaration for queue creation - it will fail if queue doesn't exist
+                freshChannel.QueueDeclare(
                     queue: queueName,
-                    durable: true,         // Make it persistent
+                    durable: durable,
                     exclusive: false,
                     autoDelete: false,
                     arguments: null);
-                
-                _logger.LogInformation("Created or confirmed queue for subscription: {QueueName}", queueName);
 
-                // Set prefetch count to 1 to ensure one message is processed at a time
-                _channel!.BasicQos(0, 1, false);
+                _logger.LogInformation("Queue {QueueName} exists or was created with durable={Durable}", queueName, durable);
+            }
+            catch (OperationInterruptedException ex) when (ex.Message.Contains("PRECONDITION_FAILED"))
+            {
+                // This happens when queue exists with different settings
+                _logger.LogWarning("Queue {QueueName} exists with different settings. Deleting and recreating with durable={Durable}", queueName, durable);
 
-                var consumer = new AsyncEventingBasicConsumer(_channel);
+                try
+                {
+                    // Try to delete and recreate with correct settings
+                    using var freshChannel = _connection!.CreateModel();
+                    freshChannel.QueueDelete(queueName);
+                    freshChannel.QueueDeclare(
+                        queue: queueName,
+                        durable: durable,
+                        exclusive: false,
+                        autoDelete: false,
+                        arguments: null);
+                    _logger.LogInformation("Queue {QueueName} recreated with durable={Durable}", queueName, durable);
+                }
+                catch (Exception recreateEx)
+                {
+                    _logger.LogError(recreateEx, "Failed to recreate queue {QueueName}", queueName);
+                    throw;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to ensure queue exists: {QueueName}", queueName);
 
+                // Clean up and reconnect to get a fresh connection
+                CleanupConnection();
+                throw;
+            }
+        }
+
+        public void Subscribe<T>(string queueName, Func<T, Task<bool>> handler) where T : class
+        {
+            // Just delegate to the async version since they do the same thing
+            SubscribeAsync<T>(queueName, handler);
+        }
+
+        public void SubscribeAsync<T>(string queueName, Func<T, Task<bool>> handler) where T : class
+        {
+            try
+            {
+                // Make sure we have a connection
+                EnsureConnection();
+
+                // Create a fresh channel for this subscription
+                var channel = _connection!.CreateModel();
+
+                // Always declare the queue when subscribing - don't use passive declaration
+                try
+                {
+                    channel.QueueDeclare(
+                        queue: queueName,
+                        durable: true,
+                        exclusive: false,
+                        autoDelete: false,
+                        arguments: null);
+
+                    _logger.LogInformation("Created or confirmed queue for subscription: {QueueName}", queueName);
+                }
+                catch (OperationInterruptedException ex) when (ex.Message.Contains("PRECONDITION_FAILED"))
+                {
+                    // If the queue exists but with different settings, just use it as is
+                    _logger.LogWarning("Queue {QueueName} exists with different settings. Using existing queue.", queueName);
+                }
+
+                // Set prefetch count to 1 to process messages one at a time
+                channel.BasicQos(0, 1, false);
+                _logger.LogDebug("Set QoS prefetch to 1 for queue {QueueName}", queueName);
+
+                // Create an async consumer to handle messages
+                var consumer = new AsyncEventingBasicConsumer(channel);
+
+                // Set up the Received event handler to process messages asynchronously
                 consumer.Received += async (sender, ea) =>
                 {
-                    string body = Encoding.UTF8.GetString(ea.Body.ToArray());
-                    bool success = false;
-                    T? message = default;
+                    var body = ea.Body.ToArray();
+                    var message = Encoding.UTF8.GetString(body);
+                    var deliveryTag = ea.DeliveryTag;
+
+                    _logger.LogInformation("Received message from {QueueName}: {Length} bytes",
+                        queueName, body.Length);
+                    _logger.LogDebug("Message payload: {Message}", message);
 
                     try
                     {
-                        message = JsonSerializer.Deserialize<T>(body);
-                        if (message != null)
+                        // Attempt to deserialize the message
+                        var deserializedMessage = JsonSerializer.Deserialize<T>(
+                            message,
+                            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+                        if (deserializedMessage == null)
                         {
-                            // Process the message
-                            success = await handler(message);
+                            _logger.LogError("Failed to deserialize message: {Message}", message);
+                            // Reject the message and don't requeue if we can't deserialize it
+                            channel.BasicNack(deliveryTag, false, false);
+                            return;
                         }
+
+                        // Log detail about the message before processing
+                        _logger.LogInformation("Processing message of type {MessageType}", typeof(T).Name);
+
+                        // Process the message with the handler
+                        bool success = await handler(deserializedMessage);
+
+                        if (success)
+                        {
+                            // Acknowledge successful processing
+                            channel.BasicAck(deliveryTag, false);
+                            _logger.LogInformation("Successfully processed message from {QueueName}", queueName);
+                        }
+                        else
+                        {
+                            // Reject and requeue for retry if processing failed but is retriable
+                            channel.BasicNack(deliveryTag, false, true);
+                            _logger.LogWarning("Failed to process message from {QueueName}, requeueing", queueName);
+                        }
+                    }
+                    catch (JsonException jsonEx)
+                    {
+                        _logger.LogError(jsonEx, "JSON deserialization error for message: {Message}", message);
+                        // Don't requeue messages with JSON errors as they'll never deserialize correctly
+                        channel.BasicNack(deliveryTag, false, false);
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Error processing message from queue: {QueueName}", queueName);
-                    }
-                    finally
-                    {
-                        try
-                        {
-                            // Acknowledge or reject the message based on processing result
-                            if (success)
-                            {
-                                _channel.BasicAck(ea.DeliveryTag, false);
-                                _logger.LogDebug("Message acknowledged in queue: {QueueName}", queueName);
-                            }
-                            else
-                            {
-                                // Requeue the message
-                                _channel.BasicNack(ea.DeliveryTag, false, true);
-                                _logger.LogWarning("Message rejected and requeued in queue: {QueueName}", queueName);
-                            }
-                        }
-                        catch (Exception ackEx)
-                        {
-                            _logger.LogError(ackEx, "Error during message ack/nack in queue: {QueueName}", queueName);
-                        }
+                        _logger.LogError(ex, "Error processing message from {QueueName}: {Message}", queueName, message);
+                        // Reject and requeue on unexpected error
+                        channel.BasicNack(deliveryTag, false, true);
                     }
                 };
 
-                _channel.BasicConsume(
+                // Start consuming messages with explicit acknowledgement
+                channel.BasicConsume(
                     queue: queueName,
                     autoAck: false,
                     consumer: consumer);
@@ -210,45 +301,26 @@ namespace UserAccountService.Infrastructure.Messaging
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error subscribing to queue: {QueueName}", queueName);
-                throw;
-            }
-        }
-
-        // Add this new method for explicitly creating queues
-        public void EnsureQueueExists(string queueName, bool durable)
-        {
-            EnsureConnection();
-            
-            try
-            {
-                _channel!.QueueDeclare(
-                    queue: queueName,
-                    durable: durable,
-                    exclusive: false,
-                    autoDelete: false,
-                    arguments: null);
-                
-                _logger.LogInformation("Queue {QueueName} exists or was created", queueName);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to ensure queue exists: {QueueName}", queueName);
+                _logger.LogError(ex, "Failed to subscribe to {QueueName}", queueName);
+                _isConnected = false;
+                CleanupConnection();
                 throw;
             }
         }
 
         private void OnConnectionShutdown(object? sender, ShutdownEventArgs e)
         {
+            _isConnected = false;
             _logger.LogWarning("RabbitMQ connection shutdown. Reason: {Reason}", e.ReplyText);
-            CleanupConnection();
         }
 
         private void CleanupConnection()
         {
             try
             {
+                _channel?.Close();
                 _channel?.Dispose();
+                _connection?.Close();
                 _connection?.Dispose();
             }
             catch (Exception ex)
@@ -259,6 +331,8 @@ namespace UserAccountService.Infrastructure.Messaging
             {
                 _channel = null;
                 _connection = null;
+                _isConnected = false;
+
             }
         }
 

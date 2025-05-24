@@ -32,7 +32,8 @@ public class RabbitMqListener : BackgroundService
         foreach (var queue in queues)
         {
             await channel.ExchangeDeclareAsync("banking.events", ExchangeType.Topic, durable: true);
-            await channel.QueueDeclareAsync(queue: queue, durable: false, exclusive: false, autoDelete: false);
+            // Ensure queues are declared with durable: true to match publisher settings
+            await channel.QueueDeclareAsync(queue: queue, durable: true, exclusive: false, autoDelete: false);
             await channel.QueueBindAsync(queue: queue, exchange: "banking.events", routingKey: queue);
 
             var consumer = new AsyncEventingBasicConsumer(channel);
@@ -43,7 +44,9 @@ public class RabbitMqListener : BackgroundService
                 var body = ea.Body.ToArray();
                 var json = Encoding.UTF8.GetString(body);
 
+                // Enhanced debugging
                 Console.WriteLine($"📨 Received from [{capturedQueue}]: {json}");
+                Console.WriteLine($"Routing Key: {ea.RoutingKey}");
 
                 try
                 {
@@ -66,6 +69,7 @@ public class RabbitMqListener : BackgroundService
                 catch (Exception ex)
                 {
                     Console.WriteLine($"❌ Error processing message from [{capturedQueue}]: {ex.Message}");
+                    Console.WriteLine($"Stack trace: {ex.StackTrace}");
                 }
             };
 
@@ -78,82 +82,93 @@ public class RabbitMqListener : BackgroundService
     // Handles all account-related events (created, deleted, renamed, balance updated)
     private async Task HandleAccountEvent(string json)
     {
-        using var doc = JsonDocument.Parse(json);
-        var root = doc.RootElement;
-        var eventType = root.GetProperty("event_type").GetString();
-        var accountId = root.GetProperty("accountId").GetInt32();
+        try {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            var eventType = root.GetProperty("event_type").GetString();
+            var accountId = root.GetProperty("accountId").GetInt32();
+            
+            Console.WriteLine($"🔍 Processing account event: Type={eventType}, AccountId={accountId}");
+            
+            // Store the event in the "account_events" index (history)
+            var accountEvent = JsonSerializer.Deserialize<AccountEvent>(json);
+            if (accountEvent != null)
+            {
+                var historyResponse = await _elasticClient.IndexAsync(accountEvent, idx => idx.Index("account_events"));
+                if (historyResponse.IsValid)
+                    Console.WriteLine($"✅ Indexed AccountEvent in history: {eventType}");
+                else
+                    Console.WriteLine($"❌ Failed to index AccountEvent in history: {historyResponse.DebugInformation}");
+            }
 
-        // Store the event in the "account_events" index (history)
-        var accountEvent = JsonSerializer.Deserialize<AccountEvent>(json);
-        if (accountEvent != null)
-        {
-            var historyResponse = await _elasticClient.IndexAsync(accountEvent, idx => idx.Index("account_events"));
-            if (historyResponse.IsValid)
-                Console.WriteLine($"✅ Indexed AccountEvent in history: {eventType}");
-            else
-                Console.WriteLine($"❌ Failed to index AccountEvent in history: {historyResponse.DebugInformation}");
-        }
+            // Update the "accounts" index (current state)
+            switch (eventType)
+            {
+                case "AccountCreated":
+                    if (accountEvent != null)
+                    {
+                        Console.WriteLine($"📝 Creating account in ES: AccountId={accountId}, Name={accountEvent.Name}, UserId={accountEvent.UserId}");
+                        var createResponse = await _elasticClient.IndexAsync(accountEvent, idx => idx.Index("accounts").Id(accountId));
+                        Console.WriteLine(createResponse.IsValid
+                            ? $"✅ Account created in 'accounts' index."
+                            : $"❌ Failed to create account in 'accounts' index: {createResponse.DebugInformation}");
+                    }
+                    break;
 
-        // Update the "accounts" index (current state)
-        switch (eventType)
-        {
-            case "AccountCreated":
-                if (accountEvent != null)
-                {
-                    var createResponse = await _elasticClient.IndexAsync(accountEvent, idx => idx.Index("accounts").Id(accountId));
-                    Console.WriteLine(createResponse.IsValid
-                        ? $"✅ Account created in 'accounts' index."
-                        : $"❌ Failed to create account in 'accounts' index: {createResponse.DebugInformation}");
-                }
-                break;
+                case "AccountDeleted":
+                    var deleteResponse = await _elasticClient.DeleteAsync<AccountEvent>(accountId, d => d.Index("accounts"));
+                    Console.WriteLine(deleteResponse.IsValid
+                        ? $"✅ Account deleted from 'accounts' index."
+                        : $"❌ Failed to delete account from 'accounts' index: {deleteResponse.DebugInformation}");
+                    break;
 
-            case "AccountDeleted":
-                var deleteResponse = await _elasticClient.DeleteAsync<AccountEvent>(accountId, d => d.Index("accounts"));
-                Console.WriteLine(deleteResponse.IsValid
-                    ? $"✅ Account deleted from 'accounts' index."
-                    : $"❌ Failed to delete account from 'accounts' index: {deleteResponse.DebugInformation}");
-                break;
+                case "AccountRenamed":
+                    if (accountEvent != null)
+						{
+							var updateResponse = await _elasticClient.UpdateAsync<AccountEvent>(accountId, u => u
+								.Index("accounts")
+								.Doc(new AccountEvent
+								{
+									EventType = accountEvent.EventType,
+									Name = accountEvent.Name,
+									Timestamp = accountEvent.Timestamp
+								})
+								.DocAsUpsert(true));
+							Console.WriteLine(updateResponse.IsValid
+								? $"✅ Account renamed in 'accounts' index."
+								: $"❌ Failed to rename account in 'accounts' index: {updateResponse.DebugInformation}");
+						}
+                    break;
 
-            case "AccountRenamed":
-                if (accountEvent != null)
-					{
-						var updateResponse = await _elasticClient.UpdateAsync<AccountEvent>(accountId, u => u
-							.Index("accounts")
-							.Doc(new AccountEvent
-							{
-								EventType = accountEvent.EventType,
-								Name = accountEvent.Name,
-								Timestamp = accountEvent.Timestamp
-							})
-							.DocAsUpsert(true));
-						Console.WriteLine(updateResponse.IsValid
-							? $"✅ Account renamed in 'accounts' index."
-							: $"❌ Failed to rename account in 'accounts' index: {updateResponse.DebugInformation}");
-					}
-                break;
+                case "AccountBalanceUpdated":
+                case "AccountDeposited":
+                    if (accountEvent != null)
+						{
+							var updateResponse = await _elasticClient.UpdateAsync<AccountEvent>(accountId, u => u
+								.Index("accounts")
+								.Doc(new AccountEvent
+								{
+									EventType = accountEvent.EventType,
+									Amount = accountEvent.Amount,
+									Timestamp = accountEvent.Timestamp,
+									UserId = accountEvent.UserId,
+									Name = accountEvent.Name,
+									AccountId = accountEvent.AccountId
+								})
+								.DocAsUpsert(true));
+							Console.WriteLine(updateResponse.IsValid
+								? $"✅ Account balance updated in 'accounts' index."
+								: $"❌ Failed to update account balance in 'accounts' index: {updateResponse.DebugInformation}");
+						}
+                    break;
 
-            case "AccountBalanceUpdated":
-            case "AccountDeposited":
-                if (accountEvent != null)
-					{
-						var updateResponse = await _elasticClient.UpdateAsync<AccountEvent>(accountId, u => u
-							.Index("accounts")
-							.Doc(new AccountEvent
-							{
-								EventType = accountEvent.EventType,
-								Amount = accountEvent.Amount,
-								Timestamp = accountEvent.Timestamp
-							})
-							.DocAsUpsert(true));
-						Console.WriteLine(updateResponse.IsValid
-							? $"✅ Account balance updated in 'accounts' index."
-							: $"❌ Failed to update account balance in 'accounts' index: {updateResponse.DebugInformation}");
-					}
-                break;
-
-            default:
-                Console.WriteLine($"⚠️ Unknown account event type: {eventType}");
-                break;
+                default:
+                    Console.WriteLine($"⚠️ Unknown account event type: {eventType}");
+                    break;
+            }
+        } catch (Exception ex) {
+            Console.WriteLine($"❌ Error in HandleAccountEvent: {ex.Message}");
+            Console.WriteLine($"Stack trace: {ex.StackTrace}");
         }
     }
 

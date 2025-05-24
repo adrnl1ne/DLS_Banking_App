@@ -142,4 +142,23 @@ public class AccountController(IAccountService accountService, ILogger<AccountCo
         await accountService.DeleteAccountAsync(id);
         return NoContent();
     }
+
+    /// <summary>
+    /// Retrieves all accounts in the system.
+    /// This endpoint is restricted to service callers only.
+    /// </summary>
+    /// <returns>
+    /// Returns a list of all accounts in the system.
+    /// </returns>
+    [HttpGet("all")]
+    [Authorize(Policy = "ServiceOnly")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<List<AccountResponse>>> GetAllAccounts()
+    {
+        logger.LogInformation("Service requesting all accounts");
+        var accounts = await accountService.GetAllAccountsAsServiceAsync();
+        return Ok(accounts);
+    }
 }

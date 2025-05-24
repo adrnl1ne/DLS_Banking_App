@@ -15,5 +15,6 @@ namespace TransactionService.Infrastructure.Data.Repositories
         Task<IEnumerable<TransactionLog>> GetTransactionLogsAsync(string transactionId);
         Task AddTransactionLogAsync(string transactionId, string logType, string message);
         Task<int> SaveChangesAsync();
+        Task<Transaction> UpdateTransactionAsync(Transaction transaction);
     }
 }

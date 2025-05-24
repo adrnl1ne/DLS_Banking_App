@@ -2,11 +2,11 @@ using System;
 using System.Text.Json;
 using AccountService.Database.Data;
 using AccountService.Repository;
-using AccountService.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Prometheus;
 using StackExchange.Redis;
+using UserAccountService.Infrastructure.Messaging;
 using UserAccountService.Models;
 using UserAccountService.Shared.DTO;
 
@@ -699,17 +699,31 @@ public class AccountService(
                 return new ApiResponse<Account> { Success = false, Message = "TransactionId is required", ErrorCode = "INVALID_REQUEST" };
             }
 
-            // Check for idempotence using Redis
+            // Check for idempotence using Redis - this is still necessary for message-based systems
             var redisDb = redis.GetDatabase();
             var redisKey = $"account:transaction:{request.TransactionId}";
-            if (await redisDb.KeyExistsAsync(redisKey))
+            try
             {
-                logger.LogInformation("Duplicate transaction detected: {TransactionId}", request.TransactionId);
-                IdempotentRequestsTotal.Inc();
+                if (await redisDb.KeyExistsAsync(redisKey))
+                {
+                    logger.LogInformation("Duplicate transaction detected");
+                    IdempotentRequestsTotal.Inc();
 
-                // Get the account to return in the response
-                var existingAccount = await accountRepository.GetAccountByIdAsync(accountId);
-                return new ApiResponse<Account> { Success = true, Data = existingAccount, Message = "Transaction already processed" };
+                    // Get the account to return in the response
+                    var existingAccount = await accountRepository.GetAccountByIdAsync(accountId);
+                    
+                    // Still publish confirmation for duplicate transactions
+                    await PublishBalanceUpdateConfirmationAsync(request.TransactionId, request.TransactionType, true);
+                    
+                    return new ApiResponse<Account> { Success = true, Data = existingAccount, Message = "Transaction already processed" };
+                }
+            }
+            catch (Exception redisEx)
+            {
+                // Handle Redis unavailability gracefully - log but continue processing
+                // This avoids system downtime if Redis is temporarily unavailable
+                logger.LogWarning(redisEx, "Redis unavailability detected - proceeding with caution");
+                // Continue processing but note we're at risk of duplicate transactions
             }
 
             // Get the account
@@ -717,6 +731,11 @@ public class AccountService(
             if (account == null)
             {
                 ErrorsTotal.WithLabels("SystemBalanceUpdate").Inc();
+                logger.LogWarning("Account not found");
+                
+                // Publish failure confirmation
+                await PublishBalanceUpdateConfirmationAsync(request.TransactionId, request.TransactionType, false);
+                
                 return new ApiResponse<Account> { Success = false, Message = "Account not found", ErrorCode = "ACCOUNT_NOT_FOUND" };
             }
             
@@ -725,6 +744,10 @@ public class AccountService(
             {
                 logger.LogWarning("Invalid balance update: Amount cannot be negative");
                 ErrorsTotal.WithLabels("SystemBalanceUpdate").Inc();
+                
+                // Publish failure confirmation
+                await PublishBalanceUpdateConfirmationAsync(request.TransactionId, request.TransactionType, false);
+                
                 return new ApiResponse<Account> { Success = false, Message = "Amount cannot be negative", ErrorCode = "INVALID_AMOUNT" };
             }
             
@@ -734,6 +757,7 @@ public class AccountService(
             if (request.TransactionType.Equals("Deposit", StringComparison.OrdinalIgnoreCase))
             {
                 newBalance += request.Amount;
+                logger.LogInformation("Processing deposit operation");
             }
             else if (request.TransactionType.Equals("Withdrawal", StringComparison.OrdinalIgnoreCase))
             {
@@ -742,13 +766,24 @@ public class AccountService(
                 // Check for negative balance
                 if (newBalance < 0)
                 {
-                    logger.LogWarning("System update would result in negative balance for account");
+                    logger.LogWarning("System update would result in negative balance");
                     ErrorsTotal.WithLabels("SystemBalanceUpdate").Inc();
+                    
+                    // Publish failure confirmation
+                    await PublishBalanceUpdateConfirmationAsync(request.TransactionId, request.TransactionType, false);
+                    
                     return new ApiResponse<Account> { Success = false, Message = "Balance cannot be negative", ErrorCode = "INSUFFICIENT_FUNDS" };
                 }
+                
+                logger.LogInformation("Processing withdrawal operation");
             }
             else
             {
+                logger.LogWarning("Invalid transaction type specified");
+                
+                // Publish failure confirmation
+                await PublishBalanceUpdateConfirmationAsync(request.TransactionId, request.TransactionType, false);
+                
                 return new ApiResponse<Account> { Success = false, Message = "Invalid transaction type", ErrorCode = "INVALID_OPERATION" };
             }
             
@@ -760,10 +795,22 @@ public class AccountService(
                 account.Amount = newBalance;
                 await accountRepository.SaveChangesAsync();
                 
-                // Store the transaction ID in Redis for idempotence
-                await redisDb.StringSetAsync(redisKey, "processed", TimeSpan.FromDays(7));
+                try 
+                {
+                    // Store the transaction ID in Redis for idempotence - with error handling
+                    await redisDb.StringSetAsync(redisKey, "processed", TimeSpan.FromDays(7));
+                }
+                catch (Exception redisEx)
+                {
+                    logger.LogError(redisEx, "Failed to store transaction {TransactionId} in Redis - idempotence at risk", 
+                        request.TransactionId);
+                    // Continue - we've already updated the DB, and we shouldn't fail the transaction just because Redis is down
+                }
                 
                 await transaction.CommitAsync();
+                
+                // Publish successful confirmation AFTER successful database commit
+                await PublishBalanceUpdateConfirmationAsync(request.TransactionId, request.TransactionType, true);
                 
                 // Publish event for the balance update
                 var eventMessage = new
@@ -777,13 +824,24 @@ public class AccountService(
                     timestamp = DateTime.UtcNow.ToString("o")
                 };
                 
+                // Also publish a specific message for transaction status updates
+                var balanceUpdateCompletedMessage = new 
+                {
+                    transactionId = request.TransactionId,
+                    accountId = account.Id,
+                    newBalance = account.Amount,
+                    transactionType = request.TransactionType,
+                    completedAt = DateTime.UtcNow
+                };
+
                 try
                 {
                     eventPublisher.Publish("AccountEvents", JsonSerializer.Serialize(eventMessage));
+                    eventPublisher.Publish("BalanceUpdateCompleted", JsonSerializer.Serialize(balanceUpdateCompletedMessage));
                 }
                 catch (Exception ex)
                 {
-                    logger.LogError(ex, "Failed to publish AccountBalanceUpdated event");
+                    logger.LogError(ex, "Failed to publish event");
                     // Continue processing as this is not critical
                 }
                 
@@ -795,6 +853,10 @@ public class AccountService(
                 await transaction.RollbackAsync();
                 logger.LogError(ex, "Error processing system balance update");
                 ErrorsTotal.WithLabels("SystemBalanceUpdate").Inc();
+                
+                // Publish failure confirmation
+                await PublishBalanceUpdateConfirmationAsync(request.TransactionId, request.TransactionType, false);
+                
                 return new ApiResponse<Account> { Success = false, Message = ex.Message, ErrorCode = "PROCESSING_ERROR" };
             }
         }
@@ -802,7 +864,82 @@ public class AccountService(
         {
             logger.LogError(ex, "Unexpected error in system balance update");
             ErrorsTotal.WithLabels("SystemBalanceUpdate").Inc();
+            
+            // Publish failure confirmation
+            await PublishBalanceUpdateConfirmationAsync(request.TransactionId, request.TransactionType, false);
+            
             return new ApiResponse<Account> { Success = false, Message = "An unexpected error occurred", ErrorCode = "SYSTEM_ERROR" };
+        }
+    }
+
+    // Add new method to publish balance update confirmations
+    private async Task PublishBalanceUpdateConfirmationAsync(string transactionId, string transactionType, bool success)
+    {
+        try
+        {
+            // Extract the base transfer ID from the transaction ID
+            string transferId = transactionId;
+            if (transactionId.Contains("-withdrawal"))
+            {
+                transferId = transactionId.Replace("-withdrawal", "");
+            }
+            else if (transactionId.Contains("-deposit"))
+            {
+                transferId = transactionId.Replace("-deposit", "");
+            }
+            
+            var confirmationMessage = new
+            {
+                transferId = transferId,
+                transactionId = transactionId,
+                transactionType = transactionType,
+                success = success,
+                timestamp = DateTime.UtcNow.ToString("o")
+            };
+            
+            string messageJson = JsonSerializer.Serialize(confirmationMessage);
+            
+            // Publish to the queue that TransactionService is listening to
+            eventPublisher.Publish("BalanceUpdateConfirmation", messageJson);
+            
+            logger.LogInformation("✅ PUBLISHED balance update confirmation for transaction {TransactionId}: success={Success}, message={Message}", 
+                transactionId, success, messageJson);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "❌ FAILED to publish balance update confirmation for transaction {TransactionId}", transactionId);
+            // Don't throw - this is not critical for the balance update itself
+        }
+    }
+
+    /// <summary>
+    /// Retrieves all accounts in the system. This method is intended for service-to-service communication.
+    /// It does not check for user authorization since it's expected to be called by authenticated services.
+    /// </summary>
+    /// <returns>A list of <see cref="AccountResponse"/> objects representing all accounts in the system.</returns>
+    public async Task<List<AccountResponse>> GetAllAccountsAsServiceAsync()
+    {
+        RequestsTotal.WithLabels("GetAllAccountsAsService").Inc();
+        try
+        {
+            var accounts = await accountRepository.GetAllAccountsAsync();
+            
+            var response = accounts.Select(a => new AccountResponse
+            {
+                Id = a.Id,
+                Name = a.Name,
+                Amount = a.Amount,
+                UserId = a.UserId
+            }).ToList();
+
+            SuccessesTotal.WithLabels("GetAllAccountsAsService").Inc();
+            return response;
+        }
+        catch (Exception ex)
+        {
+            ErrorsTotal.WithLabels("GetAllAccountsAsService").Inc();
+            logger.LogError(ex, "Failed to get all accounts as service");
+            throw;
         }
     }
 }

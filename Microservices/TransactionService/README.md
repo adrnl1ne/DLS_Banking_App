@@ -130,13 +130,14 @@
            _context.Transactions.Add(transaction);
            await _context.SaveChangesAsync();
 
-           // Publish to RabbitMQ
-           var factory = new ConnectionFactory() { HostName = "localhost" };
+           // Publish to RabbitMQ for fraud checking
+           var factory = new ConnectionFactory() { HostName = "localhost" }; // Example: direct connection
            using var connection = factory.CreateConnection();
            using var channel = connection.CreateModel();
-           channel.QueueDeclare(queue: "CheckFraud", durable: false, exclusive: false, autoDelete: false, arguments: null);
+           // The queue for initial fraud checks is "CheckFraud"
+           channel.QueueDeclare(queue: "CheckFraud", durable: true, exclusive: false, autoDelete: false, arguments: null);
 
-           var message = JsonSerializer.Serialize(transaction);
+           var message = JsonSerializer.Serialize(transaction); // Ensure your Transaction model is serializable for this
            var body = Encoding.UTF8.GetBytes(message);
            channel.BasicPublish(exchange: "", routingKey: "CheckFraud", basicProperties: null, body: body);
 

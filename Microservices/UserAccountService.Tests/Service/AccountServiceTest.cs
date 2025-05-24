@@ -4,7 +4,6 @@ using UserAccountService.Service;
 using AccountService.Database.Data;
 using Microsoft.Extensions.Logging;
 using AccountService.Repository;
-using AccountService.Services;
 using StackExchange.Redis;
 using Microsoft.EntityFrameworkCore;
 using UserAccountService.Models;
@@ -15,7 +14,8 @@ using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Linq;
 using Role = UserAccountService.Models.Role;
-using Microsoft.EntityFrameworkCore.Diagnostics; // Added for InMemoryEventId
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using UserAccountService.Infrastructure.Messaging; // Added for InMemoryEventId
 
 namespace UserAccountService.Tests.Service
 {

@@ -13,6 +13,7 @@ export const getAccounts = async (userId?: number) => {
   const { data } = await apolloClient.query<{ accounts: AccountEvent[] }>({
     query: GET_ACCOUNTS,
     variables: { userId },
+    fetchPolicy: 'network-only',
   });
   return data.accounts;
 };

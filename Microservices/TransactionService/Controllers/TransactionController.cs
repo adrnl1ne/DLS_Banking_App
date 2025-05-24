@@ -51,6 +51,13 @@ public class TransactionController(ITransactionService transactionService, ILogg
             logger.LogInformation("Creating transfer");
 
             var result = await transactionService.CreateTransferAsync(request);
+
+            // Add status message to response if it exists
+            if (!string.IsNullOrEmpty(result.StatusMessage))
+            {
+                Response.Headers.Add("X-Transaction-Status", result.StatusMessage);
+            }
+
             return CreatedAtAction(nameof(GetTransaction), new { transferId = result.TransferId }, result);
         }
         catch (UnauthorizedAccessException ex)
