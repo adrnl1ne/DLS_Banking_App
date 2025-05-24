@@ -7,10 +7,10 @@ namespace TransactionService.Controllers;
 [Route("api/[controller]")]
 public class DiagnosticsController : ControllerBase
 {
-    private readonly IRabbitMqClient _rabbitMqClient;
+    private readonly IRabbitMQClient _rabbitMqClient;
     private readonly ILogger<DiagnosticsController> _logger;
 
-    public DiagnosticsController(IRabbitMqClient rabbitMqClient, ILogger<DiagnosticsController> logger)
+    public DiagnosticsController(IRabbitMQClient rabbitMqClient, ILogger<DiagnosticsController> logger)
     {
         _rabbitMqClient = rabbitMqClient;
         _logger = logger;

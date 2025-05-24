@@ -189,7 +189,7 @@ builder.Services.AddScoped<IFraudDetectionService, FraudDetectionService>();
 builder.Services.AddScoped<ITransactionRepository, TransactionRepository>();
 builder.Services.AddScoped<TransactionValidator>();
 // Register RabbitMQ client
-builder.Services.AddSingleton<IRabbitMqClient>(provider => 
+builder.Services.AddSingleton<IRabbitMQClient>(provider => 
 {
     var logger = provider.GetRequiredService<ILogger<RabbitMQClient>>();
     var configuration = provider.GetRequiredService<IConfiguration>();
@@ -207,10 +207,14 @@ builder.Services.AddScoped<AccountBalanceProcessingService>();
 
 // Register the consumer background service
 builder.Services.AddHostedService(sp => new AccountBalanceConsumerService(
-    sp.GetRequiredService<IRabbitMqClient>(),
+    sp.GetRequiredService<IRabbitMQClient>(),
     sp,
     sp.GetRequiredService<ILogger<AccountBalanceConsumerService>>()
 ));
+
+// Add to service registrations
+builder.Services.AddSingleton<FraudResultConsumer>();
+builder.Services.AddHostedService(provider => provider.GetRequiredService<FraudResultConsumer>());
 
 // Define and register metrics
 var requestsTotalCounter = Metrics.CreateCounter(
@@ -243,6 +247,8 @@ builder.Services.AddSingleton(requestsTotalCounter);
 builder.Services.AddSingleton(successesTotalCounter);
 builder.Services.AddSingleton(errorsTotalCounter);
 builder.Services.AddSingleton(transactionDurationHistogram);
+
+builder.Services.AddSingleton<IRabbitMQConfiguration, RabbitMQConfiguration>();
 
 var app = builder.Build();
 

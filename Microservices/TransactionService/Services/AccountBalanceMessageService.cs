@@ -14,12 +14,12 @@ namespace TransactionService.Services
     public class AccountBalanceMessageService : IAccountBalanceService
     {
         private readonly ILogger<AccountBalanceMessageService> _logger;
-        private readonly IRabbitMqClient _rabbitMqClient;
+        private readonly IRabbitMQClient _rabbitMqClient;
         private const string BALANCE_UPDATES_QUEUE = "AccountBalanceUpdates";
 
         public AccountBalanceMessageService(
             ILogger<AccountBalanceMessageService> logger,
-            IRabbitMqClient rabbitMqClient)
+            IRabbitMQClient rabbitMqClient)
         {
             _logger = logger;
             _rabbitMqClient = rabbitMqClient;
@@ -65,7 +65,7 @@ namespace TransactionService.Services
 
     public class AccountBalanceConsumerService : BackgroundService
     {
-        private readonly IRabbitMqClient _rabbitMqClient;
+        private readonly IRabbitMQClient _rabbitMqClient;
         private readonly IServiceProvider _serviceProvider;
         private readonly ILogger<AccountBalanceConsumerService> _logger;
         private readonly SemaphoreSlim _connectionSemaphore = new(1, 1);
@@ -74,7 +74,7 @@ namespace TransactionService.Services
         private bool _isSubscribed;
 
         public AccountBalanceConsumerService(
-            IRabbitMqClient rabbitMqClient,
+            IRabbitMQClient rabbitMqClient,
             IServiceProvider serviceProvider,
             ILogger<AccountBalanceConsumerService> logger)
         {
