@@ -1,4 +1,4 @@
-namespace AccountService.Services;
+namespace UserAccountService.Infrastructure.Messaging;
 
 public interface IEventPublisher
 {

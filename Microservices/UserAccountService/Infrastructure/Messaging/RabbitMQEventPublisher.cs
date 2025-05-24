@@ -1,6 +1,6 @@
 using System.Text;
-using AccountService.Services;
 using RabbitMQ.Client;
+using UserAccountService.Infrastructure.Messaging;
 
 namespace UserAccountService.Service;
 
