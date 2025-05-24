@@ -9,7 +9,7 @@ using RabbitMQ.Client.Exceptions; // Add this import for RabbitMQ exceptions
 
 namespace TransactionService.Infrastructure.Messaging.RabbitMQ
 {
-    public class RabbitMQClient : IRabbitMqClient, IDisposable
+    public class RabbitMQClient : IRabbitMQClient, IDisposable
     {
         private readonly ILogger<RabbitMQClient> _logger;
         private readonly string _hostName;

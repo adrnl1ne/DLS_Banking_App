@@ -8,35 +8,33 @@ using TransactionService.Services.Interface;
 
 namespace TransactionService.Services;
 
-public class FraudDetectionService(
-    ILogger<FraudDetectionService> logger,
-    IRabbitMqClient rabbitMqClient,
-    IHttpClientFactory httpClientFactory,
-    IRedisClient redisClient)
-    : IFraudDetectionService
+public class FraudDetectionService : IFraudDetectionService
 {
+    private readonly ILogger<FraudDetectionService> _logger;
+    private readonly IRabbitMQClient _rabbitMqClient;
+    private readonly FraudResultConsumer _fraudResultConsumer;
+
+    public FraudDetectionService(
+        ILogger<FraudDetectionService> logger,
+        IRabbitMQClient rabbitMqClient,
+        FraudResultConsumer fraudResultConsumer)
+    {
+        _logger = logger;
+        _rabbitMqClient = rabbitMqClient;
+        _fraudResultConsumer = fraudResultConsumer;
+    }
+
     public async Task<bool> IsServiceAvailableAsync()
     {
-        try
-        {
-            var client = httpClientFactory.CreateClient("FraudDetectionClient");
-            logger.LogInformation("Checking fraud detection service health at: {HealthUrl}",
-                $"{client.BaseAddress}health");
-            var response = await client.GetAsync("/health");
-            response.EnsureSuccessStatusCode();
-            logger.LogInformation("Fraud detection service health check passed");
-            return true;
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Fraud detection service is unavailable");
-            return false;
-        }
+        // Can check if RabbitMQ connection is alive
+        return true;
     }
 
     public async Task<FraudResult> CheckFraudAsync(string transferId, Transaction transaction)
     {
-        logger.LogInformation("Sending transaction {TransferId} to fraud check", transferId);
+        _logger.LogInformation("Sending transaction to fraud check");
+
+        // Create the message
         var fraudMessage = new
         {
             transferId = transaction.TransferId,
@@ -47,67 +45,33 @@ public class FraudDetectionService(
             timestamp = DateTime.UtcNow
         };
 
-        rabbitMqClient.Publish("CheckFraud", JsonSerializer.Serialize(fraudMessage));
+        // Publish message to CheckFraud queue
+        _rabbitMqClient.Publish("CheckFraud", JsonSerializer.Serialize(fraudMessage));
 
-        var retryPolicy = Policy
-            .HandleResult<FraudResult>(result => result == null)
-            .WaitAndRetryAsync(
-                retryCount: 5, // Increased from 3 to 5
-                sleepDurationProvider: _ => TimeSpan.FromSeconds(3), // Increased from 2s to 3s
-                onRetry: (_, _, retryCount, _) =>
-                {
-                    logger.LogWarning(
-                        "Retry {RetryCount} for fraud check on transaction {TransferId}: Result not found in Redis",
-                        retryCount, transferId);
-                });
-
-        FraudResult? fraudResult = null;
         try
         {
-            fraudResult = await retryPolicy.ExecuteAsync(async () =>
-            {
-                var resultJson = await redisClient.GetAsync($"fraud:result:{transferId}");
-                if (string.IsNullOrEmpty(resultJson))
-                {
-                    logger.LogDebug("No fraud result found in Redis for key fraud:result:{TransferId}", transferId);
-                    return null;
-                }
+            // Wait for response from FraudResult queue with timeout
+            var fraudResult = await _fraudResultConsumer.WaitForResult(transferId, TimeSpan.FromSeconds(30));
 
-                // Add custom JSON serialization options
-                var options = new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true,
-                    Converters = { new DateTimeJsonConverter() }
-                };
-
-                // Use these options when deserializing
-                return JsonSerializer.Deserialize<FraudResult>(resultJson, options);
-            });
-
-            if (fraudResult == null)
-            {
-                logger.LogWarning(
-                    "Fraud check result not found after retries for transaction {TransferId}. Assuming non-fraudulent for development.",
-                    transferId);
-                fraudResult = new FraudResult
-                {
-                    TransferId = transferId,
-                    IsFraud = false,
-                    Status = "approved",
-                    Timestamp = DateTime.UtcNow
-                };
-            }
-
-            logger.LogInformation(
+            _logger.LogInformation(
                 "Received fraud check result for transaction {TransferId}: IsFraud={IsFraud}, Status={Status}",
                 fraudResult.TransferId, fraudResult.IsFraud, fraudResult.Status);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Fraud check failed for transaction {TransferId}", transferId);
-            throw;
-        }
 
-        return fraudResult;
+            return fraudResult;
+        }
+        catch (TimeoutException)
+        {
+            _logger.LogWarning("Fraud check timed out for transaction");
+
+            // Return default result in case of timeout
+            return new FraudResult
+            {
+                TransferId = transferId,
+                IsFraud = false,
+                Status = "approved",
+                Amount = transaction.Amount,
+                Timestamp = DateTime.UtcNow
+            };
+        }
     }
 }

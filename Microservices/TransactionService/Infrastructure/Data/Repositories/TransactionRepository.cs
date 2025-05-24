@@ -59,8 +59,7 @@ namespace TransactionService.Infrastructure.Data.Repositories
         public async Task<IEnumerable<Transaction>> GetTransactionsByAccountAsync(string accountId)
         {
             // Mask account ID for logging
-            logger.LogInformation("Getting transactions for account: {AccountId}",
-                LogSanitizer.MaskTransferId(accountId));
+            logger.LogInformation("Getting transactions for account");
 
             // Get transactions where the account is either the source or the destination
             return await context.Transactions
@@ -71,8 +70,7 @@ namespace TransactionService.Infrastructure.Data.Repositories
         public async Task<Transaction> UpdateTransactionStatusAsync(string id, string status)
         {
             // Secure logging
-            logger.LogInformation("Updating transaction {TransactionId} status to: {Status}",
-                LogSanitizer.MaskTransferId(id), status);
+            logger.LogInformation("Updating transaction status");
 
             var transaction = await context.Transactions.FindAsync(id);
             if (transaction == null)

@@ -101,13 +101,12 @@ public class UserAccountClientService : IUserAccountClient
                 // If parsing fails, use generic message
             }
 
-            _logger.LogError("Failed to update balance for account. Error type: {ErrorType}, Status: {ErrorStatus}",
+            _logger.LogError("Account service returned error. Type: {ErrorType}, Status: {ErrorStatus}",
                 errorType, errorStatus);
         }
         catch
         {
-            // Fallback to very limited info if even the sanitization fails
-            _logger.LogError("Failed to update balance for account");
+            _logger.LogError("Account service request failed");
         }
     }
 }
