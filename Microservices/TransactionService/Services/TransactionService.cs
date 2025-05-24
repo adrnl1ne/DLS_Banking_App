@@ -365,6 +365,45 @@ public class TransactionService(
             throw;
         }
     }
+
+    private async Task PublishAccountBalanceUpdatesAsync(Transaction transaction)
+    {
+        try
+        {
+            // Create withdrawal message
+            var fromAccountUpdate = new AccountBalanceUpdate
+            {
+                AccountId = int.Parse(transaction.FromAccount),
+                Amount = transaction.Amount,
+                IsWithdrawal = true,  // Explicitly mark as withdrawal
+                TransactionId = transaction.Id,
+                Timestamp = DateTime.UtcNow
+            };
+            
+            rabbitMqClient.Publish("AccountBalanceUpdates", System.Text.Json.JsonSerializer.Serialize(fromAccountUpdate));
+            
+            // Create deposit message
+            var toAccountUpdate = new AccountBalanceUpdate
+            {
+                AccountId = int.Parse(transaction.ToAccount),
+                Amount = transaction.Amount,
+                IsWithdrawal = false,  // Explicitly mark as deposit
+                TransactionId = transaction.Id,
+                Timestamp = DateTime.UtcNow
+            };
+            
+            rabbitMqClient.Publish("AccountBalanceUpdates", System.Text.Json.JsonSerializer.Serialize(toAccountUpdate));
+            
+            logger.LogInformation("Balance update messages queued successfully for transaction");
+            
+            await Task.CompletedTask; // Just to satisfy the async method requirement
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to queue balance updates");
+            throw;
+        }
+    }
 }
 
 // New class in TransactionService

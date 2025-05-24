@@ -139,28 +139,34 @@ namespace TransactionService.Services
 
         private async Task<bool> ProcessMessageAsync(AccountBalanceUpdateMessage message)
         {
-            try
+            try 
             {
-                _logger.LogInformation("Processing balance update for account {AccountId}", message.AccountId);
+                _logger.LogInformation("Processing balance update");
                 
-                using var scope = _serviceProvider.CreateScope();
-                var accountBalanceProcessor = scope.ServiceProvider.GetRequiredService<AccountBalanceProcessingService>();
-                
-                var success = await accountBalanceProcessor.ProcessBalanceUpdateAsync(message);
-                
-                if (success)
+                // Create the request object based on the message
+                var request = new AccountBalanceRequest
                 {
-                    _logger.LogInformation("Successfully processed balance update");
-                    return true;
-                }
+                    Amount = message.Amount,
+                    TransactionId = message.TransactionId,
+                    TransactionType = !string.IsNullOrEmpty(message.TransactionType) ? 
+                        message.TransactionType : "Deposit",
+                    IsAdjustment = message.IsAdjustment
+                };
+
+                // Get account service from DI
+                using var scope = _serviceProvider.CreateScope();
+                var balanceService = scope.ServiceProvider.GetRequiredService<IAccountBalanceService>();
                 
-                _logger.LogWarning("Failed to process balance update");
-                return false; // Retry temporary errors
+                // Use the appropriate service to update the balance
+                await balanceService.UpdateBalanceAsync(message.AccountId, request);
+                
+                _logger.LogInformation("Successfully processed balance update");
+                return true;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing balance update message");
-                return false; // Retry on exception
+                _logger.LogError(ex, "Error processing account balance update: {Message}", ex.Message);
+                return false;
             }
         }
         
