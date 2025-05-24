@@ -159,7 +159,7 @@ public class TransactionService(
         };
 
         await repository.CreateTransactionAsync(transaction);
-        logger.LogInformation("Created pending transaction with TransferId:");
+        logger.LogInformation("Created pending transaction");
         return transaction;
     }
 
@@ -216,7 +216,7 @@ public class TransactionService(
         Account fromAccount,
         Account toAccount)
     {
-        logger.LogInformation("Queueing balance updates for transaction");
+        logger.LogInformation("Queueing balance updates");
 
         try
         {
@@ -249,8 +249,7 @@ public class TransactionService(
             rabbitMqClient.Publish("AccountBalanceUpdates", fromAccountJson);
             rabbitMqClient.Publish("AccountBalanceUpdates", toAccountJson);
             
-            logger.LogInformation("Balance update messages queued successfully for transaction", 
-                transaction.TransferId);
+            logger.LogInformation("Balance update messages queued successfully");
             
             await Task.CompletedTask;
         }
@@ -279,7 +278,7 @@ public class TransactionService(
         ITransactionRepository repository,
         Counter errorsTotal)
     {
-        logger.LogError(ex, "Error processing transaction");
+        logger.LogError("Transaction processing error occurred");
 
         try
         {
@@ -295,7 +294,7 @@ public class TransactionService(
         }
         catch (Exception updateEx)
         {
-            logger.LogError(updateEx, "Error updating transaction status to failed",
+            logger.LogError("Error updating transaction status",
                 transaction.TransferId);
         }
 
@@ -334,12 +333,12 @@ public class TransactionService(
             }
 
             // Call UserAccountService to get account details
-            logger.LogInformation("Fetching account from UserAccountService");
+            logger.LogInformation("Fetching account details");
             var account = await userAccountClient.GetAccountAsync(accountIdInt);
 
             if (account == null)
             {
-                logger.LogWarning("Account not found in UserAccountService");
+                logger.LogWarning("Account not found");
                 errorsTotal.WithLabels("GetTransactionsByAccount").Inc();
                 throw new InvalidOperationException($"Account not found.");
             }
@@ -394,13 +393,13 @@ public class TransactionService(
             
             rabbitMqClient.Publish("AccountBalanceUpdates", System.Text.Json.JsonSerializer.Serialize(toAccountUpdate));
             
-            logger.LogInformation("Balance update messages queued successfully for transaction");
+            logger.LogInformation("Balance update messages queued successfully");
             
             await Task.CompletedTask; // Just to satisfy the async method requirement
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to queue balance updates");
+            logger.LogError("Balance update queueing failed");
             throw;
         }
     }

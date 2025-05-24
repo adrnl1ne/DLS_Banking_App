@@ -22,13 +22,13 @@ namespace TransactionService.Services
             {
                 // In TransactionService, we just log receipt of the message
                 // The actual balance update happens in UserAccountService
-                _logger.LogInformation("Received balance update confirmation for transaction");
+                _logger.LogInformation("Received balance update confirmation");
                 
                 return Task.FromResult(true);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing balance update for transaction");
+                _logger.LogError("Error processing balance update");
                 return Task.FromResult(false);
             }
         }
