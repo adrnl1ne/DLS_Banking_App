@@ -202,17 +202,9 @@ builder.Services.AddSingleton<IRabbitMqClient>(provider =>
     return new RabbitMQClient(logger, host, port, username, password);
 });
 builder.Services.AddScoped<ITransactionService, TransactionService.Services.TransactionService>();
-builder.Services.AddScoped<IAccountBalanceService, AccountBalanceMessageService>();
-builder.Services.AddScoped<AccountBalanceProcessingService>();
 
 // Register the consumer background service
-builder.Services.AddHostedService(sp => new AccountBalanceConsumerService(
-    sp.GetRequiredService<IRabbitMqClient>(),
-    sp,
-    sp.GetRequiredService<ILogger<AccountBalanceConsumerService>>()
-));
 builder.Services.AddHostedService<DelayedFraudCheckConsumer>();
-builder.Services.AddHostedService<BalanceUpdateCompletedConsumer>();
 
 // Define and register metrics
 var requestsTotalCounter = Metrics.CreateCounter(

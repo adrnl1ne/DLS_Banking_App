@@ -59,21 +59,20 @@ public class FraudDetectionService(
             toAccount = transaction.ToAccount,
             amount = transaction.Amount,
             userId = transaction.UserId,
-            timestamp = DateTime.UtcNow
+            timestamp = DateTime.UtcNow,
+            isDelayed = false // This is an immediate check since the service IS available
         };
 
-        // Queue the message for fraud check - WITHOUT creating the queue
+        // Queue the message for fraud check
         try {
             string messageJson = JsonSerializer.Serialize(fraudMessage);
-            logger.LogInformation("Serialized fraud check message: {Message}", messageJson);
+            logger.LogInformation("Sending immediate fraud check message for {TransferId}", transferId);
             
-            // Use default/existing queue settings - DON'T try to declare or modify the queue
             using var channel = rabbitMqClient.CreateChannel();
             var body = System.Text.Encoding.UTF8.GetBytes(messageJson);
             var props = channel.CreateBasicProperties();
             props.Persistent = true;
             
-            // Just publish directly to the existing queue
             channel.BasicPublish(
                 exchange: "",
                 routingKey: "CheckFraud",
@@ -81,24 +80,48 @@ public class FraudDetectionService(
                 body: body
             );
             
-            logger.LogInformation("Published fraud check request for {TransferId}", transferId);
+            logger.LogInformation("Published immediate fraud check request for {TransferId}", transferId);
         }
         catch (Exception ex) {
             logger.LogError(ex, "Failed to publish fraud check request: {Error}", ex.Message);
             throw new ServiceUnavailableException("FraudDetectionService", "Failed to send fraud check request");
         }
 
-        logger.LogInformation("Creating placeholder fraud result while waiting for async processing");
+        // Wait for the result to appear in Redis (with timeout)
+        logger.LogInformation("Waiting for fraud check result for {TransferId}", transferId);
         
-        // Return a pending placeholder result - we'll process this async
-        var pendingResult = new FraudResult
+        var retryPolicy = Policy
+            .Handle<Exception>()
+            .WaitAndRetryAsync(
+                10, // Try 10 times
+                retryAttempt => TimeSpan.FromMilliseconds(500), // Wait 500ms between retries
+                (exception, timeSpan, retryCount, context) => {
+                    logger.LogDebug("Waiting for fraud result {TransferId} (attempt {RetryCount})", transferId, retryCount);
+                });
+
+        try
         {
-            TransferId = transferId,
-            IsFraud = false, 
-            Status = "pending",
-            Timestamp = DateTime.UtcNow
-        };
-        
-        return pendingResult;
+            return await retryPolicy.ExecuteAsync(async () =>
+            {
+                var result = await redisClient.GetAsync($"fraud:result:{transferId}");
+                if (string.IsNullOrEmpty(result))
+                {
+                    throw new InvalidOperationException("Fraud check result not yet available");
+                }
+                
+                logger.LogInformation("Received fraud check result for {TransferId}", transferId);
+                var options = new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true,
+                    Converters = { new DateTimeJsonConverter() }
+                };
+                return JsonSerializer.Deserialize<FraudResult>(result, options) ?? throw new InvalidOperationException();
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Timeout waiting for fraud check result for {TransferId}", transferId);
+            throw new ServiceUnavailableException("FraudDetectionService", "Timeout waiting for fraud check result");
+        }
     }
 }

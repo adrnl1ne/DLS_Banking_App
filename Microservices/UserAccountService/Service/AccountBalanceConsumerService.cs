@@ -37,18 +37,25 @@ namespace UserAccountService.Service
             // Force reconnection by setting _isConnected to false
             _isConnected = false;
             
-            // Delay initial connection to ensure RabbitMQ is ready
+            // Start with immediate connection attempt, then use longer intervals
             _reconnectTimer = new Timer(
                 async _ => await InitializeQueueAndSubscribe(), 
                 null, 
                 TimeSpan.FromSeconds(2), // Short initial delay 
-                TimeSpan.FromSeconds(5)); // Regular interval
+                TimeSpan.FromSeconds(30)); // Longer interval - only check every 30 seconds
     
             return base.StartAsync(cancellationToken);
         }
 
         private async Task InitializeQueueAndSubscribe()
         {
+            // Only try to reconnect if not already connected
+            if (_isConnected && _rabbitMqClient.IsConnected)
+            {
+                _logger.LogTrace("Already connected and subscribed to {QueueName}", QUEUE_NAME);
+                return;
+            }
+
             // Try to initialize the queue first
             try
             {
@@ -56,7 +63,6 @@ namespace UserAccountService.Service
                 
                 // Make sure the queue exists before subscribing
                 await Task.Run(() => {
-                    // First delete the queue if it exists to ensure fresh state
                     try 
                     {
                         _rabbitMqClient.EnsureQueueExists(QUEUE_NAME, true);

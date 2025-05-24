@@ -2,11 +2,11 @@ using System;
 using System.Text.Json;
 using AccountService.Database.Data;
 using AccountService.Repository;
-using AccountService.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Prometheus;
 using StackExchange.Redis;
+using UserAccountService.Infrastructure.Messaging;
 using UserAccountService.Models;
 using UserAccountService.Shared.DTO;
 
@@ -711,6 +711,10 @@ public class AccountService(
 
                     // Get the account to return in the response
                     var existingAccount = await accountRepository.GetAccountByIdAsync(accountId);
+                    
+                    // Still publish confirmation for duplicate transactions
+                    await PublishBalanceUpdateConfirmationAsync(request.TransactionId, request.TransactionType, true);
+                    
                     return new ApiResponse<Account> { Success = true, Data = existingAccount, Message = "Transaction already processed" };
                 }
             }
@@ -728,6 +732,10 @@ public class AccountService(
             {
                 ErrorsTotal.WithLabels("SystemBalanceUpdate").Inc();
                 logger.LogWarning("Account not found");
+                
+                // Publish failure confirmation
+                await PublishBalanceUpdateConfirmationAsync(request.TransactionId, request.TransactionType, false);
+                
                 return new ApiResponse<Account> { Success = false, Message = "Account not found", ErrorCode = "ACCOUNT_NOT_FOUND" };
             }
             
@@ -736,6 +744,10 @@ public class AccountService(
             {
                 logger.LogWarning("Invalid balance update: Amount cannot be negative");
                 ErrorsTotal.WithLabels("SystemBalanceUpdate").Inc();
+                
+                // Publish failure confirmation
+                await PublishBalanceUpdateConfirmationAsync(request.TransactionId, request.TransactionType, false);
+                
                 return new ApiResponse<Account> { Success = false, Message = "Amount cannot be negative", ErrorCode = "INVALID_AMOUNT" };
             }
             
@@ -756,6 +768,10 @@ public class AccountService(
                 {
                     logger.LogWarning("System update would result in negative balance");
                     ErrorsTotal.WithLabels("SystemBalanceUpdate").Inc();
+                    
+                    // Publish failure confirmation
+                    await PublishBalanceUpdateConfirmationAsync(request.TransactionId, request.TransactionType, false);
+                    
                     return new ApiResponse<Account> { Success = false, Message = "Balance cannot be negative", ErrorCode = "INSUFFICIENT_FUNDS" };
                 }
                 
@@ -764,6 +780,10 @@ public class AccountService(
             else
             {
                 logger.LogWarning("Invalid transaction type specified");
+                
+                // Publish failure confirmation
+                await PublishBalanceUpdateConfirmationAsync(request.TransactionId, request.TransactionType, false);
+                
                 return new ApiResponse<Account> { Success = false, Message = "Invalid transaction type", ErrorCode = "INVALID_OPERATION" };
             }
             
@@ -788,6 +808,9 @@ public class AccountService(
                 }
                 
                 await transaction.CommitAsync();
+                
+                // Publish successful confirmation AFTER successful database commit
+                await PublishBalanceUpdateConfirmationAsync(request.TransactionId, request.TransactionType, true);
                 
                 // Publish event for the balance update
                 var eventMessage = new
@@ -830,6 +853,10 @@ public class AccountService(
                 await transaction.RollbackAsync();
                 logger.LogError(ex, "Error processing system balance update");
                 ErrorsTotal.WithLabels("SystemBalanceUpdate").Inc();
+                
+                // Publish failure confirmation
+                await PublishBalanceUpdateConfirmationAsync(request.TransactionId, request.TransactionType, false);
+                
                 return new ApiResponse<Account> { Success = false, Message = ex.Message, ErrorCode = "PROCESSING_ERROR" };
             }
         }
@@ -837,7 +864,51 @@ public class AccountService(
         {
             logger.LogError(ex, "Unexpected error in system balance update");
             ErrorsTotal.WithLabels("SystemBalanceUpdate").Inc();
+            
+            // Publish failure confirmation
+            await PublishBalanceUpdateConfirmationAsync(request.TransactionId, request.TransactionType, false);
+            
             return new ApiResponse<Account> { Success = false, Message = "An unexpected error occurred", ErrorCode = "SYSTEM_ERROR" };
+        }
+    }
+
+    // Add new method to publish balance update confirmations
+    private async Task PublishBalanceUpdateConfirmationAsync(string transactionId, string transactionType, bool success)
+    {
+        try
+        {
+            // Extract the base transfer ID from the transaction ID
+            string transferId = transactionId;
+            if (transactionId.Contains("-withdrawal"))
+            {
+                transferId = transactionId.Replace("-withdrawal", "");
+            }
+            else if (transactionId.Contains("-deposit"))
+            {
+                transferId = transactionId.Replace("-deposit", "");
+            }
+            
+            var confirmationMessage = new
+            {
+                transferId = transferId,
+                transactionId = transactionId,
+                transactionType = transactionType,
+                success = success,
+                timestamp = DateTime.UtcNow.ToString("o")
+            };
+            
+            string messageJson = JsonSerializer.Serialize(confirmationMessage);
+            
+            // Publish to the queue that TransactionService is listening to
+            eventPublisher.Publish("BalanceUpdateConfirmation", messageJson);
+            
+            logger.LogInformation("✅ PUBLISHED balance update confirmation for transaction {TransactionId}: success={Success}, message={Message}", 
+                transactionId, success, messageJson);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "❌ FAILED to publish balance update confirmation for transaction {TransactionId}", transactionId);
+            // Don't throw - this is not critical for the balance update itself
         }
     }
 

@@ -5,7 +5,6 @@ using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using AccountService.Database.Data;
 using AccountService.Repository;
-using AccountService.Services;
 using UserAccountService.Repository;
 using UserAccountService.Service; // Changed from UserAccountService.Services
 using Microsoft.OpenApi.Models;
@@ -13,6 +12,7 @@ using Prometheus;
 using StackExchange.Redis;
 using Microsoft.Extensions.Logging;
 using UserAccountService.Infrastructure.Messaging;
+using RabbitMqEventPublisher = UserAccountService.Service.RabbitMqEventPublisher;
 
 var builder = WebApplication.CreateBuilder(args);
 
