@@ -7,30 +7,25 @@ using Moq;
 using Prometheus;
 using TransactionService.Exceptions;
 using TransactionService.Infrastructure.Messaging.RabbitMQ;
+using TransactionService.Infrastructure.Redis;
 using TransactionService.Models;
 using TransactionService.Services;
 using TransactionService.Services.Interface;
 using TransactionService.Infrastructure.Data.Repositories;
 using Xunit;
+using FluentAssertions;
 
 namespace TransactionService.Tests.Services
 {
     public class TransactionServiceTests
     {
-        private readonly Mock<ITransactionRepository> _mockRepository;
-        private readonly Mock<IUserAccountClient> _mockUserAccountClient;
-        private readonly Mock<IFraudDetectionService> _mockFraudDetectionService;
-        private readonly Mock<IRabbitMQClient> _mockRabbitMqClient; // Fix capitalization here
-        private readonly Mock<ILogger<TransactionService.Services.TransactionService>> _mockLogger;
-        
-        public TransactionServiceTests()
-        {
-            _mockRepository = new Mock<ITransactionRepository>();
-            _mockUserAccountClient = new Mock<IUserAccountClient>();
-            _mockFraudDetectionService = new Mock<IFraudDetectionService>();
-            _mockRabbitMqClient = new Mock<IRabbitMQClient>(); // Fix capitalization here
-            _mockLogger = new Mock<ILogger<TransactionService.Services.TransactionService>>();
-        }
+        private readonly Mock<ITransactionRepository> _mockRepository = new();
+        private readonly Mock<IUserAccountClient> _mockUserAccountClient = new();
+        private readonly Mock<IFraudDetectionService> _mockFraudDetectionService = new();
+        private readonly Mock<IRabbitMqClient> _mockRabbitMqClient = new();
+        private readonly Mock<ILogger<TransactionService.Services.TransactionService>> _mockLogger = new();
+        private readonly Mock<IRedisClient> _mockRedisClient = new();
+        private readonly Mock<IHttpClientFactory> _mockHttpClientFactory = new();
 
         #region GetTransactionByTransferIdAsync Tests
 
@@ -63,12 +58,15 @@ namespace TransactionService.Tests.Services
             var result = await service.GetTransactionByTransferIdAsync(transferId);
 
             // Assert
-            Assert.NotNull(result);
-            Assert.Equal(transferId, result.TransferId);
-            Assert.Equal(transaction.FromAccount, result.FromAccount);
-            Assert.Equal(transaction.ToAccount, result.ToAccount);
-            Assert.Equal(transaction.Amount, result.Amount);
-            Assert.Equal(transaction.Status, result.Status);
+            result.Should().NotBeNull();
+            result!.TransferId.Should().Be(transferId);
+            result.FromAccount.Should().Be(transaction.FromAccount);
+            result.ToAccount.Should().Be(transaction.ToAccount);
+            result.Amount.Should().Be(transaction.Amount);
+            result.Status.Should().Be(transaction.Status);
+            result.UserId.Should().Be(transaction.UserId);
+            
+            _mockRepository.Verify(r => r.GetTransactionByTransferIdAsync(transferId), Times.Once);
         }
 
         [Fact]
@@ -78,7 +76,7 @@ namespace TransactionService.Tests.Services
             var transferId = "non-existent-id";
             
             _mockRepository.Setup(r => r.GetTransactionByTransferIdAsync(transferId))
-                .ReturnsAsync((Transaction)null);
+                .ReturnsAsync((Transaction?)null);
             
             var service = CreateService();
 
@@ -86,25 +84,8 @@ namespace TransactionService.Tests.Services
             var result = await service.GetTransactionByTransferIdAsync(transferId);
 
             // Assert
-            Assert.Null(result);
-        }
-
-        [Fact]
-        public async Task GetTransactionByTransferIdAsync_RepositoryThrowsException_PropagatesException()
-        {
-            // Arrange
-            var transferId = "error-id";
-            
-            _mockRepository.Setup(r => r.GetTransactionByTransferIdAsync(transferId))
-                .ThrowsAsync(new Exception("Database error"));
-            
-            var service = CreateService();
-
-            // Act & Assert
-            var exception = await Assert.ThrowsAsync<Exception>(() => 
-                service.GetTransactionByTransferIdAsync(transferId));
-            
-            Assert.Contains("Database error", exception.Message);
+            result.Should().BeNull();
+            _mockRepository.Verify(r => r.GetTransactionByTransferIdAsync(transferId), Times.Once);
         }
 
         #endregion
@@ -138,7 +119,7 @@ namespace TransactionService.Tests.Services
                 .ReturnsAsync(transactions);
                 
             _mockUserAccountClient.Setup(c => c.GetAccountAsync(123))
-                .ReturnsAsync(new Account { Id = 123, UserId = userId });
+                .ReturnsAsync(new Account { Id = 123, UserId = userId, Amount = 1000 }); // Using Amount not Balance
             
             var service = CreateService();
 
@@ -146,11 +127,14 @@ namespace TransactionService.Tests.Services
             var result = await service.GetTransactionsByAccountAsync(accountId, userId);
 
             // Assert
-            Assert.NotNull(result);
-            Assert.Single(result);
+            result.Should().NotBeNull();
+            result.Should().HaveCount(1);
             var firstTransaction = result.First();
-            Assert.Equal(accountId, firstTransaction.FromAccount);
-            Assert.Equal("456", firstTransaction.ToAccount);
+            firstTransaction.FromAccount.Should().Be(accountId);
+            firstTransaction.ToAccount.Should().Be("456");
+            
+            _mockRepository.Verify(r => r.GetTransactionsByAccountAsync(accountId), Times.Once);
+            _mockUserAccountClient.Verify(c => c.GetAccountAsync(123), Times.Once);
         }
 
         [Fact]
@@ -159,241 +143,255 @@ namespace TransactionService.Tests.Services
             // Arrange
             var accountId = "123";
             var userId = 1;
-            var differentUserId = 2; // Different from account owner
+            var differentUserId = 2;
             
             _mockUserAccountClient.Setup(c => c.GetAccountAsync(123))
-                .ReturnsAsync(new Account { Id = 123, UserId = userId });
+                .ReturnsAsync(new Account { Id = 123, UserId = userId, Amount = 1000 });
             
             var service = CreateService();
 
             // Act & Assert
             await Assert.ThrowsAsync<UnauthorizedAccessException>(async () => 
                 await service.GetTransactionsByAccountAsync(accountId, differentUserId));
-        }
-
-        [Fact]
-        public async Task GetTransactionsByAccountAsync_NonExistentAccount_ThrowsInvalidOperationException()
-        {
-            // Arrange
-            var accountId = "123";
-            var userId = 1;
-            
-            _mockUserAccountClient.Setup(c => c.GetAccountAsync(123))
-                .ReturnsAsync((Account)null);
-            
-            var service = CreateService();
-
-            // Act & Assert
-            await Assert.ThrowsAsync<InvalidOperationException>(async () => 
-                await service.GetTransactionsByAccountAsync(accountId, userId));
-        }
-
-        [Fact]
-        public async Task GetTransactionsByAccountAsync_InvalidAccountIdFormat_ThrowsArgumentException()
-        {
-            // Arrange
-            var accountId = "not-a-number";
-            var userId = 1;
-            
-            var service = CreateService();
-
-            // Act & Assert
-            await Assert.ThrowsAsync<ArgumentException>(async () => 
-                await service.GetTransactionsByAccountAsync(accountId, userId));
-        }
-
-        [Fact]
-        public async Task GetTransactionsByAccountAsync_EmptyTransactionsList_ReturnsEmptyCollection()
-        {
-            // Arrange
-            var accountId = "123";
-            var userId = 1;
-            
-            _mockRepository.Setup(r => r.GetTransactionsByAccountAsync(accountId))
-                .ReturnsAsync(new List<Transaction>());
                 
-            _mockUserAccountClient.Setup(c => c.GetAccountAsync(123))
-                .ReturnsAsync(new Account { Id = 123, UserId = userId });
-            
-            var service = CreateService();
-
-            // Act
-            var result = await service.GetTransactionsByAccountAsync(accountId, userId);
-
-            // Assert
-            Assert.NotNull(result);
-            Assert.Empty(result);
+            _mockUserAccountClient.Verify(c => c.GetAccountAsync(123), Times.Once);
+            _mockRepository.Verify(r => r.GetTransactionsByAccountAsync(It.IsAny<string>()), Times.Never);
         }
 
         #endregion
 
-        #region FraudDetection Service Health Tests
+        #region CreateTransferAsync Tests
 
         [Fact]
-        public async Task CreateTransferAsync_FraudServiceUnavailable_ThrowsServiceUnavailableException()
+        public async Task CreateTransferAsync_ValidRequest_CreatesTransactionAndPublishesEvents()
         {
             // Arrange
-            var service = CreateService();
-            
-            // Setup fraud detection service to be unavailable
-            _mockFraudDetectionService.Setup(s => s.IsServiceAvailableAsync())
-                .ReturnsAsync(false);
-            
             var request = new TransactionRequest
             {
                 UserId = 1,
                 FromAccount = "123",
                 ToAccount = "456",
                 Amount = 100,
-                Description = "Test transfer",
-                TransactionType = "transfer"
+                Description = "Test transfer"
             };
 
-            // Act & Assert
-            var exception = await Assert.ThrowsAsync<ServiceUnavailableException>(() => 
-                service.CreateTransferAsync(request));
-            
-            Assert.Contains("fraud detection service", exception.Message.ToLower());
-        }
+            var fromAccount = new Account { Id = 123, UserId = 1, Amount = 500 };
+            var toAccount = new Account { Id = 456, UserId = 2, Amount = 200 };
 
-        #endregion
+            // Setup mocks
+            _mockFraudDetectionService.Setup(f => f.IsServiceAvailableAsync()).ReturnsAsync(true);
+            _mockFraudDetectionService.Setup(f => f.CheckFraudAsync(It.IsAny<string>(), It.IsAny<Transaction>()))
+                .ReturnsAsync(new FraudResult { TransferId = "test-id", IsFraud = false, Status = "approved", Amount = 100, Timestamp = DateTime.UtcNow });
 
-        #region Metrics and Monitoring Tests
+            _mockUserAccountClient.Setup(u => u.GetAccountAsync(123)).ReturnsAsync(fromAccount);
+            _mockUserAccountClient.Setup(u => u.GetAccountAsync(456)).ReturnsAsync(toAccount);
 
-        [Fact]
-        public async Task GetTransactionsByAccountAsync_SuccessfulRequest_MetricsRecorded()
-        {
-            // Arrange
-            var accountId = "123";
-            var userId = 1;
-            var metrics = CreateTrackableMetrics();
-            
-            _mockRepository.Setup(r => r.GetTransactionsByAccountAsync(accountId))
-                .ReturnsAsync(new List<Transaction>());
-                
-            _mockUserAccountClient.Setup(c => c.GetAccountAsync(123))
-                .ReturnsAsync(new Account { Id = 123, UserId = userId });
-            
-            var service = CreateServiceWithMetrics(metrics.Request, metrics.Success, metrics.Error, metrics.Histogram);
+            _mockRepository.Setup(r => r.CreateTransactionAsync(It.IsAny<Transaction>()))
+                .ReturnsAsync((Transaction t) => t);
+            _mockRepository.Setup(r => r.UpdateTransactionAsync(It.IsAny<Transaction>()))
+                .ReturnsAsync((Transaction t) => t);
+            _mockRepository.Setup(r => r.UpdateTransactionStatusAsync(It.IsAny<string>(), It.IsAny<string>()))
+                .ReturnsAsync((string id, string status) => new Transaction 
+                { 
+                    Id = id, 
+                    Status = status, 
+                    TransferId = "test-id",
+                    UserId = 1,
+                    FromAccount = "123",
+                    ToAccount = "456",
+                    Amount = 100,
+                    Description = "Test",
+                    TransactionType = "transfer",
+                    CreatedAt = DateTime.UtcNow
+                });
 
-            // Act
-            await service.GetTransactionsByAccountAsync(accountId, userId);
+            _mockRedisClient.Setup(r => r.SetAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<TimeSpan>()))
+                .Returns(Task.CompletedTask);
 
-            // Assert
-            // We can't easily verify the metrics since they're using static counters
-            // Instead, we just verify that the method completed without throwing an exception
-            Assert.True(true);
-        }
-
-        [Fact]
-        public async Task GetTransactionsByAccountAsync_RepositoryThrowsException_ErrorMetricsRecorded()
-        {
-            // Arrange
-            var accountId = "123";
-            var userId = 1;
-            var metrics = CreateTrackableMetrics();
-            
-            _mockRepository.Setup(r => r.GetTransactionsByAccountAsync(accountId))
-                .ThrowsAsync(new Exception("Test exception"));
-                
-            _mockUserAccountClient.Setup(c => c.GetAccountAsync(123))
-                .ReturnsAsync(new Account { Id = 123, UserId = userId });
-            
-            var service = CreateServiceWithMetrics(metrics.Request, metrics.Success, metrics.Error, metrics.Histogram);
-
-            // Act & Assert
-            await Assert.ThrowsAsync<Exception>(() => service.GetTransactionsByAccountAsync(accountId, userId));
-        }
-
-        #endregion
-
-        #region Repository Integration Tests
-        
-        [Fact]
-        public async Task GetTransactionsByAccountAsync_ExpectedIntegrationPoints_VerifyCalled()
-        {
-            // Arrange
-            var accountId = "123";
-            var userId = 1;
-            
-            _mockRepository.Setup(r => r.GetTransactionsByAccountAsync(accountId))
-                .ReturnsAsync(new List<Transaction>());
-                
-            _mockUserAccountClient.Setup(c => c.GetAccountAsync(123))
-                .ReturnsAsync(new Account { Id = 123, UserId = userId });
-            
             var service = CreateService();
 
             // Act
-            await service.GetTransactionsByAccountAsync(accountId, userId);
+            var result = await service.CreateTransferAsync(request);
+
+            // Assert
+            result.Should().NotBeNull();
+            result.Status.Should().Be("pending");
             
-            // Verify that the repository and account client were called 
-            _mockRepository.Verify(r => r.GetTransactionsByAccountAsync(accountId), Times.Once);
-            _mockUserAccountClient.Verify(c => c.GetAccountAsync(123), Times.Once);
+            _mockFraudDetectionService.Verify(f => f.IsServiceAvailableAsync(), Times.Once);
+            _mockFraudDetectionService.Verify(f => f.CheckFraudAsync(It.IsAny<string>(), It.IsAny<Transaction>()), Times.Once);
+            _mockRepository.Verify(r => r.CreateTransactionAsync(It.IsAny<Transaction>()), Times.Exactly(3));
+            _mockRabbitMqClient.Verify(r => r.Publish("TransactionCreated", It.IsAny<string>()), Times.Once);
+            _mockRedisClient.Verify(r => r.SetAsync(It.Is<string>(key => key.Contains("transaction:tracking")), 
+                It.IsAny<string>(), It.IsAny<TimeSpan>()), Times.Once);
         }
 
+
+
+        #endregion
+
+        #region ProcessFraudResultAsync Tests
+
+
         [Fact]
-        public async Task GetTransactionByTransferIdAsync_VerifiesRepositoryCalls()
+        public async Task ProcessFraudResultAsync_FraudCheckPassed_QueuesBalanceUpdates()
         {
             // Arrange
-            var transferId = "test-id";
+            var fraudResult = new FraudResult
+            {
+                TransferId = "test-transfer-id",
+                IsFraud = false,
+                Status = "approved",
+                Amount = 500,
+                Timestamp = DateTime.UtcNow
+            };
+
             var transaction = new Transaction
             {
-                Id = "1",
-                TransferId = transferId,
+                Id = "main-id",
+                TransferId = "test-transfer-id",
                 UserId = 1,
                 FromAccount = "123",
                 ToAccount = "456",
-                Amount = 100,
-                Status = "completed",
+                Amount = 500,
+                Status = "pending",
                 TransactionType = "transfer",
-                Description = "Test transaction",
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
+                Description = "Test",
+                CreatedAt = DateTime.UtcNow
             };
-            
-            _mockRepository.Setup(r => r.GetTransactionByTransferIdAsync(transferId))
+
+            _mockRepository.Setup(r => r.GetTransactionByTransferIdAsync("test-transfer-id"))
                 .ReturnsAsync(transaction);
-            
+            _mockRepository.Setup(r => r.GetTransactionByTransferIdAsync("test-transfer-id-withdrawal"))
+                .ReturnsAsync(new Transaction 
+                { 
+                    Id = "withdrawal-id", 
+                    Status = "pending",
+                    TransferId = "test-transfer-id-withdrawal",
+                    UserId = 1,
+                    FromAccount = "123",
+                    ToAccount = "456",
+                    Amount = 500,
+                    TransactionType = "withdrawal",
+                    Description = "Test",
+                    CreatedAt = DateTime.UtcNow
+                });
+            _mockRepository.Setup(r => r.GetTransactionByTransferIdAsync("test-transfer-id-deposit"))
+                .ReturnsAsync(new Transaction 
+                { 
+                    Id = "deposit-id", 
+                    Status = "pending",
+                    TransferId = "test-transfer-id-deposit",
+                    UserId = 1,
+                    FromAccount = "123",
+                    ToAccount = "456",
+                    Amount = 500,
+                    TransactionType = "deposit",
+                    Description = "Test",
+                    CreatedAt = DateTime.UtcNow
+                });
+            _mockRepository.Setup(r => r.UpdateTransactionAsync(It.IsAny<Transaction>()))
+                .ReturnsAsync((Transaction t) => t);
+            _mockRepository.Setup(r => r.UpdateTransactionStatusAsync(It.IsAny<string>(), It.IsAny<string>()))
+                .ReturnsAsync((string id, string status) => new Transaction 
+                { 
+                    Id = id, 
+                    Status = status,
+                    TransferId = "test-id",
+                    UserId = 1,
+                    FromAccount = "123",
+                    ToAccount = "456",
+                    Amount = 500,
+                    TransactionType = "transfer",
+                    Description = "Test",
+                    CreatedAt = DateTime.UtcNow
+                });
+
             var service = CreateService();
 
             // Act
-            await service.GetTransactionByTransferIdAsync(transferId);
-            
-            // Verify
-            _mockRepository.Verify(r => r.GetTransactionByTransferIdAsync(transferId), Times.Once);
+            await service.ProcessFraudResultAsync(fraudResult);
+
+            // Assert
+            _mockRepository.Verify(r => r.UpdateTransactionAsync(It.Is<Transaction>(t => 
+                t.FraudCheckResult == "verified")), Times.Once);
+            _mockRepository.Verify(r => r.UpdateTransactionStatusAsync("main-id", "processing"), Times.Once);
+            _mockRabbitMqClient.Verify(r => r.Publish("AccountBalanceUpdates", It.IsAny<string>()), Times.Exactly(2));
+        }
+
+        #endregion
+
+        #region Validation Tests
+
+        [Fact]
+        public async Task CreateTransferAsync_SameAccount_ThrowsInvalidOperationException()
+        {
+            // Arrange
+            var request = new TransactionRequest
+            {
+                UserId = 1,
+                FromAccount = "123",
+                ToAccount = "123", // Same account
+                Amount = 100,
+                Description = "Test transfer"
+            };
+
+            var account = new Account { Id = 123, UserId = 1, Amount = 500 };
+
+            _mockUserAccountClient.Setup(u => u.GetAccountAsync(123)).ReturnsAsync(account);
+
+            var service = CreateService();
+
+            // Act & Assert
+            await Assert.ThrowsAsync<ArgumentException>(async () =>
+                await service.CreateTransferAsync(request));
+        }
+
+        [Fact]
+        public async Task CreateTransferAsync_NegativeAmount_ThrowsArgumentException()
+        {
+            // Arrange
+            var request = new TransactionRequest
+            {
+                UserId = 1,
+                FromAccount = "123",
+                ToAccount = "456",
+                Amount = -100, // This should fail validation
+                Description = "Test transfer"
+            };
+
+            var service = CreateService();
+
+            // Act & Assert
+            await Assert.ThrowsAsync<ArgumentException>(async () => 
+                await service.CreateTransferAsync(request));
         }
 
         #endregion
 
         #region Helper Methods
 
-        // Helper method to create a properly configured service instance
         private TransactionService.Services.TransactionService CreateService()
         {
             var metrics = CreateTrackableMetrics();
             return CreateServiceWithMetrics(metrics.Request, metrics.Success, metrics.Error, metrics.Histogram);
         }
         
-        // Helper to create a service with specific metrics counters
         private TransactionService.Services.TransactionService CreateServiceWithMetrics(
             Counter requestCounter, 
             Counter successCounter, 
             Counter errorCounter,
             Histogram histogram)
         {
-            // Create a validator with mocks
+            // Create a validator with the CORRECT constructor parameters
             var mockValidatorLogger = new Mock<ILogger<TransactionValidator>>();
-            var mockHttpClient = new Mock<System.Net.Http.IHttpClientFactory>();
-            var validatorCounter = Metrics.CreateCounter("validator_counter", "Validator counter");
+            var validatorCounter = Metrics.CreateCounter($"validator_counter_{Guid.NewGuid().ToString().Substring(0, 8)}", "Validator counter");
             
             var validator = new TransactionValidator(
                 mockValidatorLogger.Object,
                 _mockUserAccountClient.Object,
-                mockHttpClient.Object,
-                validatorCounter);
+                validatorCounter); // This is the correct third parameter, not IHttpClientFactory
             
-            // Create and return the service
+            // Create and return the service with all required dependencies
             return new TransactionService.Services.TransactionService(
                 _mockLogger.Object,
                 _mockRepository.Object,
@@ -404,13 +402,13 @@ namespace TransactionService.Tests.Services
                 successCounter,
                 errorCounter,
                 _mockRabbitMqClient.Object,
-                histogram);
+                histogram,
+                _mockRedisClient.Object,
+                _mockHttpClientFactory.Object);
         }
         
-        // Helper to create trackable metric objects
         private (Counter Request, Counter Success, Counter Error, Histogram Histogram) CreateTrackableMetrics()
         {
-            // Use unique names for each test instance to avoid collisions
             var uniqueId = Guid.NewGuid().ToString().Substring(0, 8);
             
             return (

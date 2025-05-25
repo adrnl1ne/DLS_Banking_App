@@ -79,10 +79,27 @@ def get_channel():
         rabbitmq_connection = get_rabbitmq_connection()
         rabbitmq_channel = rabbitmq_connection.channel()
         
-        # Declare all queues we'll be using
-        rabbitmq_channel.queue_declare(queue="FraudResult")
-        rabbitmq_channel.queue_declare(queue="FraudEvents")
-        # Note: Removed TransactionServiceQueue since we'll use Redis instead
+        # Declare all queues we'll be using - create them if they don't exist
+        try:
+            # Use CONSISTENT durable settings - all queues should be durable for reliability
+            rabbitmq_channel.queue_declare(queue="FraudResult", durable=True)  # Changed to durable=True
+            logging.info("Declared FraudResult queue as durable=True")
+            
+            rabbitmq_channel.queue_declare(queue="FraudEvents", durable=True)
+            logging.info("Declared FraudEvents queue as durable=True")
+                
+            rabbitmq_channel.queue_declare(queue="FraudCheckResults", durable=True)
+            logging.info("Declared FraudCheckResults queue as durable=True")
+            
+        except Exception as e:
+            logging.error(f"Error declaring queues: {e}")
+            # If there's a queue mismatch, close the channel and recreate it
+            try:
+                rabbitmq_channel.close()
+                rabbitmq_channel = rabbitmq_connection.channel()
+                logging.info("Recreated channel after queue declaration error")
+            except Exception as close_ex:
+                logging.error(f"Error recreating channel: {close_ex}")
         
     return rabbitmq_channel
 
@@ -93,9 +110,13 @@ def callback(ch, method, properties, body):
         transfer_id = message["transferId"]
         amount = message["amount"]
 
+        # DEBUG: Log the entire incoming message to see what we're getting
+        logging.info(f"🔍 PROCESSING FRAUD CHECK: TransferID={transfer_id}, Amount=${amount}")
+        logging.info(f"📨 FULL MESSAGE: {json.dumps(message, indent=2)}")
+
         # Check for idempotence using Redis
         if redis_client.get(f"fraud:transfer:{transfer_id}"):
-            logging.info(f"Duplicate message for transfer {transfer_id}, skipping processing")
+            logging.info(f"⚠️ Duplicate message for transfer {transfer_id}, skipping processing")
             duplicate_messages.inc()
             duplicate_fraud_checks.inc()
             ch.basic_ack(delivery_tag=method.delivery_tag)
@@ -137,39 +158,137 @@ def callback(ch, method, properties, body):
             fraud_detections.inc()
 
         # Log the result to console only
-        logging.info(f"Transfer {transfer_id}: Amount=${amount}, Fraud={is_fraud}, Status={status}")
+        logging.info(f"🔍 FRAUD CHECK RESULT: Transfer {transfer_id}, Amount=${amount}, Fraud={is_fraud}, Status={status}")
 
         # Use the shared channel to publish results
         channel = get_channel()
         
-        # Publish to FraudResult queue (for monitoring/reporting)
-        channel.basic_publish(
-            exchange="",
-            routing_key="FraudResult",
-            body=json.dumps(result),
-        )
+        # Check if this is a delayed check that needs special handling
+        is_delayed = message.get("isDelayed", False)
         
-        # Publish to QueryService via FraudEvents queue
-        channel.basic_publish(
-            exchange="",
-            routing_key="FraudEvents",
-            body=json.dumps({
-                "event_type": "FraudCheckCompleted",
+        logging.info(f"📤 PUBLISHING fraud result for {transfer_id}, isDelayed={is_delayed}")
+        
+        # Always publish to QueryService via FraudEvents queue (for monitoring/reporting)
+        try:
+            channel.basic_publish(
+                exchange="",
+                routing_key="FraudEvents",
+                body=json.dumps({
+                    "event_type": "FraudCheckCompleted",
+                    "transferId": transfer_id,
+                    "isFraud": is_fraud,
+                    "status": status,
+                    "amount": amount,
+                    "timestamp": result["timestamp"]
+                }),
+                properties=pika.BasicProperties(delivery_mode=2)  # Make message persistent since queue is durable
+            )
+            logging.info(f"Published FraudCheckCompleted event to FraudEvents queue for {transfer_id}")
+        except Exception as e:
+            logging.error(f"Failed to publish to FraudEvents queue: {e}")
+
+        # For ALL fraud checks (delayed or immediate), publish to FraudResult queue
+        try:
+            # Make sure we have a valid channel before publishing
+            channel = get_channel()
+            
+            # Ensure the queue exists before publishing
+            try:
+                channel.queue_declare(queue="FraudResult", durable=True)  # Changed to durable=True
+                logging.info(f"✅ Ensured FraudResult queue exists for {transfer_id}")
+            except Exception as queue_ex:
+                logging.warning(f"⚠️ Could not declare FraudResult queue: {queue_ex}, will try to publish anyway")
+            
+            # Use the correct format expected by TransactionService
+            fraud_result_message = {
+                "transferId": transfer_id,  # Use camelCase
+                "isFraud": is_fraud,
+                "status": status,
+                "amount": amount,
+                "timestamp": result["timestamp"]
+            }
+            
+            channel.basic_publish(
+                exchange="",
+                routing_key="FraudResult",
+                body=json.dumps(fraud_result_message),
+                properties=pika.BasicProperties(delivery_mode=2)  # Make message persistent since queue is durable
+            )
+            logging.info(f"✅ PUBLISHED fraud result for {transfer_id} to FraudResult queue: {fraud_result_message}")
+        except Exception as e:
+            logging.error(f"❌ FAILED to publish fraud result for {transfer_id}: {e}")
+
+        # If this was a delayed check, ALWAYS publish to FraudCheckResults queue
+        if is_delayed:
+            delayed_result_message = {
+                "event_type": "DelayedFraudCheckCompleted",
                 "transferId": transfer_id,
                 "isFraud": is_fraud,
                 "status": status,
                 "amount": amount,
                 "timestamp": result["timestamp"]
-            }),
-        )
+            }
+            
+            try:
+                # Make sure we have a valid channel before publishing
+                channel = get_channel()
+                
+                # Ensure the queue exists before publishing
+                try:
+                    channel.queue_declare(queue="FraudCheckResults", durable=True)
+                    logging.info(f"Ensured FraudCheckResults queue exists for {transfer_id}")
+                except Exception as queue_ex:
+                    logging.warning(f"Could not declare FraudCheckResults queue: {queue_ex}, will try to publish anyway")
+                
+                channel.basic_publish(
+                    exchange="",
+                    routing_key="FraudCheckResults",
+                    body=json.dumps(delayed_result_message),
+                    properties=pika.BasicProperties(delivery_mode=2)
+                )
+                logging.info(f"SUCCESS: Published delayed fraud check result for {transfer_id} to FraudCheckResults queue. Message: {delayed_result_message}")
+            except Exception as e:
+                logging.error(f"FAILED to publish delayed fraud check result for {transfer_id}: {e}")
+        else:
+            # For immediate checks, publish to FraudResult queue (TransactionService listens here)
+            try:
+                # Make sure we have a valid channel before publishing
+                channel = get_channel()
+                
+                # Ensure the queue exists before publishing
+                try:
+                    channel.queue_declare(queue="FraudResult", durable=True)  # Changed to durable=True
+                    logging.info(f"Ensured FraudResult queue exists for {transfer_id}")
+                except Exception as queue_ex:
+                    logging.warning(f"Could not declare FraudResult queue: {queue_ex}, will try to publish anyway")
+                
+                # Use the correct format expected by TransactionService
+                fraud_result_message = {
+                    "transferId": transfer_id,  # Use camelCase
+                    "isFraud": is_fraud,
+                    "status": status,
+                    "amount": amount,
+                    "timestamp": result["timestamp"]
+                }
+                
+                channel.basic_publish(
+                    exchange="",
+                    routing_key="FraudResult",
+                    body=json.dumps(fraud_result_message),
+                    properties=pika.BasicProperties(delivery_mode=2)  # Make message persistent since queue is durable
+                )
+                logging.info(f"Published immediate fraud check result for {transfer_id} to FraudResult queue: {fraud_result_message}")
+            except Exception as e:
+                logging.error(f"Failed to publish immediate fraud check result for {transfer_id}: {e}")
 
         # Acknowledge the message
         ch.basic_ack(delivery_tag=method.delivery_tag)
+        logging.info(f"✅ ACKNOWLEDGED fraud check message for {transfer_id}")
 
     except Exception as e:
         processing_errors.inc()
-        error_logger.error(f"Error processing message: {str(e)}")
-        logging.error(f"Error processing message: {str(e)}")
+        error_logger.error(f"💥 Error processing message: {str(e)}")
+        logging.error(f"💥 Error processing message: {str(e)}")
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
 # Update the fraud result format with the missing required fields:
@@ -196,7 +315,8 @@ def start_consuming():
             channel = connection.channel()
             
             # Make sure the queue exists
-            channel.queue_declare(queue="CheckFraud", durable=False, exclusive=False, auto_delete=False)
+            channel.queue_declare(queue="CheckFraud", durable=True)
+            logging.info("Declared CheckFraud queue as durable=True")
             
             # Set prefetch count to 1 for fair dispatch
             channel.basic_qos(prefetch_count=1)

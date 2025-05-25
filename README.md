@@ -48,6 +48,9 @@ PROMETHEUS_PORT=9091
 
 # Service token for TransactionService
 TRANSACTION_SERVICE_TOKEN=XXX
+
+# Service token for UserAccountService
+QUERY_SERVICE_TOKEN=XXX
 ```
 
 ### 3. Run the application:

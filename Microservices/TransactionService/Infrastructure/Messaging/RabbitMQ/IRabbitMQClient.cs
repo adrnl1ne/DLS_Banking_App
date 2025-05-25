@@ -1,14 +1,23 @@
 using System;
 using System.Threading.Tasks;
+using RabbitMQ.Client;
 
 namespace TransactionService.Infrastructure.Messaging.RabbitMQ
 {
-    public interface IRabbitMQClient
+    public interface IRabbitMqClient : IDisposable
     {
         bool IsConnected { get; }
+        
         void EnsureConnection();
-        void Publish(string queue, string message);
-        void Subscribe(string queue, Action<string> callback);
-        void Subscribe<T>(string queue, Func<T, Task<bool>> callback) where T : class;
+        
+        // Add this method to create a raw channel for advanced operations
+        IModel CreateChannel();
+        
+        void DeclareQueue(string queueName, bool durable = true, bool exclusive = false, bool autoDelete = false);
+        
+        void Publish(string queueName, string message);
+
+        void Subscribe<T>(string queueName, Func<T, Task<bool>> handler) where T : class;
+        
     }
 }

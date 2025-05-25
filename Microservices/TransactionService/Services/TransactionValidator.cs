@@ -8,18 +8,18 @@ namespace TransactionService.Services;
 public class TransactionValidator(
     ILogger<TransactionValidator> logger,
     IUserAccountClient userAccountClient,
-    IHttpClientFactory httpClientFactory,
     Counter errorsTotal)
 {
-    public async Task<bool> IsUserAccountServiceAvailableAsync()
-    {
-        // We always return true to allow queueing when UserAccountService is down
-        logger.LogInformation("Skipping UserAccountService availability check to allow transaction queueing");
-        return true;
-    }
-
     public async Task<(Account FromAccount, Account ToAccount)> ValidateTransferRequestAsync(TransactionRequest request)
     {
+        // Validate amount is positive
+        if (request.Amount <= 0)
+        {
+            logger.LogWarning("Invalid amount: {Amount}", request.Amount);
+            errorsTotal.WithLabels("CreateTransfer").Inc();
+            throw new ArgumentException("Amount must be greater than zero");
+        }
+
         // Parse account IDs to integers
         if (!int.TryParse(request.FromAccount, out int fromAccountId) ||
             !int.TryParse(request.ToAccount, out int toAccountId))
@@ -45,8 +45,7 @@ public class TransactionValidator(
                 sleepDurationProvider: _ => TimeSpan.FromSeconds(1),
                 onRetry: (exception, _, retryCount, _) =>
                 {
-                    logger.LogWarning("Retry {RetryCount} for user account service call due to {ExceptionMessage}",
-                        retryCount, exception.Message);
+                    logger.LogWarning("Retry for user account service call");
                 });
 
         try
@@ -58,7 +57,7 @@ public class TransactionValidator(
             {
                 // Try to fetch source account with retry
                 fromAccount = await userAccountRetryPolicy.ExecuteAsync(async () =>
-                    await userAccountClient.GetAccountAsync(fromAccountId));
+                    await userAccountClient.GetAccountAsync(fromAccountId)) ?? throw new InvalidOperationException();
                 
                 // Try to fetch destination account with retry
                 toAccount = await userAccountRetryPolicy.ExecuteAsync(async () =>

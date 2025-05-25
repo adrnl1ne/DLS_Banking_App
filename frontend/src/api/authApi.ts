@@ -101,8 +101,12 @@ const parseJwt = (token: string): User => {
     );
     const payload = JSON.parse(jsonPayload);
     
+    // The user ID is stored in 'sub' claim or the nameidentifier claim
+    const userId = payload.sub || 
+                  payload["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"];
+    
     return {
-      id: payload.nameid,
+      id: userId,
       email: payload.email,
       firstName: payload.given_name,
       lastName: payload.family_name,
@@ -130,6 +134,16 @@ export const getCurrentUser = (): { token: string; user: User } | null => {
     };
   }
   
+  return null;
+};
+
+// Add a function to get the current user ID directly
+export const getCurrentUserId = (): number | null => {
+  const user = localStorage.getItem('user');
+  if (user) {
+    const userData = JSON.parse(user);
+    return userData.id ? Number(userData.id) : null;
+  }
   return null;
 };
 

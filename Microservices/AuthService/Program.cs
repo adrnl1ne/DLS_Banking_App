@@ -1,7 +1,6 @@
 using System.Net.Http.Headers;
 using Nest;
 using QueryService;
-using QueryService.Services;
 using QueryService.utils;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -54,11 +53,17 @@ builder.Services
 
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", corsPolicyBuilder =>
+    options.AddPolicy("AllowFrontend", policy =>
     {
-        corsPolicyBuilder.AllowAnyOrigin()
-            .AllowAnyMethod()
-            .AllowAnyHeader();
+        policy.WithOrigins(
+            "http://localhost:3000",
+            "http://localhost:3001", 
+            "http://localhost:5173", // Vite dev server
+            "http://localhost:4173"  // Vite preview
+        )
+        .AllowAnyHeader()
+        .AllowAnyMethod()
+        .AllowCredentials();
     });
 });
 
@@ -73,25 +78,21 @@ builder.Services.AddSingleton<RabbitMqConnection>(sp =>
     return new RabbitMqConnection(hostName, userName, password);
 });
 
-// Register background services - only add the ones that exist
-// Comment out the missing ones for now
-// builder.Services.AddHostedService<AccountEventConsumer>();
-// builder.Services.AddHostedService<TransactionCreatedConsumer>();
-// builder.Services.AddHostedService<FraudEventConsumer>();
-builder.Services.AddHostedService<TransactionCompletedConsumer>(); // This one we just created
-builder.Services.AddHostedService<TransactionDeclinedConsumer>(); // Add this line for declined transactions
-
 var app = builder.Build();
 
-await Helpers.EnsureElasticsearchIndicesAsync(app.Services);
+// Configure the HTTP request pipeline
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
 
-// Attempt to fix existing index mappings
-await Helpers.UpdateExistingIndex(app.Services, "account_events");
+// Add CORS middleware BEFORE authentication and authorization
+app.UseCors("AllowFrontend");
 
-// Add this for initial data load
-await Helpers.LoadInitialAccountDataAsync(app.Services);
+app.UseAuthentication();
+app.UseAuthorization();
 
-app.UseCors("AllowAll");
 app.MapGraphQL();
 app.MapHealthChecks("/health");
 

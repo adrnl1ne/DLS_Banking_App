@@ -5,7 +5,6 @@ using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using AccountService.Database.Data;
 using AccountService.Repository;
-using AccountService.Services;
 using UserAccountService.Repository;
 using UserAccountService.Service; // Changed from UserAccountService.Services
 using Microsoft.OpenApi.Models;
@@ -38,12 +37,28 @@ builder.Services.AddCors(options =>
     });
 });
 
+// Add CORS policy
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowFrontend", policy =>
+    {
+        policy.WithOrigins(
+            "http://localhost:3000",
+            "http://localhost:3001", 
+            "http://localhost:5173", // Vite dev server
+            "http://localhost:4173"  // Vite preview
+        )
+        .AllowAnyHeader()
+        .AllowAnyMethod()
+        .AllowCredentials();
+    });
+});
+
 // Register repositories and services
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddScoped<IAccountRepository, AccountRepository>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
-builder.Services.AddSingleton<IEventPublisher, RabbitMqEventPublisher>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IAccountService, UserAccountService.Service.AccountService>();
 
@@ -155,31 +170,36 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-// Configure CORS
-builder.Services.AddCors(options =>
+// Register RabbitMQ client with correct connection parameters
+builder.Services.AddSingleton<IRabbitMqClient>(provider =>
 {
-    options.AddPolicy("AllowAll", corsPolicyBuilder =>
-    {
-        corsPolicyBuilder.AllowAnyOrigin()
-            .AllowAnyMethod()
-            .AllowAnyHeader();
-    });
+    var logger = provider.GetRequiredService<ILogger<RabbitMqClient>>();
+    
+    // Get RabbitMQ connection details from configuration or environment variables
+    var host = builder.Configuration.GetValue<string>("RabbitMQ:Host") ?? 
+                Environment.GetEnvironmentVariable("RABBITMQ_HOST") ?? 
+                "rabbitmq";
+                
+    var portStr = builder.Configuration.GetValue<string>("RabbitMQ:Port") ?? 
+                  Environment.GetEnvironmentVariable("RABBITMQ_PORT") ?? 
+                  "5672";
+    var port = int.TryParse(portStr, out var p) ? p : 5672;
+    
+    var username = builder.Configuration.GetValue<string>("RabbitMQ:Username") ?? 
+                   Environment.GetEnvironmentVariable("RABBITMQ_USERNAME") ?? 
+                   "guest";
+                   
+    var password = builder.Configuration.GetValue<string>("RabbitMQ:Password") ?? 
+                   Environment.GetEnvironmentVariable("RABBITMQ_PASSWORD") ?? 
+                   "guest";
+    
+    return new RabbitMqClient(logger, host, port, username, password);
 });
 
-// Register RabbitMQ client
-builder.Services.AddSingleton<IRabbitMqClient>(sp => 
-{
-    var logger = sp.GetRequiredService<ILogger<RabbitMqClient>>();
-    return new RabbitMqClient(
-        logger, 
-        hostName: builder.Configuration.GetValue<string>("RabbitMQ:Host") ?? "rabbitmq",
-        port: builder.Configuration.GetValue<int>("RabbitMQ:Port", 5672),
-        username: builder.Configuration.GetValue<string>("RabbitMQ:Username") ?? "guest",
-        password: builder.Configuration.GetValue<string>("RabbitMQ:Password") ?? "guest"
-    );
-});
+// Register message processing services
+builder.Services.AddScoped<AccountBalanceProcessingService>();
 
-// Make sure to register the consumer as a hosted service
+// Register the consumer background service with appropriate lifetime
 builder.Services.AddHostedService<AccountBalanceConsumerService>();
 
 // Register HTTP client factory
@@ -188,26 +208,22 @@ builder.Services.AddHttpClient("InternalApi", client => {
     client.DefaultRequestHeaders.Add("X-Internal-Request", "true");
 });
 
-// Register our balance processing service
-builder.Services.AddScoped<AccountBalanceProcessingService>();
-
 var app = builder.Build();
-app.UseMetricServer();
+
+// Configure the HTTP request pipeline
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
+// Add CORS middleware BEFORE authentication and authorization
+app.UseCors("AllowFrontend");
+
 app.UseAuthentication();
 app.UseAuthorization();
 
-// Add CORS middleware
-app.UseCors();
-
 app.MapControllers();
-app.UseSwagger();
-app.UseSwaggerUI(c =>
-{
-    c.SwaggerEndpoint("/swagger/v1/swagger.json", "UserAccountService API v1");
-    c.RoutePrefix = string.Empty;
-});
-app.UseCors("AllowAll");
-
 app.MapHealthChecks("/health");
 
 app.Run();

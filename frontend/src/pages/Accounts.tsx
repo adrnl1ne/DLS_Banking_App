@@ -19,7 +19,38 @@ const Accounts = () => {
       try {
         setIsLoading(true);
         setError('');
-        const data = await getAccounts();
+        
+        // Get the current user ID from localStorage or auth state
+        let userId = null;
+        
+        // Try to get from localStorage
+        const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+        userId = currentUser.id;
+        
+        // If not found, try parsing the JWT token directly
+        if (!userId) {
+          const token = localStorage.getItem('token');
+          if (token) {
+            // Extract user ID from JWT token
+            const payloadBase64 = token.split('.')[1];
+            const payload = JSON.parse(atob(payloadBase64));
+            userId = payload.sub || payload["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"];
+            
+            // Update localStorage with the correct user ID
+            localStorage.setItem('user', JSON.stringify({
+              ...currentUser,
+              id: userId
+            }));
+          }
+        }
+        
+        if (!userId) {
+          throw new Error('User ID not found. Please log in again.');
+        }
+        
+        console.log('Using user ID:', userId);
+        // Pass the userId to getAccounts function
+        const data = await getAccounts(Number(userId));
         console.log('Account data:', data);
         
         // Filter for only the latest account events
@@ -154,4 +185,4 @@ const Accounts = () => {
   );
 };
 
-export default Accounts; 
+export default Accounts;

@@ -75,23 +75,49 @@ namespace TransactionService.Infrastructure.Data.Repositories
             var transaction = await context.Transactions.FindAsync(id);
             if (transaction == null)
             {
-                throw new KeyNotFoundException($"Transaction with ID {LogSanitizer.MaskTransferId(id)} not found");
+                throw new KeyNotFoundException($"Transaction with ID {id} not found");
             }
 
             transaction.Status = status;
             transaction.UpdatedAt = DateTime.UtcNow;
-            // Set this for use in the application but it won't be saved to DB
-            transaction.LastModifiedBy = "system";
+
+            await context.SaveChangesAsync();
+            
+            logger.LogInformation("Successfully updated transaction {TransactionId} status to '{Status}'", id, status);
+
+            await secureLogger.LogTransactionEventAsync(
+                id, 
+                "transaction_status_update",
+                $"Transaction status updated to {status}");
+
+            return transaction;
+        }
+
+        public async Task<Transaction> UpdateTransactionAsync(Transaction transaction)
+        {
+            logger.LogInformation("Updating transaction {TransactionId}", transaction.Id);
+
+            var existingTransaction = await context.Transactions.FindAsync(transaction.Id);
+            if (existingTransaction == null)
+            {
+                throw new KeyNotFoundException($"Transaction with ID {transaction.Id} not found");
+            }
+
+            // Only update specific fields that should be mutable
+            existingTransaction.Status = transaction.Status;
+            existingTransaction.UpdatedAt = DateTime.UtcNow;
+            existingTransaction.FraudCheckResult = transaction.FraudCheckResult;
             
             await context.SaveChangesAsync();
 
-            // Log the status change with secure logger
-            await secureLogger.LogTransactionEventAsync(
-                id,
-                "status_change",
-                $"Transaction status updated to: {status}");
+            logger.LogInformation("Successfully updated transaction {TransactionId}", transaction.Id);
 
-            return transaction;
+            await secureLogger.LogTransactionEventAsync(
+                transaction.Id,
+                "transaction_update",
+                "Transaction updated");
+
+            return existingTransaction;
         }
 
         public async Task<IEnumerable<TransactionLog>> GetTransactionLogsAsync(string transactionId)

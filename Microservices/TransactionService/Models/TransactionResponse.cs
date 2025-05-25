@@ -10,10 +10,11 @@ namespace TransactionService.Models
         public string Status { get; init; } = string.Empty;
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
+        public string StatusMessage { get; set; } = string.Empty;
 
-        public static TransactionResponse FromTransaction(Transaction transaction)
+        public static TransactionResponse FromTransaction(Transaction transaction, string statusMessage = "")
         {
-            return new TransactionResponse
+            var response = new TransactionResponse
             {
                 TransferId = transaction.TransferId,
                 UserId = transaction.UserId,
@@ -22,8 +23,11 @@ namespace TransactionService.Models
                 Amount = transaction.Amount,
                 Status = transaction.Status,
                 CreatedAt = transaction.CreatedAt,
-                UpdatedAt = transaction.UpdatedAt
+                UpdatedAt = transaction.UpdatedAt,
+                StatusMessage = statusMessage
             };
+
+            return response;
         }
     }
 }

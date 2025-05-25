@@ -36,45 +36,74 @@ namespace UserAccountService.Service
         {
             _logger.LogInformation("AccountBalanceConsumerService starting");
             
-            // Ensure the queue is created immediately at startup
+            // Force reconnection by setting _isConnected to false
+            _isConnected = false;
+            
+            // Start with immediate connection attempt, then use longer intervals
+            _reconnectTimer = new Timer(
+                async _ => await InitializeQueueAndSubscribe(), 
+                null, 
+                TimeSpan.FromSeconds(2), // Short initial delay 
+                TimeSpan.FromSeconds(30)); // Longer interval - only check every 30 seconds
+    
+            return base.StartAsync(cancellationToken);
+        }
+
+        private async Task InitializeQueueAndSubscribe()
+        {
+            // Only try to reconnect if not already connected
+            if (_isConnected && _rabbitMqClient.IsConnected)
+            {
+                _logger.LogTrace("Already connected and subscribed to {QueueName}", QUEUE_NAME);
+                return;
+            }
+
+            // Try to initialize the queue first
             try
             {
-                _rabbitMqClient.EnsureQueueExists("AccountBalanceUpdates", true);
-                _logger.LogInformation("AccountBalanceUpdates queue created or confirmed");
+                _logger.LogInformation("Initializing queue {QueueName}", QUEUE_NAME);
+                
+                // Make sure the queue exists before subscribing
+                await Task.Run(() => {
+                    try 
+                    {
+                        _rabbitMqClient.EnsureQueueExists(QUEUE_NAME, true);
+                        _logger.LogInformation("Queue {QueueName} created or confirmed", QUEUE_NAME);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error ensuring queue {QueueName} exists", QUEUE_NAME);
+                    }
+                });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to create AccountBalanceUpdates queue");
-                // Don't throw here, we'll retry later
+                _logger.LogError(ex, "Failed to initialize queue {QueueName}", QUEUE_NAME);
             }
             
-            // Continue with subscription in the background
-            _reconnectTimer = new Timer(
-                async _ => await EnsureConnectedAsync(), 
-                null, 
-                TimeSpan.FromSeconds(5), 
-                TimeSpan.FromSeconds(5)); // Retry more frequently
-            
-            return Task.CompletedTask;
+            // Then try to connect and subscribe
+            await EnsureConnectedAsync();
         }
 
         protected override Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            // No longer needed, connection logic is in StartAsync
+            // The main work happens in StartAsync and the timer callbacks
             return Task.CompletedTask;
         }
 
         private async Task EnsureConnectedAsync()
         {
+            // Skip if already connected
             if (_isConnected && _rabbitMqClient.IsConnected)
             {
-                return; // Already connected and subscribed
+                _logger.LogDebug("Already connected to RabbitMQ and subscribed to {QueueName}", QUEUE_NAME);
+                return;
             }
 
-            // Prevent multiple concurrent connection attempts
+            // Try to acquire the semaphore, but don't block if already being attempted
             if (!await _connectionSemaphore.WaitAsync(0))
             {
-                return; // Another connection attempt is already in progress
+                return;
             }
 
             try
@@ -83,14 +112,19 @@ namespace UserAccountService.Service
                 
                 try
                 {
-                    // Ensure we have a valid connection
+                    // Make sure we have a fresh connection
                     _rabbitMqClient.EnsureConnection();
+                    _logger.LogInformation("RabbitMQ connection established");
 
-                    // Subscribe to the queue with a handler that processes messages
-                    _rabbitMqClient.Subscribe<AccountBalanceUpdateMessage>(
+                    // Subscribe to the queue with our handler
+                    _rabbitMqClient.SubscribeAsync<AccountBalanceUpdateMessage>(
                         QUEUE_NAME, 
-                        async message => await ProcessMessageAsync(message));
-                    
+                        async message =>
+                        {
+                            _logger.LogInformation("Received message");
+                            return await ProcessMessageAsync(message);
+                        });
+                
                     _isConnected = true;
                     _logger.LogInformation("Successfully connected to RabbitMQ and subscribed to {QueueName}", QUEUE_NAME);
                 }
@@ -98,7 +132,6 @@ namespace UserAccountService.Service
                 {
                     _isConnected = false;
                     _logger.LogError(ex, "Failed to connect to RabbitMQ or subscribe to {QueueName}", QUEUE_NAME);
-                    // We'll retry on the next timer tick
                 }
             }
             finally
@@ -123,6 +156,8 @@ namespace UserAccountService.Service
                         (!string.IsNullOrEmpty(message.TransactionType) ? message.TransactionType : "Deposit"),
                     IsAdjustment = message.IsAdjustment
                 };
+                
+                _logger.LogInformation("Calling UpdateBalanceAsSystemAsync");
 
                 // Get account service from DI
                 using var scope = _serviceProvider.CreateScope();
@@ -138,8 +173,8 @@ namespace UserAccountService.Service
                 }
                 else
                 {
-                    _logger.LogWarning("Failed to process balance update: {Message}", result.Message);
-                    return false;
+                    _logger.LogWarning("Permanent error processing message: {ErrorCode} - {Message}", result.ErrorCode, result.Message);
+                    return true; // Don't requeue for permanent errors
                 }
             }
             catch (Exception ex)

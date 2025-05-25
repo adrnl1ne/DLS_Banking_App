@@ -124,11 +124,17 @@ builder.Configuration.AddEnvironmentVariables();
 // Add CORS policy
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", policy =>
+    options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.AllowAnyOrigin()
-            .AllowAnyMethod()
-            .AllowAnyHeader();
+        policy.WithOrigins(
+            "http://localhost:3000",
+            "http://localhost:3001", 
+            "http://localhost:5173", // Vite dev server
+            "http://localhost:4173"  // Vite preview
+        )
+        .AllowAnyHeader()
+        .AllowAnyMethod()
+        .AllowCredentials();
     });
 });
 
@@ -189,7 +195,7 @@ builder.Services.AddScoped<IFraudDetectionService, FraudDetectionService>();
 builder.Services.AddScoped<ITransactionRepository, TransactionRepository>();
 builder.Services.AddScoped<TransactionValidator>();
 // Register RabbitMQ client
-builder.Services.AddSingleton<IRabbitMQClient>(provider => 
+builder.Services.AddSingleton<IRabbitMqClient>(provider =>
 {
     var logger = provider.GetRequiredService<ILogger<RabbitMQClient>>();
     var configuration = provider.GetRequiredService<IConfiguration>();
@@ -202,19 +208,13 @@ builder.Services.AddSingleton<IRabbitMQClient>(provider =>
     return new RabbitMQClient(logger, host, port, username, password);
 });
 builder.Services.AddScoped<ITransactionService, TransactionService.Services.TransactionService>();
+
+// Register balance update services
 builder.Services.AddScoped<IAccountBalanceService, AccountBalanceMessageService>();
-builder.Services.AddScoped<AccountBalanceProcessingService>();
 
-// Register the consumer background service
-builder.Services.AddHostedService(sp => new AccountBalanceConsumerService(
-    sp.GetRequiredService<IRabbitMQClient>(),
-    sp,
-    sp.GetRequiredService<ILogger<AccountBalanceConsumerService>>()
-));
-
-// Add to service registrations
-builder.Services.AddSingleton<FraudResultConsumer>();
-builder.Services.AddHostedService(provider => provider.GetRequiredService<FraudResultConsumer>());
+// Register background services - these need to be registered as hosted services
+builder.Services.AddHostedService<FraudResultConsumer>();
+builder.Services.AddHostedService<BalanceUpdateConfirmationConsumer>();
 
 // Define and register metrics
 var requestsTotalCounter = Metrics.CreateCounter(
@@ -280,7 +280,7 @@ app.UseSwaggerUI(c =>
 });
 
 app.UseRouting();
-app.UseCors("AllowAll");
+app.UseCors("AllowFrontend");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

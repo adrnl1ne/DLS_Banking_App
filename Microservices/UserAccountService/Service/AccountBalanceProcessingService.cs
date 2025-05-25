@@ -28,10 +28,18 @@ namespace UserAccountService.Service // Changed from Services to Service
 
         public async Task<bool> ProcessBalanceUpdateAsync(AccountBalanceUpdateMessage message)
         {
-            _logger.LogInformation("Processing balance update request");
-                       
+            _logger.LogInformation("Processing balance update request for account, transactionId");
+                           
             try
             {
+                // Fix the BaseAddress to use the container hostname in Docker environment
+                var baseAddress = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development" 
+                    ? "http://localhost:80" 
+                    : "http://user-account-service:80";
+                    
+                _httpClient.BaseAddress = new Uri(baseAddress);
+                _logger.LogInformation("Using configured base address");
+                
                 var request = new AccountBalanceRequest
                 {
                     Amount = message.Amount,
@@ -45,6 +53,8 @@ namespace UserAccountService.Service // Changed from Services to Service
                     Encoding.UTF8, 
                     "application/json");
                 
+                _logger.LogInformation("Sending balance update request");
+                
                 var response = await _httpClient.PutAsync(
                     $"/api/Account/{message.AccountId}/balance", 
                     content);
@@ -55,13 +65,16 @@ namespace UserAccountService.Service // Changed from Services to Service
                     return true;
                 }
                 
+                var responseContent = await response.Content.ReadAsStringAsync();
+                _logger.LogWarning("Failed to process balance update: StatusCode={StatusCode}", 
+                    response.StatusCode);
+                
                 if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
                 {
                     _logger.LogWarning("Account not found - won't retry");
                     return true;  // Acknowledge permanent errors
                 }
                 
-                _logger.LogWarning("Failed to process balance update: {StatusCode}", response.StatusCode);
                 return false;  // Retry for retriable errors
             }
             catch (Exception ex)
