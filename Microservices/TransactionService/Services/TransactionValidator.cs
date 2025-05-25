@@ -12,6 +12,14 @@ public class TransactionValidator(
 {
     public async Task<(Account FromAccount, Account ToAccount)> ValidateTransferRequestAsync(TransactionRequest request)
     {
+        // Validate amount is positive
+        if (request.Amount <= 0)
+        {
+            logger.LogWarning("Invalid amount: {Amount}", request.Amount);
+            errorsTotal.WithLabels("CreateTransfer").Inc();
+            throw new ArgumentException("Amount must be greater than zero");
+        }
+
         // Parse account IDs to integers
         if (!int.TryParse(request.FromAccount, out int fromAccountId) ||
             !int.TryParse(request.ToAccount, out int toAccountId))

@@ -124,11 +124,17 @@ builder.Configuration.AddEnvironmentVariables();
 // Add CORS policy
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", policy =>
+    options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.AllowAnyOrigin()
-            .AllowAnyMethod()
-            .AllowAnyHeader();
+        policy.WithOrigins(
+            "http://localhost:3000",
+            "http://localhost:3001", 
+            "http://localhost:5173", // Vite dev server
+            "http://localhost:4173"  // Vite preview
+        )
+        .AllowAnyHeader()
+        .AllowAnyMethod()
+        .AllowCredentials();
     });
 });
 
@@ -274,7 +280,7 @@ app.UseSwaggerUI(c =>
 });
 
 app.UseRouting();
-app.UseCors("AllowAll");
+app.UseCors("AllowFrontend");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

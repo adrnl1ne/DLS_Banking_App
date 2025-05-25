@@ -37,6 +37,23 @@ builder.Services.AddCors(options =>
     });
 });
 
+// Add CORS policy
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowFrontend", policy =>
+    {
+        policy.WithOrigins(
+            "http://localhost:3000",
+            "http://localhost:3001", 
+            "http://localhost:5173", // Vite dev server
+            "http://localhost:4173"  // Vite preview
+        )
+        .AllowAnyHeader()
+        .AllowAnyMethod()
+        .AllowCredentials();
+    });
+});
+
 // Register repositories and services
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
@@ -153,17 +170,6 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-// Configure CORS
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("AllowAll", corsPolicyBuilder =>
-    {
-        corsPolicyBuilder.AllowAnyOrigin()
-            .AllowAnyMethod()
-            .AllowAnyHeader();
-    });
-});
-
 // Register RabbitMQ client with correct connection parameters
 builder.Services.AddSingleton<IRabbitMqClient>(provider =>
 {
@@ -203,22 +209,21 @@ builder.Services.AddHttpClient("InternalApi", client => {
 });
 
 var app = builder.Build();
-app.UseMetricServer();
+
+// Configure the HTTP request pipeline
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
+// Add CORS middleware BEFORE authentication and authorization
+app.UseCors("AllowFrontend");
+
 app.UseAuthentication();
 app.UseAuthorization();
 
-// Add CORS middleware
-app.UseCors();
-
 app.MapControllers();
-app.UseSwagger();
-app.UseSwaggerUI(c =>
-{
-    c.SwaggerEndpoint("/swagger/v1/swagger.json", "UserAccountService API v1");
-    c.RoutePrefix = string.Empty;
-});
-app.UseCors("AllowAll");
-
 app.MapHealthChecks("/health");
 
 app.Run();

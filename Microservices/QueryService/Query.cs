@@ -79,12 +79,119 @@ public class Query
 		string? accountId = null)
 	{
 		var search = await elasticClient.SearchAsync<TransactionCreatedEvent>(s => s
-			.Index("transaction_history")
+			.Index("completed_transactions") // Search transactions index that includes both completed and declined
+			.Size(100)
 			.Query(q => !string.IsNullOrEmpty(accountId)
-				? q.Term(t => t.FromAccount, accountId)
-				: q.MatchAll()
+				? q.Bool(b => b
+					.Must(
+						// Filter by account
+						m => m.Bool(bb => bb
+							.Should(
+								s1 => s1.Term(t => t.FromAccount, accountId),
+								s2 => s2.Term(t => t.ToAccount, accountId)
+							)
+						),
+						// Only show completed or declined transactions (not pending)
+						m => m.Bool(bb => bb
+							.Should(
+								s1 => s1.Term(t => t.Status, "completed"),
+								s2 => s2.Term(t => t.Status, "declined")
+							)
+						)
+					)
+				)
+				: q.Bool(b => b
+					.Should(
+						s1 => s1.Term(t => t.Status, "completed"),
+						s2 => s2.Term(t => t.Status, "declined")
+					)
+				)
 			)
+			.Sort(srt => srt.Descending("timestamp")) // Sort by timestamp
 		);
+		
+		Console.WriteLine($"📊 Found {search.Documents.Count} transactions (completed + declined) for accountId={accountId}");
+		return search.Documents.ToList();
+	}
+
+	// Add a method to get only declined transactions
+	public async Task<List<TransactionCreatedEvent>> GetDeclinedTransactions(
+		[Service] IElasticClient elasticClient,
+		string? accountId = null)
+	{
+		var search = await elasticClient.SearchAsync<TransactionCreatedEvent>(s => s
+			.Index("completed_transactions")
+			.Size(100)
+			.Query(q => 
+			{
+				var queries = new List<Func<QueryContainerDescriptor<TransactionCreatedEvent>, QueryContainer>>();
+				
+				// Always filter for declined status
+				queries.Add(qcd => qcd.Term(t => t.Status, "declined"));
+				
+				// Add account filter if provided
+				if (!string.IsNullOrEmpty(accountId))
+				{
+					queries.Add(qcd => qcd.Bool(b => b
+						.Should(
+							s1 => s1.Term(t => t.FromAccount, accountId),
+							s2 => s2.Term(t => t.ToAccount, accountId)
+						)
+					));
+				}
+				
+				return q.Bool(b => b.Must(queries.ToArray()));
+			})
+			.Sort(srt => srt.Descending("timestamp"))
+		);
+		
+		return search.Documents.ToList();
+	}
+
+	public async Task<List<TransactionCreatedEvent>> GetCompletedTransactions(
+		[Service] IElasticClient elasticClient,
+		string? accountId = null)
+	{
+		var search = await elasticClient.SearchAsync<TransactionCreatedEvent>(s => s
+			.Index("completed_transactions")
+			.Size(100)
+			.Query(q => 
+			{
+				var queries = new List<Func<QueryContainerDescriptor<TransactionCreatedEvent>, QueryContainer>>();
+				
+				// Always filter for completed status
+				queries.Add(qcd => qcd.Term(t => t.Status, "completed"));
+				
+				// Add account filter if provided
+				if (!string.IsNullOrEmpty(accountId))
+				{
+					queries.Add(qcd => qcd.Bool(b => b
+						.Should(
+							s1 => s1.Term(t => t.FromAccount, accountId),
+							s2 => s2.Term(t => t.ToAccount, accountId)
+						)
+					));
+				}
+				
+				return q.Bool(b => b.Must(queries.ToArray()));
+			})
+			.Sort(srt => srt.Descending("completedAt"))
+		);
+		
+		return search.Documents.ToList();
+	}
+
+	public async Task<List<TransactionCreatedEvent>> GetTransactionsByStatus(
+		[Service] IElasticClient elasticClient,
+		string status)
+	{
+		var search = await elasticClient.SearchAsync<TransactionCreatedEvent>(s => s
+			.Index("transaction_history")
+			.Size(100)
+			.Query(q => q.Term(t => t.Status, status))
+			.Sort(srt => srt.Descending("timestamp"))
+		);
+		
 		return search.Documents.ToList();
 	}
 
