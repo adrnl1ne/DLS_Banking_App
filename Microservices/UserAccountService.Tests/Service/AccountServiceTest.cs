@@ -24,7 +24,7 @@ namespace UserAccountService.Tests.Service
         private readonly UserAccountDbContext _context;
         private readonly Mock<ICurrentUserService> _mockCurrentUserService;
         private readonly Mock<IAccountRepository> _mockAccountRepository;
-        private readonly Mock<IEventPublisher> _mockEventPublisher;
+        private readonly Mock<IRabbitMqClient> _mockRabbitMqClient;  // Changed from IEventPublisher
         private readonly Mock<IDatabase> _mockRedisDb;
         private readonly UserAccountService.Service.AccountService _accountService;
 
@@ -42,7 +42,7 @@ namespace UserAccountService.Tests.Service
             _mockCurrentUserService = new Mock<ICurrentUserService>();
             var mockLogger = new Mock<ILogger<UserAccountService.Service.AccountService>>();
             _mockAccountRepository = new Mock<IAccountRepository>();
-            _mockEventPublisher = new Mock<IEventPublisher>();
+            _mockRabbitMqClient = new Mock<IRabbitMqClient>();  // Changed from IEventPublisher
             var mockRedis = new Mock<IConnectionMultiplexer>();
             _mockRedisDb = new Mock<IDatabase>();
 
@@ -53,8 +53,8 @@ namespace UserAccountService.Tests.Service
                 _context,
                 _mockCurrentUserService.Object,
                 mockLogger.Object,
+                _mockRabbitMqClient.Object,  // Changed from _mockEventPublisher
                 _mockAccountRepository.Object,
-                _mockEventPublisher.Object,
                 mockRedis.Object
             );
         }
@@ -231,8 +231,11 @@ namespace UserAccountService.Tests.Service
             _mockAccountRepository.Verify(
                 r => r.AddAccountAsync(It.Is<Account>(a => a.Name == request.Name && a.UserId == userId)), Times.Once);
             _mockAccountRepository.Verify(r => r.SaveChangesAsync(), Times.Once);
-            _mockEventPublisher.Verify(p => p.Publish(
-                "AccountEvents",
+            
+            // Updated to use PublishToExchange instead of Publish
+            _mockRabbitMqClient.Verify(p => p.PublishToExchange(
+                "banking.events",
+                "AccountCreated",
                 It.Is<string>(
                     s => s.Contains("\"event_type\":\"AccountCreated\"") && s.Contains($"\"userId\":{userId}"))
             ), Times.Once);
@@ -265,8 +268,11 @@ namespace UserAccountService.Tests.Service
             // Assert
             var deletedAccount = await _context.Accounts.FindAsync(accountId);
             Assert.Null(deletedAccount); // Account should be removed
-            _mockEventPublisher.Verify(p => p.Publish(
-                "AccountEvents",
+            
+            // Updated to use PublishToExchange instead of Publish
+            _mockRabbitMqClient.Verify(p => p.PublishToExchange(
+                "banking.events",
+                "AccountDeleted",
                 It.Is<string>(s =>
                     s.Contains("\"event_type\":\"AccountDeleted\"") && s.Contains($"\"accountId\":{accountId}"))
             ), Times.Once);
@@ -287,8 +293,11 @@ namespace UserAccountService.Tests.Service
             // Assert
             var deletedAccount = await _context.Accounts.FindAsync(accountId);
             Assert.Null(deletedAccount);
-            _mockEventPublisher.Verify(p => p.Publish(
-                "AccountEvents",
+            
+            // Updated to use PublishToExchange instead of Publish
+            _mockRabbitMqClient.Verify(p => p.PublishToExchange(
+                "banking.events",
+                "AccountDeleted",
                 It.Is<string>(s =>
                     s.Contains("\"event_type\":\"AccountDeleted\"") && s.Contains($"\"accountId\":{accountId}"))
             ), Times.Once);
@@ -343,8 +352,10 @@ namespace UserAccountService.Tests.Service
             Assert.Equal(5000.50m, tombstone.Amount);
             Assert.True(tombstone.DeletedAt <= DateTime.UtcNow);
 
-            _mockEventPublisher.Verify(p => p.Publish(
-                "AccountEvents",
+            // Updated to use PublishToExchange instead of Publish
+            _mockRabbitMqClient.Verify(p => p.PublishToExchange(
+                "banking.events",
+                "AccountDeleted",
                 It.Is<string>(s =>
                     s.Contains("\"event_type\":\"AccountDeleted\"") && s.Contains($"\"accountId\":{accountId}"))
             ), Times.Once);
@@ -406,7 +417,10 @@ namespace UserAccountService.Tests.Service
             // Assert
             Assert.NotNull(result.Value);
             Assert.Equal(existingName, result.Value.Name);
-            _mockEventPublisher.Verify(p => p.Publish(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+            
+            // Updated to verify no calls to any publish method
+            _mockRabbitMqClient.Verify(p => p.PublishToExchange(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+            _mockRabbitMqClient.Verify(p => p.PublishToQueue(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
         }
 
         [Fact]
@@ -452,8 +466,11 @@ namespace UserAccountService.Tests.Service
             // Assert
             Assert.NotNull(result.Value);
             Assert.Equal(initialAccount.Amount, result.Value.Amount); // Amount should not change
-            _mockEventPublisher.Verify(p => p.Publish(It.IsAny<string>(), It.IsAny<string>()),
-                Times.Never); // No event published
+            
+            // Updated to verify no calls to any publish method
+            _mockRabbitMqClient.Verify(p => p.PublishToExchange(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+            _mockRabbitMqClient.Verify(p => p.PublishToQueue(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+            
             _mockRedisDb.Verify(
                 db => db.StringSetAsync(It.IsAny<RedisKey>(), It.IsAny<RedisValue>(), It.IsAny<TimeSpan?>(),
                     It.IsAny<When>(), It.IsAny<CommandFlags>()), Times.Never); // No Redis set
@@ -567,14 +584,10 @@ namespace UserAccountService.Tests.Service
             var initialAccount = await _context.Accounts.FindAsync(accountId);
             var request = new AccountDepositRequest { Amount = 100 };
             _mockCurrentUserService.Setup(s => s.UserId).Returns(1);
-            // Simulate that a transaction ID (even though generated internally) already exists.
-            // This requires a bit more setup if the key is fully dynamic.
-            // For simplicity, we assume KeyExistsAsync will be called and we can make it return true.
-            // For simplicity, we assume KeyExistsAsync will be called and we can make it return true.
+            
             _mockRedisDb.Setup(db =>
                 db.KeyExistsAsync(It.Is<RedisKey>(k => k.ToString().StartsWith("account:transaction:deposit-")),
                     It.IsAny<CommandFlags>())).ReturnsAsync(true);
-
 
             // Act
             var result = await _accountService.DepositToAccountAsync(accountId, request);
@@ -582,7 +595,11 @@ namespace UserAccountService.Tests.Service
             // Assert
             Assert.NotNull(result.Value);
             Assert.Equal(initialAccount.Amount, result.Value.Amount); // Amount should not change
-            _mockEventPublisher.Verify(p => p.Publish(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+            
+            // Updated to verify no calls to any publish method
+            _mockRabbitMqClient.Verify(p => p.PublishToExchange(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+            _mockRabbitMqClient.Verify(p => p.PublishToQueue(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+            
             _mockRedisDb.Verify(
                 db => db.StringSetAsync(It.IsAny<RedisKey>(), It.IsAny<RedisValue>(), It.IsAny<TimeSpan?>(),
                     It.IsAny<When>(), It.IsAny<CommandFlags>()), Times.Never);
@@ -702,10 +719,10 @@ namespace UserAccountService.Tests.Service
             // Assert
             Assert.NotNull(result.Value);
             Assert.Equal(5000.50m, result.Value.Amount); // Amount should not change
-            _mockEventPublisher.Verify(p => p.Publish(It.IsAny<string>(), It.IsAny<string>()),
-                Times.Never); // No event published
-            // Note: We can't directly verify the idempotency counter as it's static
-            // In a real application, we would use a metrics registry that can be mocked
+            
+            // Updated to verify no calls to any publish method
+            _mockRabbitMqClient.Verify(p => p.PublishToExchange(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+            _mockRabbitMqClient.Verify(p => p.PublishToQueue(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
         }
     }
 }

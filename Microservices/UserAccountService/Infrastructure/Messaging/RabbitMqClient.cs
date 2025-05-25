@@ -135,6 +135,73 @@ namespace UserAccountService.Infrastructure.Messaging
             }
         }
 
+        public void PublishToQueue(string queueName, string message)
+        {
+            EnsureConnection();
+
+            try
+            {
+                var body = Encoding.UTF8.GetBytes(message);
+
+                // Ensure the queue exists before publishing
+                _channel!.QueueDeclare(
+                    queue: queueName,
+                    durable: true,
+                    exclusive: false,
+                    autoDelete: false,
+                    arguments: null);
+
+                var properties = _channel.CreateBasicProperties();
+                properties.Persistent = true;
+                properties.DeliveryMode = 2;
+                properties.ContentType = "application/json";
+
+                _channel.BasicPublish(
+                    exchange: "",
+                    routingKey: queueName,
+                    basicProperties: properties,
+                    body: body);
+
+                _logger.LogInformation("✅ Published message to queue {QueueName}", queueName);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Error publishing message to queue: {QueueName}", queueName);
+                throw;
+            }
+        }
+
+        public void PublishToExchange(string exchange, string routingKey, string message)
+        {
+            EnsureConnection();
+
+            try
+            {
+                var body = Encoding.UTF8.GetBytes(message);
+
+                // Declare the exchange
+                _channel!.ExchangeDeclare(exchange: exchange, type: "topic", durable: true, autoDelete: false);
+
+                var properties = _channel.CreateBasicProperties();
+                properties.Persistent = true;
+                properties.DeliveryMode = 2;
+                properties.ContentType = "application/json";
+
+                _channel.BasicPublish(
+                    exchange: exchange,
+                    routingKey: routingKey,
+                    basicProperties: properties,
+                    body: body);
+
+                _logger.LogInformation("Published message to exchange {Exchange} with routing key {RoutingKey}", exchange, routingKey);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error publishing to exchange {Exchange}: {Message}", exchange, ex.Message);
+                throw;
+            }
+        }
+
         public void EnsureQueueExists(string queueName, bool durable)
         {
             try

@@ -4,7 +4,7 @@ using RabbitMQ.Client;
 
 namespace TransactionService.Infrastructure.Messaging.RabbitMQ
 {
-    public interface IRabbitMqClient
+    public interface IRabbitMqClient : IDisposable
     {
         bool IsConnected { get; }
         

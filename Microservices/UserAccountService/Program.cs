@@ -12,7 +12,6 @@ using Prometheus;
 using StackExchange.Redis;
 using Microsoft.Extensions.Logging;
 using UserAccountService.Infrastructure.Messaging;
-using RabbitMqEventPublisher = UserAccountService.Service.RabbitMqEventPublisher;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -43,7 +42,6 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddScoped<IAccountRepository, AccountRepository>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
-builder.Services.AddSingleton<IEventPublisher, RabbitMqEventPublisher>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IAccountService, UserAccountService.Service.AccountService>();
 

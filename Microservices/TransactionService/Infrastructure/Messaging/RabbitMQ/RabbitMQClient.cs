@@ -9,33 +9,20 @@ using RabbitMQ.Client.Exceptions;
 
 namespace TransactionService.Infrastructure.Messaging.RabbitMQ
 {
-    public class RabbitMQClient : IRabbitMQClient, IDisposable
+    public class RabbitMQClient(
+        ILogger<RabbitMQClient> logger,
+        string hostName = "rabbitmq",
+        int port = 5672,
+        string userName = "guest",
+        string password = "guest")
+        : IRabbitMqClient, IDisposable
     {
-        private readonly ILogger<RabbitMQClient> _logger;
-        private readonly string _hostName;
-        private readonly int _port;
-        private readonly string _userName;
-        private readonly string _password;
         private IConnection? _connection;
         private IModel? _channel;
         private readonly object _connectionLock = new object();
         private bool _disposed;
 
         public bool IsConnected => _connection?.IsOpen == true && _channel?.IsOpen == true && !_disposed;
-
-        public RabbitMQClient(
-            ILogger<RabbitMQClient> logger,
-            string hostName = "rabbitmq",
-            int port = 5672,
-            string userName = "guest",
-            string password = "guest")
-        {
-            _logger = logger;
-            _hostName = hostName;
-            _port = port;
-            _userName = userName;
-            _password = password;
-        }
 
         public void EnsureConnection()
         {
@@ -47,16 +34,16 @@ namespace TransactionService.Infrastructure.Messaging.RabbitMQ
                 if (IsConnected)
                     return;
 
-                _logger.LogInformation("Establishing connection to RabbitMQ at {Host}:{Port}", _hostName, _port);
+                logger.LogInformation("Establishing connection to RabbitMQ at {Host}:{Port}", hostName, port);
 
                 try
                 {
                     var factory = new ConnectionFactory
                     {
-                        HostName = _hostName,
-                        Port = _port,
-                        UserName = _userName,
-                        Password = _password,
+                        HostName = hostName,
+                        Port = port,
+                        UserName = userName,
+                        Password = password,
                         RequestedHeartbeat = TimeSpan.FromSeconds(30),
                         AutomaticRecoveryEnabled = true,
                         NetworkRecoveryInterval = TimeSpan.FromSeconds(10)
@@ -66,11 +53,11 @@ namespace TransactionService.Infrastructure.Messaging.RabbitMQ
                     _channel = _connection.CreateModel();
 
                     _connection.ConnectionShutdown += OnConnectionShutdown;
-                    _logger.LogInformation("Successfully connected to RabbitMQ at {Host}:{Port}", _hostName, _port);
+                    logger.LogInformation("Successfully connected to RabbitMQ at {Host}:{Port}", hostName, port);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to connect to RabbitMQ");
+                    logger.LogError(ex, "Failed to connect to RabbitMQ");
                     CleanupConnection();
                     throw;
                 }
@@ -96,12 +83,12 @@ namespace TransactionService.Infrastructure.Messaging.RabbitMQ
                         autoDelete: false,
                         arguments: null
                     );
-                    _logger.LogInformation("Queue '{QueueName}' declared or confirmed", queueName);
+                    logger.LogInformation("Queue '{QueueName}' declared or confirmed", queueName);
                 }
                 catch (OperationInterruptedException ex) when (ex.Message.Contains("PRECONDITION_FAILED"))
                 {
                     // This happens when queue exists with different settings
-                    _logger.LogWarning("Queue '{QueueName}' exists with different settings, using existing queue.", queueName);
+                    logger.LogWarning("Queue '{QueueName}' exists with different settings, using existing queue.", queueName);
                 }
                 
                 var body = Encoding.UTF8.GetBytes(message);
@@ -117,12 +104,12 @@ namespace TransactionService.Infrastructure.Messaging.RabbitMQ
                     basicProperties: properties,
                     body: body);
                 
-                _logger.LogInformation("Published message to queue '{QueueName}': {MessageLength} bytes", 
+                logger.LogInformation("Published message to queue '{QueueName}': {MessageLength} bytes",
                     queueName, body.Length);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error publishing message to queue: {QueueName}", queueName);
+                logger.LogError(ex, "Error publishing message to queue: {QueueName}", queueName);
                 
                 // Recreate the connection to get a fresh state - important for recovery
                 CleanupConnection();
@@ -148,7 +135,7 @@ namespace TransactionService.Infrastructure.Messaging.RabbitMQ
                     arguments: null
                 );
                 
-                _logger.LogInformation("Created or confirmed queue for subscription: {QueueName}", queueName);
+                logger.LogInformation("Created or confirmed queue for subscription: {QueueName}", queueName);
                 
                 // Set QoS to avoid overwhelming consumers
                 subscriptionChannel.BasicQos(0, 1, false);
@@ -157,18 +144,18 @@ namespace TransactionService.Infrastructure.Messaging.RabbitMQ
                 consumer.Received += (sender, ea) =>
                 {
                     string body = Encoding.UTF8.GetString(ea.Body.ToArray());
-                    _logger.LogInformation("Received message from queue '{QueueName}': {MessageLength} bytes", 
+                    logger.LogInformation("Received message from queue '{QueueName}': {MessageLength} bytes",
                         queueName, ea.Body.Length);
                     
                     try
                     {
                         handler(body);
                         subscriptionChannel.BasicAck(ea.DeliveryTag, false);
-                        _logger.LogInformation("Successfully processed message from queue '{QueueName}'", queueName);
+                        logger.LogInformation("Successfully processed message from queue '{QueueName}'", queueName);
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Error processing message from queue: {QueueName}", queueName);
+                        logger.LogError(ex, "Error processing message from queue: {QueueName}", queueName);
                         subscriptionChannel.BasicNack(ea.DeliveryTag, false, true); // Requeue
                     }
                 };
@@ -178,11 +165,11 @@ namespace TransactionService.Infrastructure.Messaging.RabbitMQ
                     autoAck: false, 
                     consumer: consumer);
                     
-                _logger.LogInformation("Successfully subscribed to queue: {QueueName}", queueName);
+                logger.LogInformation("Successfully subscribed to queue: {QueueName}", queueName);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error subscribing to queue: {QueueName}", queueName);
+                logger.LogError(ex, "Error subscribing to queue: {QueueName}", queueName);
                 
                 // Reset connection state
                 _channel = null;
@@ -221,7 +208,7 @@ namespace TransactionService.Infrastructure.Messaging.RabbitMQ
                             }
                             else
                             {
-                                _logger.LogError("Failed to deserialize message to type {Type}", typeof(T).Name);
+                                logger.LogError("Failed to deserialize message to type {Type}", typeof(T).Name);
                                 return;
                             }
                         }
@@ -233,11 +220,11 @@ namespace TransactionService.Infrastructure.Messaging.RabbitMQ
                         return;
                     }
                     
-                    _logger.LogError("Failed to deserialize message to type {Type}", typeof(T).Name);
+                    logger.LogError("Failed to deserialize message to type {Type}", typeof(T).Name);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error processing message");
+                    logger.LogError(ex, "Error processing message");
                 }
             });
         }
@@ -256,7 +243,7 @@ namespace TransactionService.Infrastructure.Messaging.RabbitMQ
                 {
                     // Try passive declaration first to see if queue exists
                     freshChannel.QueueDeclarePassive(queueName);
-                    _logger.LogDebug("Queue '{QueueName}' already exists", queueName);
+                    logger.LogDebug("Queue '{QueueName}' already exists", queueName);
                 }
                 catch (OperationInterruptedException)
                 {
@@ -269,19 +256,19 @@ namespace TransactionService.Infrastructure.Messaging.RabbitMQ
                             exclusive: exclusive,
                             autoDelete: autoDelete,
                             arguments: null);
-                        _logger.LogInformation("Queue '{QueueName}' created successfully with durable={Durable}", 
+                        logger.LogInformation("Queue '{QueueName}' created successfully with durable={Durable}",
                             queueName, durable);
                     }
                     catch (OperationInterruptedException ex) when (ex.Message.Contains("PRECONDITION_FAILED"))
                     {
                         // This happens when queue exists with different settings
-                        _logger.LogWarning("Queue '{QueueName}' exists with different settings. Using existing queue.", queueName);
+                        logger.LogWarning("Queue '{QueueName}' exists with different settings. Using existing queue.", queueName);
                     }
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to declare queue {QueueName}", queueName);
+                logger.LogError(ex, "Failed to declare queue {QueueName}", queueName);
                 CleanupConnection();
                 throw;
             }
@@ -296,7 +283,7 @@ namespace TransactionService.Infrastructure.Messaging.RabbitMQ
 
         private void OnConnectionShutdown(object? sender, ShutdownEventArgs e)
         {
-            _logger.LogWarning("RabbitMQ connection shutdown. Reason: {Reason}", e.ReplyText);
+            logger.LogWarning("RabbitMQ connection shutdown. Reason: {Reason}", e.ReplyText);
             CleanupConnection();
         }
 
@@ -309,7 +296,7 @@ namespace TransactionService.Infrastructure.Messaging.RabbitMQ
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error disposing RabbitMQ connections");
+                logger.LogError(ex, "Error disposing RabbitMQ connections");
             }
             finally
             {

@@ -63,7 +63,6 @@ public class UserAccountClientService : IUserAccountClient
             
             if (!response.IsSuccessStatusCode)
             {
-                LogSanitizedError();
                 throw new InvalidOperationException($"Failed to update account balance. Status: {response.StatusCode}");
             }
             
@@ -76,34 +75,4 @@ public class UserAccountClientService : IUserAccountClient
         }
     }
 
-    private void LogSanitizedError()
-    {
-        try
-        {
-            // Try to extract just essential info from the error
-            var errorType = "Unknown";
-            var errorStatus = "Unknown";
-
-            try
-            {
-                using var doc = JsonDocument.Parse(errorContent);
-                if (doc.RootElement.TryGetProperty("title", out var title))
-                    errorType = title.GetString() ?? "Unknown";
-
-                if (doc.RootElement.TryGetProperty("status", out var status))
-                    errorStatus = status.GetInt32().ToString();
-            }
-            catch
-            {
-                // If parsing fails, use generic message
-            }
-
-            _logger.LogError("Account service returned error. Type: {ErrorType}, Status: {ErrorStatus}",
-                errorType, errorStatus);
-        }
-        catch
-        {
-            _logger.LogError("Account service request failed");
-        }
-    }
 }

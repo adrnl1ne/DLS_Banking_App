@@ -30,8 +30,10 @@ public class TransactionService(
     Counter requestsTotal,
     Counter successesTotal,
     Counter errorsTotal,
-    IRabbitMQClient rabbitMqClient,  // Change from IRabbitMqClient to IRabbitMQClient
-    Histogram histogram)
+    IRabbitMqClient rabbitMqClient,  // Changed back to IRabbitMqClient
+    Histogram histogram,
+    IRedisClient redisClient,
+    IHttpClientFactory httpClientFactory)
     : ITransactionService
 {
     // Suspicious transaction thresholds
@@ -67,25 +69,30 @@ public class TransactionService(
 
             try
             {
-                // Always try to perform a synchronous fraud check first
+                // Always send fraud check request and wait for result
                 if (isFraudDetectionAvailable)
                 {
-                    var fraudResult = await fraudDetectionService.CheckFraudAsync(transaction.TransferId, transaction);
-
-                    // Check for fraud based on multiple criteria
-                    if (fraudResult.IsFraud || 
-                        fraudResult.Status == "declined" || 
-                        (isSuspiciousAmount && fraudResult.Status != "approved")) // Explicitly handle suspicious amounts
+                    try
                     {
-                        logger.LogWarning("Fraud detected for transaction: Status={Status}", 
-                            fraudResult.Status);
-                            
-                        await repository.UpdateTransactionStatusAsync(transaction.Id, "declined");
-                        errorsTotal.WithLabels("CreateTransfer").Inc();
-                        fraudDetected = true;
+                        // Send fraud check request - this now always returns immediately
+                        // The actual fraud result will come through FraudResultConsumer
+                        await fraudDetectionService.CheckFraudAsync(transaction.TransferId, transaction);
                         
-                        // Exit early if fraud is detected - don't queue balance updates
-                        throw new InvalidOperationException("Transaction declined due to potential fraud");
+                        // Mark transaction as pending fraud verification - NO balance updates yet
+                        transaction.FraudCheckResult = "pending_verification";
+                        fraudCheckPending = true;
+                        await repository.UpdateTransactionAsync(transaction);
+                        
+                        logger.LogInformation("Fraud check request sent for {TransferId}, waiting for result", transaction.TransferId);
+                    }
+                    catch (ServiceUnavailableException)
+                    {
+                        // Handle as if fraud detection is down
+                        logger.LogWarning("Fraud detection service unavailable, queueing request and flagging transaction for review");
+                        QueueFraudCheckForLaterProcessing(transaction);
+                        transaction.FraudCheckResult = "pending_review";
+                        fraudCheckPending = true;
+                        await repository.UpdateTransactionAsync(transaction);
                     }
                 }
                 else
@@ -139,28 +146,16 @@ public class TransactionService(
             // Initialize balance update tracking in Redis
             await InitializeBalanceUpdateTrackingAsync(transaction.TransferId);
 
-            // IMPORTANT: Only queue balance updates if fraud check is NOT pending and no fraud detected
-            if (!fraudCheckPending && !fraudDetected && !isSuspiciousAmount)
-            {
-                // If fraud detection was successful and no fraud was detected, queue the balance updates
-                await UpdateAccountBalancesAsync(transaction, fromAccount, toAccount);
-                
-                // Set status to processing while waiting for balance updates
-                string transactionStatus = "processing";
-                await UpdateTransactionStatusesAsync(transaction, withdrawalTransaction, depositTransaction,
-                    repository, transactionStatus);
-            }
-            else
-            {
-                logger.LogInformation("Skipping balance update queueing due to fraud check status or suspicious amount");
-                
-                // Update transaction statuses based on processing state
-                string transactionStatus = DetermineTransactionStatus(fraudCheckPending, isUserAccountServiceAvailable, isSuspiciousAmount);
-                await UpdateTransactionStatusesAsync(transaction, withdrawalTransaction, depositTransaction,
-                    repository, transactionStatus);
-            }
+            // IMPORTANT: NEVER queue balance updates immediately - ALWAYS wait for fraud verification
+            // All transactions must be verified before any balance updates occur
+            logger.LogInformation("Transaction created and pending fraud verification - NO balance updates will occur until fraud check completes");
+            
+            // Always set initial status to pending (waiting for fraud verification)
+            string transactionStatus = "pending";
+            await UpdateTransactionStatusesAsync(transaction, withdrawalTransaction, depositTransaction,
+                repository, transactionStatus);
 
-            logger.LogInformation("Transaction processing initiated with status: processing");
+            logger.LogInformation("Transaction created with status: pending (awaiting fraud verification)");
 
             // Track transaction amount in histogram for metrics
             histogram.WithLabels("transfer").Observe((double)transaction.Amount);
@@ -195,20 +190,8 @@ public class TransactionService(
                 logger.LogError(ex, "Failed to publish transaction event, but transaction was processed successfully");
             }
 
-            // Update status message to reflect the transaction state more accurately
-            string statusMessage;
-            if (isSuspiciousAmount) {
-                statusMessage = "Transaction requires additional verification due to amount.";
-            }
-            else if (fraudCheckPending) {
-                statusMessage = "Transaction is being verified. Balance updates may be delayed due to system maintenance.";
-            }
-            else if (!isUserAccountServiceAvailable) {
-                statusMessage = "Transaction accepted and verified. Balance updates may be delayed due to system maintenance.";
-            }
-            else {
-                statusMessage = "Transaction is being processed. Please wait for confirmation.";
-            }
+            // Update status message to reflect that ALL transactions wait for fraud verification
+            string statusMessage = "Transaction created and awaiting fraud verification. Balance updates will occur after verification completes.";
 
             successesTotal.WithLabels("CreateTransfer").Inc();
             return TransactionResponse.FromTransaction(transaction, statusMessage);
@@ -245,7 +228,6 @@ public class TransactionService(
             ToAccount = request.ToAccount,
             Amount = request.Amount,
             Status = "pending",
-            TransactionType = request.TransactionType,
             Description = request.Description ?? $"Transfer",
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
@@ -409,19 +391,40 @@ public class TransactionService(
     {
         try
         {
-            logger.LogInformation("🔄 HANDLING BALANCE UPDATE CONFIRMATION: Type={Type}, Success={Success}",
-                transactionType, success);
+            logger.LogInformation("🔄 HANDLING BALANCE UPDATE CONFIRMATION: TransferId={TransferId}, Type={Type}, Success={Success}",
+                transferId, transactionType, success);
 
+            // The tracking key should match what was set during initialization
             var trackingKey = $"transaction:tracking:{transferId}";
             
             var trackingDataJson = await redisClient.GetAsync(trackingKey);
             if (string.IsNullOrEmpty(trackingDataJson))
             {
-                logger.LogWarning("❌ No tracking data found for transaction");
-                return;
+                logger.LogWarning("❌ No tracking data found for transaction {TransferId}. Looking for any Redis keys with this transferId...", transferId);
+                
+                // Debug: Try to find any keys related to this transferId
+                try
+                {
+                    // This is for debugging - in production you might want to remove this
+                    logger.LogInformation("🔍 SEARCHING for Redis keys containing transferId {TransferId}", transferId);
+                    // For now, let's try to initialize tracking if it doesn't exist
+                    await InitializeBalanceUpdateTrackingAsync(transferId);
+                    trackingDataJson = await redisClient.GetAsync(trackingKey);
+                }
+                catch (Exception debugEx)
+                {
+                    logger.LogError(debugEx, "Error during Redis key search");
+                }
+                
+                if (string.IsNullOrEmpty(trackingDataJson))
+                {
+                    logger.LogWarning("❌ Still no tracking data found for transaction {TransferId}, creating new tracking", transferId);
+                    await InitializeBalanceUpdateTrackingAsync(transferId);
+                    trackingDataJson = await redisClient.GetAsync(trackingKey);
+                }
             }
             
-            logger.LogInformation("📊 Found tracking data");
+            logger.LogInformation("📊 Found tracking data: {TrackingData}", trackingDataJson);
             
             dynamic trackingData = JsonConvert.DeserializeObject(trackingDataJson) ?? new { withdrawalCompleted = false, depositCompleted = false };
             
@@ -438,14 +441,14 @@ public class TransactionService(
             }
             else
             {
-                logger.LogWarning("⚠️ UNKNOWN transaction type");
+                logger.LogWarning("⚠️ UNKNOWN transaction type: {TransactionType}", transactionType);
+                return; // Don't process unknown transaction types
             }
             
             // Save updated tracking data
             var updatedTrackingJson = JsonConvert.SerializeObject(trackingData);
             await redisClient.SetAsync(trackingKey, updatedTrackingJson, TimeSpan.FromHours(24));
-            logger.LogInformation("💾 SAVED UPDATED TRACKING DATA");
-            
+
             // Check if both updates are completed
             bool withdrawalDone = trackingData.withdrawalCompleted == true;
             bool depositDone = trackingData.depositCompleted == true;
@@ -512,7 +515,7 @@ public class TransactionService(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "💥 ERROR handling balance update confirmation");
+            logger.LogError(ex, "💥 ERROR handling balance update confirmation for {TransferId}", transferId);
         }
     }
 
@@ -628,9 +631,9 @@ public class TransactionService(
     {
         try
         {
-            using var httpClient = httpClientFactory.CreateClient("UserAccountClient"); // Fix: Use correct client name
+            using var httpClient = httpClientFactory.CreateClient("UserAccountService");
             httpClient.Timeout = TimeSpan.FromSeconds(3);
-            var response = await httpClient.GetAsync("/health"); // Make sure this matches your actual health endpoint
+            var response = await httpClient.GetAsync("/health");
             return response.IsSuccessStatusCode;
         }
         catch
@@ -735,5 +738,135 @@ public class TransactionService(
         
         // Everything is good, mark as completed
         return "completed";
+    }
+
+    public async Task ProcessFraudResultAsync(FraudResult fraudResult)
+    {
+        try
+        {
+            logger.LogInformation("Processing fraud result for {TransferId}: IsFraud={IsFraud}, Status={Status}", 
+                fraudResult.TransferId, fraudResult.IsFraud, fraudResult.Status);
+
+            var transaction = await repository.GetTransactionByTransferIdAsync(fraudResult.TransferId);
+            if (transaction == null)
+            {
+                logger.LogWarning("Transaction not found for fraud result: {TransferId}", fraudResult.TransferId);
+                return;
+            }
+
+            // Get child transactions
+            var withdrawalTransaction = await repository.GetTransactionByTransferIdAsync(transaction.TransferId + "-withdrawal");
+            var depositTransaction = await repository.GetTransactionByTransferIdAsync(transaction.TransferId + "-deposit");
+
+            if (fraudResult.IsFraud || fraudResult.Status == "declined")
+            {
+                // FRAUD DETECTED - REJECT THE TRANSACTION
+                logger.LogWarning("Fraud detected for transaction {TransferId}, rejecting transaction", transaction.TransferId);
+                
+                // Update fraud check result
+                transaction.FraudCheckResult = "fraud_detected";
+                await repository.UpdateTransactionAsync(transaction);
+
+                // Mark all transactions as declined/rejected
+                await repository.UpdateTransactionStatusAsync(transaction.Id, "declined");
+                
+                if (withdrawalTransaction != null)
+                {
+                    await repository.UpdateTransactionStatusAsync(withdrawalTransaction.Id, "declined");
+                }
+                
+                if (depositTransaction != null)
+                {
+                    await repository.UpdateTransactionStatusAsync(depositTransaction.Id, "declined");
+                }
+
+                logger.LogInformation("Transaction {TransferId} and all child transactions marked as declined due to fraud detection", transaction.TransferId);
+                
+                // Publish transaction declined event
+                try
+                {
+                    var settings = new JsonSerializerSettings
+                    {
+                        DateFormatHandling = DateFormatHandling.IsoDateFormat,
+                        DateTimeZoneHandling = DateTimeZoneHandling.Utc
+                    };
+
+                    var declinedMessageJson = JsonConvert.SerializeObject(new
+                    {
+                        transaction.TransferId,
+                        Status = "declined",
+                        Reason = "fraud_detected",
+                        transaction.Amount,
+                        transaction.Description,
+                        transaction.FromAccount,
+                        transaction.ToAccount,
+                        transaction.CreatedAt,
+                        DeclinedAt = DateTime.UtcNow
+                    }, settings);
+
+                    rabbitMqClient.Publish("TransactionDeclined", declinedMessageJson);
+                    logger.LogInformation("Published transaction declined event for {TransferId}", transaction.TransferId);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Failed to publish transaction declined event for {TransferId}", transaction.TransferId);
+                }
+            }
+            else
+            {
+                // FRAUD CHECK PASSED - PROCEED WITH BALANCE UPDATES
+                logger.LogInformation("Fraud check passed for {TransferId}, proceeding with balance updates", transaction.TransferId);
+                
+                // Update fraud check result
+                transaction.FraudCheckResult = "verified";
+                await repository.UpdateTransactionAsync(transaction);
+                
+                // Parse account information
+                if (int.TryParse(transaction.FromAccount, out var fromAccountId) && 
+                    int.TryParse(transaction.ToAccount, out var toAccountId))
+                {
+                    var fromAccount = new Account { Id = fromAccountId, UserId = transaction.UserId };
+                    var toAccount = new Account { Id = toAccountId };
+                    
+                    // NOW queue balance updates since fraud check passed
+                    await UpdateAccountBalancesAsync(transaction, fromAccount, toAccount);
+                    
+                    // Update transaction status to processing (waiting for balance updates)
+                    await repository.UpdateTransactionStatusAsync(transaction.Id, "processing");
+                    
+                    if (withdrawalTransaction != null)
+                    {
+                        await repository.UpdateTransactionStatusAsync(withdrawalTransaction.Id, "processing");
+                    }
+                    
+                    if (depositTransaction != null)
+                    {
+                        await repository.UpdateTransactionStatusAsync(depositTransaction.Id, "processing");
+                    }
+                    
+                    logger.LogInformation("Balance updates queued for transaction {TransferId}, status updated to processing", transaction.TransferId);
+                }
+                else
+                {
+                    logger.LogError("Invalid account IDs for transaction {TransferId}: From={FromAccount}, To={ToAccount}", 
+                        transaction.TransferId, transaction.FromAccount, transaction.ToAccount);
+                        
+                    // Mark as failed due to invalid account data
+                    await repository.UpdateTransactionStatusAsync(transaction.Id, "failed");
+                    if (withdrawalTransaction != null)
+                    {
+                        await repository.UpdateTransactionStatusAsync(withdrawalTransaction.Id, "failed");
+                    }
+                    if (depositTransaction != null)
+                    {
+                        await repository.UpdateTransactionStatusAsync(depositTransaction.Id, "failed");
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error processing fraud result for {TransferId}", fraudResult.TransferId);
+        }
     }
 }

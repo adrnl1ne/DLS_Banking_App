@@ -8,16 +8,8 @@ namespace TransactionService.Services;
 public class TransactionValidator(
     ILogger<TransactionValidator> logger,
     IUserAccountClient userAccountClient,
-    IHttpClientFactory httpClientFactory,
     Counter errorsTotal)
 {
-    public async Task<bool> IsUserAccountServiceAvailableAsync()
-    {
-        // We always return true to allow queueing when UserAccountService is down
-        logger.LogInformation("Skipping UserAccountService availability check to allow transaction queueing");
-        return true;
-    }
-
     public async Task<(Account FromAccount, Account ToAccount)> ValidateTransferRequestAsync(TransactionRequest request)
     {
         // Parse account IDs to integers
@@ -57,7 +49,7 @@ public class TransactionValidator(
             {
                 // Try to fetch source account with retry
                 fromAccount = await userAccountRetryPolicy.ExecuteAsync(async () =>
-                    await userAccountClient.GetAccountAsync(fromAccountId));
+                    await userAccountClient.GetAccountAsync(fromAccountId)) ?? throw new InvalidOperationException();
                 
                 // Try to fetch destination account with retry
                 toAccount = await userAccountRetryPolicy.ExecuteAsync(async () =>

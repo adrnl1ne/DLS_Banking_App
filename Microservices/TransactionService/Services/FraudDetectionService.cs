@@ -13,23 +13,27 @@ namespace TransactionService.Services;
 public class FraudDetectionService : IFraudDetectionService
 {
     private readonly ILogger<FraudDetectionService> _logger;
-    private readonly IRabbitMQClient _rabbitMqClient;
-    private readonly FraudResultConsumer _fraudResultConsumer;
+    private readonly IRabbitMqClient _rabbitMqClient;
 
     public FraudDetectionService(
         ILogger<FraudDetectionService> logger,
-        IRabbitMQClient rabbitMqClient,
-        FraudResultConsumer fraudResultConsumer)
+        IRabbitMqClient rabbitMqClient)
     {
         _logger = logger;
         _rabbitMqClient = rabbitMqClient;
-        _fraudResultConsumer = fraudResultConsumer;
     }
 
     public async Task<bool> IsServiceAvailableAsync()
     {
-        // Can check if RabbitMQ connection is alive
-        return true;
+        // Check if RabbitMQ connection is alive
+        try
+        {
+            return _rabbitMqClient.IsConnected;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     public async Task<FraudResult> CheckFraudAsync(string transferId, Transaction transaction)
@@ -47,25 +51,15 @@ public class FraudDetectionService : IFraudDetectionService
             timestamp = DateTime.UtcNow
         };
 
-        // Publish message to CheckFraud queue
-        _rabbitMqClient.Publish("CheckFraud", JsonSerializer.Serialize(fraudMessage));
-
         try
         {
-            // Wait for response from FraudResult queue with timeout
-            var fraudResult = await _fraudResultConsumer.WaitForResult(transferId, TimeSpan.FromSeconds(30));
+            // Publish message to CheckFraud queue
+            _rabbitMqClient.Publish("CheckFraud", JsonSerializer.Serialize(fraudMessage));
+            
+            _logger.LogInformation("Published fraud check request for {TransferId}", transferId);
 
-            _logger.LogInformation(
-                "Received fraud check result for transaction {TransferId}: IsFraud={IsFraud}, Status={Status}",
-                fraudResult.TransferId, fraudResult.IsFraud, fraudResult.Status);
-
-            return fraudResult;
-        }
-        catch (TimeoutException)
-        {
-            _logger.LogWarning("Fraud check timed out for transaction");
-
-            // Return default result in case of timeout
+            // For now, return a default approved result since we're handling results asynchronously
+            // The actual result will be processed by FraudResultConsumer
             return new FraudResult
             {
                 TransferId = transferId,
@@ -74,6 +68,11 @@ public class FraudDetectionService : IFraudDetectionService
                 Amount = transaction.Amount,
                 Timestamp = DateTime.UtcNow
             };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send fraud check request");
+            throw new ServiceUnavailableException("Failed to send fraud check request", "Bæ");
         }
     }
 }
