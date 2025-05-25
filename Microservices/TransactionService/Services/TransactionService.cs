@@ -5,8 +5,19 @@ using TransactionService.Models;
 using TransactionService.Services.Interface;
 using Prometheus;
 using TransactionService.Exceptions;
+using TransactionService.Infrastructure.Messaging;
 using TransactionService.Infrastructure.Messaging.RabbitMQ;
 using TransactionService.Infrastructure.Redis;
+using System.Text;
+using System.Text.Json;
+using RabbitMQ.Client;
+using RabbitMQ.Client.Events;
+using System.Collections.Concurrent;
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace TransactionService.Services;
 
@@ -19,10 +30,8 @@ public class TransactionService(
     Counter requestsTotal,
     Counter successesTotal,
     Counter errorsTotal,
-    IRabbitMqClient rabbitMqClient,
-    Histogram histogram,
-    IHttpClientFactory httpClientFactory,
-    IRedisClient redisClient)
+    IRabbitMQClient rabbitMqClient,  // Change from IRabbitMqClient to IRabbitMQClient
+    Histogram histogram)
     : ITransactionService
 {
     // Suspicious transaction thresholds
@@ -236,13 +245,15 @@ public class TransactionService(
             ToAccount = request.ToAccount,
             Amount = request.Amount,
             Status = "pending",
-            Description = request.Description ?? $"Transfer from account {fromAccount.Id} to {toAccount.Id}",
+            TransactionType = request.TransactionType,
+            Description = request.Description ?? $"Transfer",
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
             TransactionType = "Withdrawal",
         };
 
         await repository.CreateTransactionAsync(transaction);
+        logger.LogInformation("Created pending transaction");
         logger.LogInformation("Created pending transaction");
         return transaction;
     }
@@ -265,7 +276,7 @@ public class TransactionService(
             Amount = transaction.Amount,
             Status = "pending",
             TransactionType = "withdrawal",
-            Description = $"Withdrawal from account {fromAccount.Id} for transfer {transaction.TransferId}",
+            Description = $"Withdrawal",
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -281,7 +292,7 @@ public class TransactionService(
             Amount = transaction.Amount,
             Status = "pending",
             TransactionType = "deposit",
-            Description = $"Deposit to account {toAccount.Id} from transfer {transaction.TransferId}",
+            Description = $"Deposit",
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -300,7 +311,7 @@ public class TransactionService(
         Account fromAccount,
         Account toAccount)
     {
-        logger.LogInformation("🚀 STARTING BALANCE UPDATE QUEUEING for transaction");
+        logger.LogInformation("Queueing balance updates");
 
         try
         {
@@ -536,6 +547,7 @@ public class TransactionService(
             else
             {
                 logger.LogWarning("Could not find transaction to mark as failed");
+                logger.LogWarning("Could not find transaction to mark as failed");
             }
         }
         catch (Exception updateEx)
@@ -579,10 +591,12 @@ public class TransactionService(
 
             // Call UserAccountService to get account details
             logger.LogInformation("Fetching account details");
+            logger.LogInformation("Fetching account details");
             var account = await userAccountClient.GetAccountAsync(accountIdInt);
 
             if (account == null)
             {
+                logger.LogWarning("Account not found");
                 logger.LogWarning("Account not found");
                 errorsTotal.WithLabels("GetTransactionsByAccount").Inc();
                 throw new InvalidOperationException("Account not found.");

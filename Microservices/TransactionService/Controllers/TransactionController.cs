@@ -63,13 +63,13 @@ public class TransactionController(ITransactionService transactionService, ILogg
         catch (UnauthorizedAccessException ex)
         {
             TransactionErrorsTotal.WithLabels("POST").Inc();
-            logger.LogWarning(ex, "Unauthorized access attempt during transfer creation");
+            logger.LogWarning("Unauthorized access attempt");
             return Unauthorized(ex.Message);
         }
         catch (InvalidOperationException ex)
         {
             TransactionErrorsTotal.WithLabels("POST").Inc();
-            logger.LogWarning(ex, "Invalid operation during transfer creation");
+            logger.LogWarning("Invalid operation request");
             return BadRequest(ex.Message);
         }
         catch (Exception ex)
@@ -148,19 +148,19 @@ public class TransactionController(ITransactionService transactionService, ILogg
         catch (UnauthorizedAccessException ex)
         {
             TransactionErrorsTotal.WithLabels("GET").Inc();
-            logger.LogWarning(ex, "Unauthorized access attempt during retrieval of transactions for account");
+            logger.LogWarning("Unauthorized access attempt");
             return StatusCode(403, ex.Message);
         }
         catch (ArgumentException ex)
         {
             TransactionErrorsTotal.WithLabels("GET").Inc();
-            logger.LogWarning(ex, "Invalid argument during retrieval of transactions");
+            logger.LogWarning("Invalid argument provided");
             return BadRequest(ex.Message);
         }
         catch (InvalidOperationException ex)
         {
             TransactionErrorsTotal.WithLabels("GET").Inc();
-            logger.LogWarning(ex, "Invalid operation during retrieval of transactions for account");
+            logger.LogWarning("Invalid operation request");
             return NotFound(ex.Message);
         }
         catch (Exception ex)

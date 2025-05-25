@@ -8,6 +8,7 @@ import uvicorn
 from prometheus_client import Counter, start_http_server
 import threading
 import redis
+from datetime import datetime
 
 # Set up console logging for operational information
 logging.basicConfig(
@@ -252,11 +253,21 @@ def callback(ch, method, properties, body):
         logging.error(f"Error processing message: {str(e)}")
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
-def reset_global_connection():
-    """Helper function to reset global connection variables"""
-    global rabbitmq_connection, rabbitmq_channel
-    rabbitmq_connection = None
-    rabbitmq_channel = None
+# Update the fraud result format with the missing required fields:
+def publish_fraud_result(channel, transfer_id, amount, is_fraud=False):
+    result = {
+        "TransferId": transfer_id,  # Capitalization matters for C# deserialization
+        "IsFraud": is_fraud,
+        "Status": "declined" if is_fraud else "approved",
+        "Amount": float(amount),
+        "Timestamp": datetime.utcnow().isoformat()  # Include required timestamp
+    }
+    
+    channel.basic_publish(
+        exchange='',
+        routing_key='FraudResult',
+        body=json.dumps(result)
+    )
 
 # Start consuming messages from RabbitMQ
 def start_consuming():

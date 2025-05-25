@@ -15,14 +15,10 @@ namespace TransactionService.Infrastructure.Logging
 
         public Task LogTransactionEventAsync(string transactionId, string eventType, string message)
         {
-            // Simple implementation that masks the ID by showing only the last 4 characters
-            string maskedId = transactionId.Length > 4 
-                ? "..." + transactionId.Substring(transactionId.Length - 4) 
-                : transactionId;
-                
+            // No longer showing any part of the transaction ID
             _logger.LogInformation(
-                "SECURE LOG: Transaction {TransactionId}, Event: {EventType}, Message: {Message}", 
-                maskedId, eventType, message);
+                "SECURE LOG: Transaction event: {EventType}, Status: {Message}", 
+                eventType, message);
                 
             return Task.CompletedTask;
         }

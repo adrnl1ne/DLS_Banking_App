@@ -1,12 +1,14 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using UserAccountService.Infrastructure.Messaging;
 using UserAccountService.Models;
 using UserAccountService.Shared.DTO;
+using UserAccountService.Service;
 
 namespace UserAccountService.Service
 {
@@ -140,44 +142,45 @@ namespace UserAccountService.Service
 
         private async Task<bool> ProcessMessageAsync(AccountBalanceUpdateMessage message)
         {
-            _logger.LogInformation("Processing balance update");
-            
-            try
+            try 
             {
-                using var scope = _serviceProvider.CreateScope();
-                var accountService = scope.ServiceProvider.GetRequiredService<IAccountService>();
+                _logger.LogInformation("Processing balance update");
                 
+                // Create the request object based on the message
                 var request = new AccountBalanceRequest
                 {
                     Amount = message.Amount,
                     TransactionId = message.TransactionId,
-                    TransactionType = message.TransactionType,
+                    TransactionType = message.IsAdjustment ? 
+                        message.TransactionType : 
+                        (!string.IsNullOrEmpty(message.TransactionType) ? message.TransactionType : "Deposit"),
                     IsAdjustment = message.IsAdjustment
                 };
                 
                 _logger.LogInformation("Calling UpdateBalanceAsSystemAsync");
+
+                // Get account service from DI
+                using var scope = _serviceProvider.CreateScope();
+                var accountService = scope.ServiceProvider.GetRequiredService<IAccountService>();
                 
+                // Process via system update method
                 var result = await accountService.UpdateBalanceAsSystemAsync(message.AccountId, request);
                 
                 if (result.Success)
                 {
-                    _logger.LogInformation("Successfully processed balance update. New balance available");
-                    return true; // Message processed successfully
+                    _logger.LogInformation("Successfully processed balance update");
+                    return true;
                 }
-                
-                if (result.ErrorCode == "ACCOUNT_NOT_FOUND" || result.ErrorCode == "INVALID_OPERATION")
+                else
                 {
                     _logger.LogWarning("Permanent error processing message: {ErrorCode} - {Message}", result.ErrorCode, result.Message);
                     return true; // Don't requeue for permanent errors
                 }
-                
-                _logger.LogWarning("Temporary error processing message: {ErrorMessage}", result.Message);
-                return false; // Requeue for temporary errors
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing balance update");
-                return false; // Requeue on exception
+                _logger.LogError(ex, "Error processing account balance update: {Message}", ex.Message);
+                return false;
             }
         }
 
