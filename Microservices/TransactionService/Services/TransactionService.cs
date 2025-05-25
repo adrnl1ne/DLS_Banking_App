@@ -43,7 +43,7 @@ public class TransactionService(
             bool isSuspiciousAmount = IsSuspiciousAmount(request.Amount);
             if (isSuspiciousAmount)
             {
-                logger.LogWarning("Suspicious transaction amount detected: {Amount}", request.Amount);
+                logger.LogWarning("Suspicious transaction amount detected");
             }
 
             // Validate the transfer request and fetch accounts
@@ -68,8 +68,8 @@ public class TransactionService(
                         fraudResult.Status == "declined" || 
                         (isSuspiciousAmount && fraudResult.Status != "approved")) // Explicitly handle suspicious amounts
                     {
-                        logger.LogWarning("Fraud detected for transaction {TransactionId}: Status={Status}, Amount={Amount}", 
-                            transaction.TransferId, fraudResult.Status, transaction.Amount);
+                        logger.LogWarning("Fraud detected for transaction: Status={Status}", 
+                            fraudResult.Status);
                             
                         await repository.UpdateTransactionStatusAsync(transaction.Id, "declined");
                         errorsTotal.WithLabels("CreateTransfer").Inc();
@@ -109,7 +109,7 @@ public class TransactionService(
             if (isSuspiciousAmount && !fraudDetected)
             {
                 // For amounts over threshold, we need additional verification
-                logger.LogWarning("High-value transaction ({Amount}) requires additional verification", transaction.Amount);
+                logger.LogWarning("High-value transaction requires additional verification");
                 
                 // Mark the transaction for manual review if it wasn't already declined
                 if (!fraudDetected)
@@ -300,7 +300,7 @@ public class TransactionService(
         Account fromAccount,
         Account toAccount)
     {
-        logger.LogInformation("🚀 STARTING BALANCE UPDATE QUEUEING for transaction {TransferId}", transaction.TransferId);
+        logger.LogInformation("🚀 STARTING BALANCE UPDATE QUEUEING for transaction");
 
         try
         {
@@ -328,15 +328,15 @@ public class TransactionService(
             // Prepare the queue - make sure it's declared with consistent settings
             string queueName = "AccountBalanceUpdates";
             
-            logger.LogInformation("🔗 Ensuring RabbitMQ connection and queue declaration for {QueueName}", queueName);
+            logger.LogInformation("🔗 Ensuring RabbitMQ connection and queue declaration");
             try 
             {
                 rabbitMqClient.DeclareQueue(queueName, durable: true);
-                logger.LogInformation("✅ Queue {QueueName} ready for publishing", queueName);
+                logger.LogInformation("✅ Queue ready for publishing");
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "⚠️ Error declaring queue {QueueName}, will try to publish anyway", queueName);
+                logger.LogWarning(ex, "⚠️ Error declaring queue, will try to publish anyway");
             }
 
             // Serialize to string before publishing
@@ -344,35 +344,27 @@ public class TransactionService(
             string toAccountJson = System.Text.Json.JsonSerializer.Serialize(toAccountMessage);
 
             // Publish withdrawal message
-            logger.LogInformation("📤 PUBLISHING WITHDRAWAL MESSAGE: TransferId={TransferId}, AccountId={AccountId}, Amount={Amount}, TransactionId={TransactionId}", 
-                transaction.TransferId, fromAccount.Id, transaction.Amount, fromAccountMessage.TransactionId);
-            logger.LogInformation("📄 Withdrawal Message JSON: {Message}", fromAccountJson);
+            logger.LogInformation("📤 PUBLISHING WITHDRAWAL MESSAGE");
             
             rabbitMqClient.Publish(queueName, fromAccountJson);
-            logger.LogInformation("✅ WITHDRAWAL MESSAGE PUBLISHED SUCCESSFULLY for account {AccountId}, transaction {TransferId}", 
-                fromAccount.Id, transaction.TransferId);
+            logger.LogInformation("✅ WITHDRAWAL MESSAGE PUBLISHED SUCCESSFULLY");
             
             // Add a small delay to ensure messages are processed in order
             await Task.Delay(100);
             
             // Publish deposit message
-            logger.LogInformation("📤 PUBLISHING DEPOSIT MESSAGE: TransferId={TransferId}, AccountId={AccountId}, Amount={Amount}, TransactionId={TransactionId}", 
-                transaction.TransferId, toAccount.Id, transaction.Amount, toAccountMessage.TransactionId);
-            logger.LogInformation("📄 Deposit Message JSON: {Message}", toAccountJson);
+            logger.LogInformation("📤 PUBLISHING DEPOSIT MESSAGE");
             
             rabbitMqClient.Publish(queueName, toAccountJson);
-            logger.LogInformation("✅ DEPOSIT MESSAGE PUBLISHED SUCCESSFULLY for account {AccountId}, transaction {TransferId}", 
-                toAccount.Id, transaction.TransferId);
+            logger.LogInformation("✅ DEPOSIT MESSAGE PUBLISHED SUCCESSFULLY");
             
-            logger.LogInformation("🎉 BOTH WITHDRAWAL AND DEPOSIT MESSAGES PUBLISHED SUCCESSFULLY for transaction {TransferId}", transaction.TransferId);
-            logger.LogInformation("📊 SUMMARY: Published 2 messages for {TransferId} - Withdrawal: {WithdrawalTxId}, Deposit: {DepositTxId}", 
-                transaction.TransferId, fromAccountMessage.TransactionId, toAccountMessage.TransactionId);
+            logger.LogInformation("🎉 BOTH WITHDRAWAL AND DEPOSIT MESSAGES PUBLISHED SUCCESSFULLY");
             
             await Task.CompletedTask;
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "❌ FAILED to queue balance updates for transaction {TransferId}", transaction.TransferId);
+            logger.LogError(ex, "❌ FAILED to queue balance updates");
             throw;
         }
     }
@@ -406,19 +398,19 @@ public class TransactionService(
     {
         try
         {
-            logger.LogInformation("🔄 HANDLING BALANCE UPDATE CONFIRMATION: TransferId={TransferId}, Type={Type}, Success={Success}",
-                transferId, transactionType, success);
+            logger.LogInformation("🔄 HANDLING BALANCE UPDATE CONFIRMATION: Type={Type}, Success={Success}",
+                transactionType, success);
 
             var trackingKey = $"transaction:tracking:{transferId}";
             
             var trackingDataJson = await redisClient.GetAsync(trackingKey);
             if (string.IsNullOrEmpty(trackingDataJson))
             {
-                logger.LogWarning("❌ No tracking data found for transaction {TransferId} with key {TrackingKey}", transferId, trackingKey);
+                logger.LogWarning("❌ No tracking data found for transaction");
                 return;
             }
             
-            logger.LogInformation("📊 CURRENT TRACKING DATA: {TrackingData}", trackingDataJson);
+            logger.LogInformation("📊 Found tracking data");
             
             dynamic trackingData = JsonConvert.DeserializeObject(trackingDataJson) ?? new { withdrawalCompleted = false, depositCompleted = false };
             
@@ -426,16 +418,16 @@ public class TransactionService(
             if (transactionType.Equals("Withdrawal", StringComparison.OrdinalIgnoreCase))
             {
                 trackingData.withdrawalCompleted = success;
-                logger.LogInformation("✅ UPDATED withdrawal status to {Success} for {TransferId}", success, transferId);
+                logger.LogInformation("✅ UPDATED withdrawal status to {Success}", success);
             }
             else if (transactionType.Equals("Deposit", StringComparison.OrdinalIgnoreCase))
             {
                 trackingData.depositCompleted = success;
-                logger.LogInformation("✅ UPDATED deposit status to {Success} for {TransferId}", success, transferId);
+                logger.LogInformation("✅ UPDATED deposit status to {Success}", success);
             }
             else
             {
-                logger.LogWarning("⚠️ UNKNOWN transaction type: {TransactionType} for {TransferId}", transactionType, transferId);
+                logger.LogWarning("⚠️ UNKNOWN transaction type");
             }
             
             // Save updated tracking data
@@ -451,7 +443,7 @@ public class TransactionService(
             
             if (withdrawalDone && depositDone)
             {
-                logger.LogInformation("🎉 BOTH BALANCE UPDATES COMPLETED for transaction {TransferId}, marking as completed", transferId);
+                logger.LogInformation("🎉 BOTH BALANCE UPDATES COMPLETED, marking as completed");
                 
                 // Update all related transactions to completed
                 var transaction = await repository.GetTransactionByTransferIdAsync(transferId);
@@ -463,7 +455,7 @@ public class TransactionService(
                     if (withdrawalTransaction != null && depositTransaction != null)
                     {
                         await UpdateTransactionStatusesAsync(transaction, withdrawalTransaction, depositTransaction, repository, "completed");
-                        logger.LogInformation("✅ MARKED ALL TRANSACTIONS AS COMPLETED for {TransferId}", transferId);
+                        logger.LogInformation("✅ MARKED ALL TRANSACTIONS AS COMPLETED");
                     }
                     
                     // Publish updated transaction event
@@ -486,19 +478,19 @@ public class TransactionService(
                     }, settings);
 
                     rabbitMqClient.Publish("TransactionCompleted", messageJson);
-                    logger.LogInformation("📢 PUBLISHED transaction completed event for {TransferId}", transferId);
+                    logger.LogInformation("📢 PUBLISHED transaction completed event");
                 }
             }
             else if (success == false)
             {
-                logger.LogError("❌ BALANCE UPDATE FAILED for transaction {TransferId}, type {TransactionType}", transferId, transactionType);
+                logger.LogError("❌ BALANCE UPDATE FAILED for transaction type {TransactionType}", transactionType);
                 
                 // Mark transaction as failed if any balance update fails
                 var transaction = await repository.GetTransactionByTransferIdAsync(transferId);
                 if (transaction != null)
                 {
                     await repository.UpdateTransactionStatusAsync(transaction.Id, "failed");
-                    logger.LogInformation("💥 MARKED transaction {TransferId} as failed due to balance update failure", transferId);
+                    logger.LogInformation("💥 MARKED transaction as failed due to balance update failure");
                 }
             }
             else
@@ -509,7 +501,7 @@ public class TransactionService(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "💥 ERROR handling balance update confirmation for transaction {TransferId}", transferId);
+            logger.LogError(ex, "💥 ERROR handling balance update confirmation");
         }
     }
 
@@ -689,7 +681,7 @@ public class TransactionService(
 
             string messageJson = JsonConvert.SerializeObject(priorityFraudMessage);
             
-            logger.LogInformation("Queueing high-priority fraud check for suspicious amount: {Amount}", transaction.Amount);
+            logger.LogInformation("Queueing high-priority fraud check for suspicious amount");
 
             // Make sure the queue exists
             rabbitMqClient.DeclareQueue("PriorityFraudCheck", durable: true);
@@ -697,13 +689,11 @@ public class TransactionService(
             // Queue the high-priority message
             rabbitMqClient.Publish("PriorityFraudCheck", messageJson);
             
-            logger.LogInformation("Successfully queued priority fraud check for transaction {TransferId}", 
-                transaction.TransferId);
+            logger.LogInformation("Successfully queued priority fraud check");
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to queue priority fraud check for transaction {TransferId}", 
-                transaction.TransferId);
+            logger.LogError(ex, "Failed to queue priority fraud check");
             // Don't rethrow - we still want the transaction to proceed to pending state
         }
     }

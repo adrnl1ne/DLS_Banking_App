@@ -141,7 +141,7 @@ namespace TransactionService.Services
         {
             try
             {
-                _logger.LogInformation("Processing balance update for account {AccountId}", message.AccountId);
+                _logger.LogInformation("Processing balance update");
                 
                 using var scope = _serviceProvider.CreateScope();
                 var accountBalanceProcessor = scope.ServiceProvider.GetRequiredService<AccountBalanceProcessingService>();

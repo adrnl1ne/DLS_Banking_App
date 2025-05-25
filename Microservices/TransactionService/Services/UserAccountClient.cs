@@ -24,15 +24,14 @@ public class UserAccountClientService : IUserAccountClient
         _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", serviceToken);
         
         // Don't log the token, just log the base address
-        logger.LogInformation("UserAccountClientService initialized with BaseAddress: {BaseAddress}", 
-            _httpClient.BaseAddress);
+        logger.LogInformation("UserAccountClientService initialized");
     }
 
     public async Task<Account?> GetAccountAsync(int id)
     {
         try
         {
-            _logger.LogInformation("Getting account details for account");
+            _logger.LogInformation("Getting account details");
             
             var response = await _httpClient.GetAsync($"/api/Account/{id}");
             response.EnsureSuccessStatusCode();
@@ -51,8 +50,7 @@ public class UserAccountClientService : IUserAccountClient
     {
         try
         {
-            _logger.LogInformation("Updating account balance with operation type: {TransactionType}", 
-                balanceRequest.TransactionType);
+            _logger.LogInformation("Updating account balance with operation type");
                 
             // Serialize with proper content type
             var content = new StringContent(
@@ -65,8 +63,7 @@ public class UserAccountClientService : IUserAccountClient
             
             if (!response.IsSuccessStatusCode)
             {
-                var errorContent = await response.Content.ReadAsStringAsync();
-                LogSanitizedError(errorContent);
+                LogSanitizedError();
                 throw new InvalidOperationException($"Failed to update account balance. Status: {response.StatusCode}");
             }
             
@@ -79,35 +76,8 @@ public class UserAccountClientService : IUserAccountClient
         }
     }
 
-    private void LogSanitizedError(string errorContent)
+    private void LogSanitizedError()
     {
-        try
-        {
-            // Try to extract just essential info from the error
-            var errorType = "Unknown";
-            var errorStatus = "Unknown";
-
-            try
-            {
-                using var doc = JsonDocument.Parse(errorContent);
-                if (doc.RootElement.TryGetProperty("title", out var title))
-                    errorType = title.GetString() ?? "Unknown";
-
-                if (doc.RootElement.TryGetProperty("status", out var status))
-                    errorStatus = status.GetInt32().ToString();
-            }
-            catch
-            {
-                // If parsing fails, use generic message
-            }
-
-            _logger.LogError("Failed to update balance for account. Error type: {ErrorType}, Status: {ErrorStatus}",
-                errorType, errorStatus);
-        }
-        catch
-        {
-            // Fallback to very limited info if even the sanitization fails
-            _logger.LogError("Failed to update balance for account");
-        }
+        _logger.LogError("Failed to update balance for account");
     }
 }

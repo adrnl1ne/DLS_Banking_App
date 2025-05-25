@@ -45,8 +45,7 @@ public class TransactionValidator(
                 sleepDurationProvider: _ => TimeSpan.FromSeconds(1),
                 onRetry: (exception, _, retryCount, _) =>
                 {
-                    logger.LogWarning("Retry {RetryCount} for user account service call due to {ExceptionMessage}",
-                        retryCount, exception.Message);
+                    logger.LogWarning("Retry for user account service call");
                 });
 
         try

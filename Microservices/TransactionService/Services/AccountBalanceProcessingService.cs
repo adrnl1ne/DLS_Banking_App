@@ -26,8 +26,7 @@ namespace TransactionService.Services
         {
             try
             {
-                _logger.LogInformation("Processing balance update for account {AccountId}, amount {Amount}, transaction {TransactionId}", 
-                    message.AccountId, message.Amount, message.TransactionId);
+                _logger.LogInformation("Processing balance update");
                 
                 var request = new AccountBalanceRequest
                 {
@@ -40,13 +39,12 @@ namespace TransactionService.Services
                 // Forward the balance update to UserAccountService
                 await _userAccountClient.UpdateBalanceAsync(message.AccountId, request);
                 
-                _logger.LogInformation("Successfully forwarded balance update to UserAccountService for account {AccountId}", message.AccountId);
+                _logger.LogInformation("Successfully forwarded balance update to UserAccountService");
                 return true;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing balance update for account {AccountId}, transaction {TransactionId}", 
-                    message.AccountId, message.TransactionId);
+                _logger.LogError(ex, "Error processing balance update");
                 return false;
             }
         }

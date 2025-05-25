@@ -28,8 +28,7 @@ namespace UserAccountService.Service // Changed from Services to Service
 
         public async Task<bool> ProcessBalanceUpdateAsync(AccountBalanceUpdateMessage message)
         {
-            _logger.LogInformation("Processing balance update request for account {AccountId}, amount {Amount}, transactionId {TransactionId}", 
-                message.AccountId, message.Amount, message.TransactionId);
+            _logger.LogInformation("Processing balance update request for account, transactionId");
                            
             try
             {
@@ -39,7 +38,7 @@ namespace UserAccountService.Service // Changed from Services to Service
                     : "http://user-account-service:80";
                     
                 _httpClient.BaseAddress = new Uri(baseAddress);
-                _logger.LogInformation("Using base address: {BaseAddress}", _httpClient.BaseAddress);
+                _logger.LogInformation("Using configured base address");
                 
                 var request = new AccountBalanceRequest
                 {
@@ -54,7 +53,7 @@ namespace UserAccountService.Service // Changed from Services to Service
                     Encoding.UTF8, 
                     "application/json");
                 
-                _logger.LogInformation("Sending balance update request to {Endpoint}", $"/api/Account/{message.AccountId}/balance");
+                _logger.LogInformation("Sending balance update request");
                 
                 var response = await _httpClient.PutAsync(
                     $"/api/Account/{message.AccountId}/balance", 
@@ -62,17 +61,17 @@ namespace UserAccountService.Service // Changed from Services to Service
 
                 if (response.IsSuccessStatusCode)
                 {
-                    _logger.LogInformation("Balance update successful for account {AccountId}", message.AccountId);
+                    _logger.LogInformation("Balance update successful");
                     return true;
                 }
                 
                 var responseContent = await response.Content.ReadAsStringAsync();
-                _logger.LogWarning("Failed to process balance update: StatusCode={StatusCode}, Response={Response}", 
-                    response.StatusCode, responseContent);
+                _logger.LogWarning("Failed to process balance update: StatusCode={StatusCode}", 
+                    response.StatusCode);
                 
                 if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
                 {
-                    _logger.LogWarning("Account {AccountId} not found - won't retry", message.AccountId);
+                    _logger.LogWarning("Account not found - won't retry");
                     return true;  // Acknowledge permanent errors
                 }
                 
@@ -80,7 +79,7 @@ namespace UserAccountService.Service // Changed from Services to Service
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing balance update for account {AccountId}", message.AccountId);
+                _logger.LogError(ex, "Error processing balance update");
                 return false;  // Retry on exception
             }
         }

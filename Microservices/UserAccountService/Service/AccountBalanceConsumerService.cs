@@ -119,8 +119,7 @@ namespace UserAccountService.Service
                         QUEUE_NAME, 
                         async message =>
                         {
-                            _logger.LogInformation("Received message: AccountId={AccountId}, Amount={Amount}, TransactionId={TransactionId}", 
-                                message.AccountId, message.Amount, message.TransactionId);
+                            _logger.LogInformation("Received message");
                             return await ProcessMessageAsync(message);
                         });
                 
@@ -141,8 +140,7 @@ namespace UserAccountService.Service
 
         private async Task<bool> ProcessMessageAsync(AccountBalanceUpdateMessage message)
         {
-            _logger.LogInformation("Processing balance update for AccountId={AccountId}, Amount={Amount}, TransactionId={TransactionId}, Type={TransactionType}", 
-                message.AccountId, message.Amount, message.TransactionId, message.TransactionType);
+            _logger.LogInformation("Processing balance update");
             
             try
             {
@@ -157,15 +155,13 @@ namespace UserAccountService.Service
                     IsAdjustment = message.IsAdjustment
                 };
                 
-                _logger.LogInformation("Calling UpdateBalanceAsSystemAsync for account {AccountId}, amount {Amount}, transaction {TransactionId}", 
-                    message.AccountId, message.Amount, message.TransactionId);
+                _logger.LogInformation("Calling UpdateBalanceAsSystemAsync");
                 
                 var result = await accountService.UpdateBalanceAsSystemAsync(message.AccountId, request);
                 
                 if (result.Success)
                 {
-                    _logger.LogInformation("Successfully processed balance update for account {AccountId}. New balance: {NewBalance}", 
-                        message.AccountId, result.Data?.Amount);
+                    _logger.LogInformation("Successfully processed balance update. New balance available");
                     return true; // Message processed successfully
                 }
                 
@@ -180,7 +176,7 @@ namespace UserAccountService.Service
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing balance update for account {AccountId}", message.AccountId);
+                _logger.LogError(ex, "Error processing balance update");
                 return false; // Requeue on exception
             }
         }

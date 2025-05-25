@@ -802,8 +802,7 @@ public class AccountService(
                 }
                 catch (Exception redisEx)
                 {
-                    logger.LogError(redisEx, "Failed to store transaction {TransactionId} in Redis - idempotence at risk", 
-                        request.TransactionId);
+                    logger.LogError(redisEx, "Failed to store transaction in Redis - idempotence at risk");
                     // Continue - we've already updated the DB, and we shouldn't fail the transaction just because Redis is down
                 }
                 
@@ -902,12 +901,11 @@ public class AccountService(
             // Publish to the queue that TransactionService is listening to
             eventPublisher.Publish("BalanceUpdateConfirmation", messageJson);
             
-            logger.LogInformation("✅ PUBLISHED balance update confirmation for transaction {TransactionId}: success={Success}, message={Message}", 
-                transactionId, success, messageJson);
+            logger.LogInformation("✅ PUBLISHED balance update confirmation: success={Success}", success);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "❌ FAILED to publish balance update confirmation for transaction {TransactionId}", transactionId);
+            logger.LogError(ex, "❌ FAILED to publish balance update confirmation");
             // Don't throw - this is not critical for the balance update itself
         }
     }
