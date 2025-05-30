@@ -6,7 +6,7 @@ echo "🔍 Testing Banking App API Endpoints"
 echo "===================================="
 
 # Test credentials (from the database we initialized)
-USERNAME="john_doe"
+USERNAME="john_doe@dls.dk"
 PASSWORD="hashed_password_1"
 
 echo ""

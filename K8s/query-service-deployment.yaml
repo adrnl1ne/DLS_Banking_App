@@ -50,6 +50,11 @@ spec:
                   key: RABBITMQ_DEFAULT_PASS
             - name: Services__UserAccountService
               value: "http://user-account-service:8002"
+            - name: QUERY_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: banking-app-secret
+                  key: QUERY_SERVICE_TOKEN
           resources:
             limits:
               memory: "512Mi"

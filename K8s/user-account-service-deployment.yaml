@@ -83,6 +83,10 @@ spec:
                   key: JWT_KEY
             - name: PROMETHEUS_PORT
               value: "9091"
+            - name: REDIS_HOST
+              value: "redis"
+            - name: REDIS_PORT
+              value: "6379"
           resources:
             limits:
               memory: "1Gi"
