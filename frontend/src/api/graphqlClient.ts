@@ -1,9 +1,10 @@
 import { ApolloClient, InMemoryCache, createHttpLink, ApolloLink } from '@apollo/client';
 import { onError } from '@apollo/client/link/error';
 import { setContext } from '@apollo/client/link/context';
+import { API_URLS } from '../config/apiConfig';
 
 const httpLink = createHttpLink({
-  uri: 'http://localhost:8004/graphql', // Updated to use the correct QueryService port
+  uri: API_URLS.GRAPHQL, // Use dynamic GraphQL URL
 });
 
 const errorLink = onError(({ graphQLErrors, networkError }) => {

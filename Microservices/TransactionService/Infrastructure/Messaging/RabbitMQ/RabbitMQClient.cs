@@ -241,29 +241,21 @@ namespace TransactionService.Infrastructure.Messaging.RabbitMQ
                 
                 try
                 {
-                    // Try passive declaration first to see if queue exists
-                    freshChannel.QueueDeclarePassive(queueName);
-                    logger.LogDebug("Queue '{QueueName}' already exists", queueName);
+                    // Directly declare the queue - this will create it if it doesn't exist
+                    // or confirm it if it already exists with the same settings
+                    freshChannel.QueueDeclare(
+                        queue: queueName,
+                        durable: durable,
+                        exclusive: exclusive,
+                        autoDelete: autoDelete,
+                        arguments: null);
+                    logger.LogInformation("Queue '{QueueName}' declared successfully with durable={Durable}",
+                        queueName, durable);
                 }
-                catch (OperationInterruptedException)
+                catch (OperationInterruptedException ex) when (ex.Message.Contains("PRECONDITION_FAILED"))
                 {
-                    // Queue doesn't exist, create it with desired configuration
-                    try
-                    {
-                        freshChannel.QueueDeclare(
-                            queue: queueName,
-                            durable: durable,
-                            exclusive: exclusive,
-                            autoDelete: autoDelete,
-                            arguments: null);
-                        logger.LogInformation("Queue '{QueueName}' created successfully with durable={Durable}",
-                            queueName, durable);
-                    }
-                    catch (OperationInterruptedException ex) when (ex.Message.Contains("PRECONDITION_FAILED"))
-                    {
-                        // This happens when queue exists with different settings
-                        logger.LogWarning("Queue '{QueueName}' exists with different settings. Using existing queue.", queueName);
-                    }
+                    // This happens when queue exists with different settings
+                    logger.LogWarning("Queue '{QueueName}' exists with different settings. Using existing queue.", queueName);
                 }
             }
             catch (Exception ex)

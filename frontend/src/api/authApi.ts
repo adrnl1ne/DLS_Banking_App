@@ -1,8 +1,9 @@
 import axios from 'axios';
 import axiosInstance from './axiosConfig';
+import { API_URLS } from '../config/apiConfig';
 
-// Use a relative URL for browser requests
-const API_URL = 'http://localhost:8002/api/Token';
+// Use dynamic API URL
+const API_URL = API_URLS.AUTH;
 
 interface LoginCredentials {
   email: string;

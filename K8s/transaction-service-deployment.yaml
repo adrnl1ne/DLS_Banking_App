@@ -11,7 +11,7 @@ metadata:
     io.kompose.service: transaction-service
   name: transaction-service
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: transaction-service

@@ -1,8 +1,9 @@
 import axios from 'axios';
 import axiosInstance from './axiosConfig';
+import { API_URLS } from '../config/apiConfig';
 
-// Define API URL
-const API_URL = 'http://localhost:8002/api/Token';
+// Use dynamic API URL
+const API_URL = API_URLS.USER;
 
 export interface User {
   id: number;

@@ -5,15 +5,16 @@ metadata:
   labels:
     app: transaction-service
 spec:
-  type: ClusterIP # Changed from NodePort to ClusterIP for internal service
+  type: NodePort
   selector:
     app: transaction-service
   ports:
     - name: http
       protocol: TCP
-      port: 8003  # Service port for application
+      port: 8003 # Service port for application
       targetPort: 8080 # Container port for application
+      nodePort: 30003 # External port for frontend access
     - name: metrics
       protocol: TCP
-      port: 9092  # Service port for metrics
+      port: 9092 # Service port for metrics
       targetPort: 9092 # Container port for metrics

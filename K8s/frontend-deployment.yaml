@@ -11,7 +11,7 @@ metadata:
     io.kompose.service: frontend
   name: frontend
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: frontend
@@ -27,35 +27,19 @@ spec:
         app: frontend
     spec:
       containers:
-        - env:
-            - name: VITE_API_URL
-              valueFrom:
-                configMapKeyRef:
-                  name: banking-app-config
-                  key: VITE_API_URL
-            - name: VITE_USER_SERVICE_URL
-              valueFrom:
-                configMapKeyRef:
-                  name: banking-app-config
-                  key: VITE_USER_SERVICE_URL
-            - name: VITE_QUERY_SERVICE_URL
-              valueFrom:
-                configMapKeyRef:
-                  name: banking-app-config
-                  key: VITE_QUERY_SERVICE_URL
-          image: fhallengreen/dls_banking_app-frontend:latest
+        - image: fhallengreen/frontend:latest
           imagePullPolicy: Always
           livenessProbe:
             httpGet:
               path: /
-              port: 5173
+              port: 80
             initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3
           name: frontend
           ports:
-            - containerPort: 5173
+            - containerPort: 80
               protocol: TCP
           resources:
             limits:

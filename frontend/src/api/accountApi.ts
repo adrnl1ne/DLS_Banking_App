@@ -1,8 +1,9 @@
 import axios from 'axios';
 import axiosInstance from './axiosConfig';
+import { API_URLS } from '../config/apiConfig';
 
-// Define API URL
-const API_URL = 'http://localhost:8002/api/Account';
+// Use dynamic API URL
+const API_URL = API_URLS.ACCOUNT;
 
 // Define interfaces
 export interface Account {

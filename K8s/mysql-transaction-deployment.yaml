@@ -47,8 +47,12 @@ spec:
           volumeMounts:
             - name: mysql-transaction-data
               mountPath: /var/lib/mysql
-            - name: init-scripts
-              mountPath: /docker-entrypoint-initdb.d
+            - name: init-schema
+              mountPath: /docker-entrypoint-initdb.d/01-init-schema.sql
+              subPath: 01-init-schema.sql
+            - name: init-data
+              mountPath: /docker-entrypoint-initdb.d/02-init-test-data.sql
+              subPath: 02-init-test-data.sql
           resources:
             limits:
               memory: "536870912"
@@ -56,7 +60,10 @@ spec:
         - name: mysql-transaction-data
           persistentVolumeClaim:
             claimName: mysql-transaction-data
-        - name: init-scripts
+        - name: init-schema
           configMap:
             name: mysql-transaction-config
+        - name: init-data
+          configMap:
+            name: mysql-transaction-cm2
       restartPolicy: Always

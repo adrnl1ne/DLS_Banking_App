@@ -14,7 +14,7 @@ spec:
   ports:
     - name: "3001"
       port: 3001
-      targetPort: 5173
+      targetPort: 80
   selector:
     app: frontend
   type: NodePort

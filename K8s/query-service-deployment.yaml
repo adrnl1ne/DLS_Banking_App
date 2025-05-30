@@ -48,6 +48,8 @@ spec:
                 secretKeyRef:
                   name: banking-app-secret
                   key: RABBITMQ_DEFAULT_PASS
+            - name: Services__UserAccountService
+              value: "http://user-account-service:8002"
           resources:
             limits:
               memory: "512Mi"

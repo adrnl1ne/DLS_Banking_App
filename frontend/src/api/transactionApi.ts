@@ -1,7 +1,8 @@
 import axios from 'axios';
+import { API_URLS } from '../config/apiConfig';
 
-// Define API URL
-const API_URL = 'http://localhost:8003/api/Transaction';
+// Use dynamic API URL
+const API_URL = API_URLS.TRANSACTION;
 
 // Define interfaces
 export interface Transaction {

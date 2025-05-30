@@ -12,11 +12,12 @@ metadata:
     app: query-service
   name: query-service
 spec:
-  type: ClusterIP # Changed from NodePort to ClusterIP
+  type: NodePort
   ports:
     - name: "http" # Renamed from "8004" for clarity
       port: 8004
       targetPort: http # Targets the named port 'http' (8080) on the pod
       protocol: TCP
+      nodePort: 30004 # External port for frontend access
   selector:
     app: query-service
