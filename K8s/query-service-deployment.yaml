@@ -5,14 +5,14 @@ metadata:
     app: query-service
     kompose.cmd: kompose convert -f ../docker-compose.prod.yml
     kompose.image-pull-policy: Always
-    kompose.service.type: nodeport 
+    kompose.service.type: nodeport
     kompose.version: 1.35.0 (HEAD)
   labels:
     io.kompose.service: query-service
     app: query-service
   name: query-service
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: query-service
@@ -50,24 +50,24 @@ spec:
                   key: RABBITMQ_DEFAULT_PASS
           resources:
             limits:
-              memory: "512Mi" 
-              cpu: "0.5"   
-            requests: 
+              memory: "512Mi"
+              cpu: "0.5"
+            requests:
               memory: "256Mi"
               cpu: "0.25"
           livenessProbe:
             httpGet:
               path: /health
               port: http
-            initialDelaySeconds: 30 
-            periodSeconds: 10     
-            timeoutSeconds: 5       
-            failureThreshold: 3     
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /health
               port: http
-            initialDelaySeconds: 15 
+            initialDelaySeconds: 15
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3

@@ -12,7 +12,7 @@ metadata:
     app: user-account-service
   name: user-account-service
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: user-account-service
@@ -85,7 +85,7 @@ spec:
               value: "9091"
           resources:
             limits:
-              memory: "1Gi" 
+              memory: "1Gi"
               cpu: "1"
             requests:
               memory: "512Mi"
@@ -119,18 +119,18 @@ spec:
         - name: service-account-token
           projected:
             sources:
-            - serviceAccountToken:
-                expirationSeconds: 3607
-                path: token
-            - configMap:
-                name: kube-root-ca.crt
-                items:
-                  - key: ca.crt
-                    path: ca.crt
-            - downwardAPI:
-                items:
-                  - path: "namespace"
-                    fieldRef:
-                      apiVersion: v1
-                      fieldPath: metadata.namespace
+              - serviceAccountToken:
+                  expirationSeconds: 3607
+                  path: token
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+              - downwardAPI:
+                  items:
+                    - path: "namespace"
+                      fieldRef:
+                        apiVersion: v1
+                        fieldPath: metadata.namespace
       restartPolicy: Always

@@ -3,7 +3,7 @@ WORKDIR /src
 COPY ["UserAccountService.csproj", "."]
 RUN dotnet restore "./UserAccountService.csproj"
 COPY . .
-RUN dotnet publish "UserAccountService.csproj" -c Release -o /app/publish /p:UseAppHost=false --os linux --arch x64
+RUN dotnet publish "UserAccountService.csproj" -c Release -o /app/publish /p:UseAppHost=false --os linux
 
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
 WORKDIR /app

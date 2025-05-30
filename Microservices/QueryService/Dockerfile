@@ -12,7 +12,7 @@ RUN dotnet restore "./QueryService.csproj"
 COPY . .
 
 # Publish the QueryService project in Release mode for a Linux-based environment
-RUN dotnet publish "QueryService.csproj" -c Release -o /app/publish /p:UseAppHost=false --os linux --arch x64
+RUN dotnet publish "QueryService.csproj" -c Release -o /app/publish /p:UseAppHost=false --os linux
 
 # Runtime stage
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
