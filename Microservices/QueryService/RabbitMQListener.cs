@@ -26,18 +26,30 @@ public class RabbitMqListener : BackgroundService
 
         var channel = _rabbit.Channel;
 
-        // These queues must match the ones published by the other services
-        var queues = new[] { "AccountEvents", "TransactionCreated", "FraudEvents" };
-
-        foreach (var queue in queues)
+        // Declare the exchange
+        await channel.ExchangeDeclareAsync("banking.events", ExchangeType.Topic, durable: true);
+        
+        // Set up queue bindings for different event types
+        var queueBindings = new Dictionary<string, string[]>
         {
-            await channel.ExchangeDeclareAsync("banking.events", ExchangeType.Topic, durable: true);
+            { "AccountEvents", new[] { "AccountCreated", "AccountDeleted", "AccountRenamed", "AccountBalanceUpdated", "BalanceUpdateCompleted", "AccountDeposited" } },
+            { "TransactionCreated", new[] { "TransactionCreated" } },
+            { "FraudEvents", new[] { "FraudEvents", "CheckFraud" } }
+        };
+
+        foreach (var (queueName, routingKeys) in queueBindings)
+        {
             // Ensure queues are declared with durable: true to match publisher settings
-            await channel.QueueDeclareAsync(queue: queue, durable: true, exclusive: false, autoDelete: false);
-            await channel.QueueBindAsync(queue: queue, exchange: "banking.events", routingKey: queue);
+            await channel.QueueDeclareAsync(queue: queueName, durable: true, exclusive: false, autoDelete: false);
+            
+            // Bind the queue to multiple routing keys
+            foreach (var routingKey in routingKeys)
+            {
+                await channel.QueueBindAsync(queue: queueName, exchange: "banking.events", routingKey: routingKey);
+            }
 
             var consumer = new AsyncEventingBasicConsumer(channel);
-            var capturedQueue = queue;
+            var capturedQueue = queueName;
 
             consumer.ReceivedAsync += async (model, ea) =>
             {
@@ -85,7 +97,29 @@ public class RabbitMqListener : BackgroundService
         try {
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
-            var eventType = root.GetProperty("event_type").GetString();
+            
+            // Check if this is a BalanceUpdateCompleted event (different structure)
+            if (root.TryGetProperty("completedAt", out _) && !root.TryGetProperty("event_type", out _))
+            {
+                Console.WriteLine($"🔍 Processing BalanceUpdateCompleted event");
+                // This is just a confirmation event, we don't need to update Elasticsearch
+                // The actual balance update was already handled by the AccountBalanceUpdated event
+                return;
+            }
+            
+            // Safely get event_type property (should exist for all events except BalanceUpdateCompleted)
+            string? eventType = null;
+            if (root.TryGetProperty("event_type", out var eventTypeProp))
+            {
+                eventType = eventTypeProp.GetString();
+            }
+            
+            if (eventType == null)
+            {
+                Console.WriteLine("⚠️ Event missing event_type property - skipping");
+                return;
+            }
+            
             var accountId = root.GetProperty("accountId").GetInt32();
             
             Console.WriteLine($"🔍 Processing account event: Type={eventType}, AccountId={accountId}");
@@ -144,20 +178,24 @@ public class RabbitMqListener : BackgroundService
                 case "AccountDeposited":
                     if (accountEvent != null)
 						{
+							Console.WriteLine($"🔄 Updating account balance: AccountId={accountId}, NewBalance={accountEvent.Amount}");
+							
 							var updateResponse = await _elasticClient.UpdateAsync<AccountEvent>(accountId, u => u
 								.Index("accounts")
 								.Doc(new AccountEvent
 								{
 									EventType = accountEvent.EventType,
-									Amount = accountEvent.Amount,
-									Timestamp = accountEvent.Timestamp,
+									AccountId = accountEvent.AccountId,
 									UserId = accountEvent.UserId,
 									Name = accountEvent.Name,
-									AccountId = accountEvent.AccountId
+									Amount = accountEvent.Amount, // This is the key - update the actual balance
+									TransactionId = accountEvent.TransactionId,
+									TransactionType = accountEvent.TransactionType,
+									Timestamp = accountEvent.Timestamp
 								})
 								.DocAsUpsert(true));
 							Console.WriteLine(updateResponse.IsValid
-								? $"✅ Account balance updated in 'accounts' index."
+								? $"✅ Account balance updated in 'accounts' index to {accountEvent.Amount}."
 								: $"❌ Failed to update account balance in 'accounts' index: {updateResponse.DebugInformation}");
 						}
                     break;

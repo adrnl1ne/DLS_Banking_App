@@ -75,6 +75,7 @@ services:
   mysql-useraccount:
     container_name: mysql-useraccount
     image: mysql:8.0
+    platform: linux/amd64
     mem_limit: 256m
     cpus: "0.2"
     environment:
@@ -86,6 +87,7 @@ services:
       - mysql-useraccount-data:/var/lib/mysql
       - ./Microservices/UserAccountService/Database/01-init-schema.sql:/docker-entrypoint-initdb.d/01-init-schema.sql
       - ./Microservices/UserAccountService/Database/02-init-test-data.sql:/docker-entrypoint-initdb.d/02-init-test-data.sql
+    command: --skip-host-cache --skip-name-resolve --innodb-use-native-aio=0
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 15s
@@ -96,6 +98,7 @@ services:
   mysql-transaction:
     container_name: mysql-transaction
     image: mysql:8.0
+    platform: linux/amd64
     mem_limit: 256m
     cpus: "0.2"
     environment:
@@ -107,6 +110,7 @@ services:
       - mysql-transaction-data:/var/lib/mysql
       - ./Microservices/TransactionService/Database/01-init-schema.sql:/docker-entrypoint-initdb.d/01-init-schema.sql
       - ./Microservices/TransactionService/Database/02-init-test-data.sql:/docker-entrypoint-initdb.d/02-init-test-data.sql
+    command: --skip-host-cache --skip-name-resolve --innodb-use-native-aio=0
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 15s

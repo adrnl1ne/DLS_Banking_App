@@ -369,15 +369,26 @@ public class TransactionService(
         {
             var trackingKey = $"transaction:tracking:{transferId}";
             
-            var trackingData = new
+            // Use Redis hash to store tracking data for atomic operations
+            var trackingFields = new Dictionary<string, string>
             {
-                withdrawalCompleted = false,
-                depositCompleted = false,
-                createdAt = DateTime.UtcNow.ToString("o")
+                ["withdrawalCompleted"] = "false",
+                ["depositCompleted"] = "false", 
+                ["createdAt"] = DateTime.UtcNow.ToString("o")
             };
             
-            await redisClient.SetAsync(trackingKey, JsonConvert.SerializeObject(trackingData), TimeSpan.FromHours(24));
-            logger.LogInformation("Initialized balance update tracking for transaction {TransferId}", transferId);
+            // Only initialize if it doesn't already exist to prevent overwriting existing data
+            var exists = await redisClient.ExistsAsync(trackingKey);
+            if (!exists)
+            {
+                await redisClient.HashSetAsync(trackingKey, trackingFields);
+                await redisClient.ExpireAsync(trackingKey, TimeSpan.FromHours(24));
+                logger.LogInformation("Initialized balance update tracking for transaction {TransferId}", transferId);
+            }
+            else
+            {
+                logger.LogInformation("Balance update tracking already exists for transaction {TransferId}", transferId);
+            }
         }
         catch (Exception ex)
         {
@@ -397,102 +408,120 @@ public class TransactionService(
             // The tracking key should match what was set during initialization
             var trackingKey = $"transaction:tracking:{transferId}";
             
-            var trackingDataJson = await redisClient.GetAsync(trackingKey);
-            if (string.IsNullOrEmpty(trackingDataJson))
-            {
-                logger.LogWarning("❌ No tracking data found for transaction {TransferId}. Looking for any Redis keys with this transferId...", transferId);
-                
-                // Debug: Try to find any keys related to this transferId
-                try
-                {
-                    // This is for debugging - in production you might want to remove this
-                    logger.LogInformation("🔍 SEARCHING for Redis keys containing transferId {TransferId}", transferId);
-                    // For now, let's try to initialize tracking if it doesn't exist
-                    await InitializeBalanceUpdateTrackingAsync(transferId);
-                    trackingDataJson = await redisClient.GetAsync(trackingKey);
-                }
-                catch (Exception debugEx)
-                {
-                    logger.LogError(debugEx, "Error during Redis key search");
-                }
-                
-                if (string.IsNullOrEmpty(trackingDataJson))
-                {
-                    logger.LogWarning("❌ Still no tracking data found for transaction {TransferId}, creating new tracking", transferId);
-                    await InitializeBalanceUpdateTrackingAsync(transferId);
-                    trackingDataJson = await redisClient.GetAsync(trackingKey);
-                }
-            }
+            // Use atomic Redis hash operations to prevent race conditions
+            var fieldName = transactionType.Equals("Withdrawal", StringComparison.OrdinalIgnoreCase) 
+                ? "withdrawalCompleted" 
+                : "depositCompleted";
             
-            logger.LogInformation("📊 Found tracking data: {TrackingData}", trackingDataJson);
-            
-            dynamic trackingData = JsonConvert.DeserializeObject(trackingDataJson) ?? new { withdrawalCompleted = false, depositCompleted = false };
-            
-            // Update the appropriate field based on transaction type
-            if (transactionType.Equals("Withdrawal", StringComparison.OrdinalIgnoreCase))
-            {
-                trackingData.withdrawalCompleted = success;
-                logger.LogInformation("✅ UPDATED withdrawal status to {Success}", success);
-            }
-            else if (transactionType.Equals("Deposit", StringComparison.OrdinalIgnoreCase))
-            {
-                trackingData.depositCompleted = success;
-                logger.LogInformation("✅ UPDATED deposit status to {Success}", success);
-            }
-            else
+            if (!transactionType.Equals("Withdrawal", StringComparison.OrdinalIgnoreCase) && 
+                !transactionType.Equals("Deposit", StringComparison.OrdinalIgnoreCase))
             {
                 logger.LogWarning("⚠️ UNKNOWN transaction type: {TransactionType}", transactionType);
                 return; // Don't process unknown transaction types
             }
-            
-            // Save updated tracking data
-            var updatedTrackingJson = JsonConvert.SerializeObject(trackingData);
-            await redisClient.SetAsync(trackingKey, updatedTrackingJson, TimeSpan.FromHours(24));
 
-            // Check if both updates are completed
-            bool withdrawalDone = trackingData.withdrawalCompleted == true;
-            bool depositDone = trackingData.depositCompleted == true;
+            // Initialize tracking if it doesn't exist
+            var exists = await redisClient.ExistsAsync(trackingKey);
+            if (!exists)
+            {
+                logger.LogWarning("❌ No tracking data found for transaction {TransferId}, initializing...", transferId);
+                await InitializeBalanceUpdateTrackingAsync(transferId);
+            }
+
+            // Atomically update the specific field using Redis hash operations
+            await redisClient.HashSetAsync(trackingKey, fieldName, success.ToString());
+            logger.LogInformation("✅ ATOMICALLY UPDATED {FieldName} status to {Success}", fieldName, success);
+
+            // Atomically read both fields to check completion
+            var allFields = await redisClient.HashGetAllAsync(trackingKey);
+            var withdrawalCompleted = allFields.TryGetValue("withdrawalCompleted", out var withdrawalValue) && 
+                                    bool.TryParse(withdrawalValue, out var wResult) && wResult;
+            var depositCompleted = allFields.TryGetValue("depositCompleted", out var depositValue) && 
+                                 bool.TryParse(depositValue, out var dResult) && dResult;
             
-            logger.LogInformation("🔍 COMPLETION CHECK: Withdrawal={WithdrawalDone}, Deposit={DepositDone}", withdrawalDone, depositDone);
+            logger.LogInformation("🔍 COMPLETION CHECK: Withdrawal={WithdrawalDone}, Deposit={DepositDone}", 
+                withdrawalCompleted, depositCompleted);
             
-            if (withdrawalDone && depositDone)
+            if (withdrawalCompleted && depositCompleted)
             {
                 logger.LogInformation("🎉 BOTH BALANCE UPDATES COMPLETED, marking as completed");
                 
-                // Update all related transactions to completed
-                var transaction = await repository.GetTransactionByTransferIdAsync(transferId);
-                if (transaction != null)
+                // Use Redis lock to ensure only one thread processes completion
+                var lockKey = $"lock:completion:{transferId}";
+                var lockValue = Guid.NewGuid().ToString();
+                var lockAcquired = await redisClient.SetAsync(lockKey, lockValue, TimeSpan.FromSeconds(30), "NX");
+                
+                if (lockAcquired)
                 {
-                    var withdrawalTransaction = await repository.GetTransactionByTransferIdAsync(transferId + "-withdrawal");
-                    var depositTransaction = await repository.GetTransactionByTransferIdAsync(transferId + "-deposit");
-                    
-                    if (withdrawalTransaction != null && depositTransaction != null)
+                    try
                     {
-                        await UpdateTransactionStatusesAsync(transaction, withdrawalTransaction, depositTransaction, repository, "completed");
-                        logger.LogInformation("✅ MARKED ALL TRANSACTIONS AS COMPLETED");
+                        // Double-check completion status while holding the lock
+                        var fieldsRecheck = await redisClient.HashGetAllAsync(trackingKey);
+                        var withdrawalRecheckCompleted = fieldsRecheck.TryGetValue("withdrawalCompleted", out var wRecheckValue) && 
+                                                       bool.TryParse(wRecheckValue, out var wRecheckResult) && wRecheckResult;
+                        var depositRecheckCompleted = fieldsRecheck.TryGetValue("depositCompleted", out var dRecheckValue) && 
+                                                     bool.TryParse(dRecheckValue, out var dRecheckResult) && dRecheckResult;
+                        
+                        if (withdrawalRecheckCompleted && depositRecheckCompleted)
+                        {
+                            // Check if already processed by looking for a completion flag
+                            var alreadyProcessed = fieldsRecheck.ContainsKey("completed");
+                            if (!alreadyProcessed)
+                            {
+                                // Mark as completed to prevent duplicate processing
+                                await redisClient.HashSetAsync(trackingKey, "completed", "true");
+                                
+                                // Update all related transactions to completed
+                                var transaction = await repository.GetTransactionByTransferIdAsync(transferId);
+                                if (transaction != null)
+                                {
+                                    var withdrawalTransaction = await repository.GetTransactionByTransferIdAsync(transferId + "-withdrawal");
+                                    var depositTransaction = await repository.GetTransactionByTransferIdAsync(transferId + "-deposit");
+                                    
+                                    if (withdrawalTransaction != null && depositTransaction != null)
+                                    {
+                                        await UpdateTransactionStatusesAsync(transaction, withdrawalTransaction, depositTransaction, repository, "completed");
+                                        logger.LogInformation("✅ MARKED ALL TRANSACTIONS AS COMPLETED");
+                                    }
+                                    
+                                    // Publish updated transaction event
+                                    var settings = new JsonSerializerSettings
+                                    {
+                                        DateFormatHandling = DateFormatHandling.IsoDateFormat,
+                                        DateTimeZoneHandling = DateTimeZoneHandling.Utc
+                                    };
+
+                                    var messageJson = JsonConvert.SerializeObject(new
+                                    {
+                                        transaction.TransferId,
+                                        Status = "completed",
+                                        transaction.Amount,
+                                        transaction.Description,
+                                        transaction.FromAccount,
+                                        transaction.ToAccount,
+                                        transaction.CreatedAt,
+                                        CompletedAt = DateTime.UtcNow
+                                    }, settings);
+
+                                    rabbitMqClient.Publish("TransactionCompleted", messageJson);
+                                    logger.LogInformation("📢 PUBLISHED transaction completed event");
+                                }
+                            }
+                            else
+                            {
+                                logger.LogInformation("💡 Transaction {TransferId} already processed completion", transferId);
+                            }
+                        }
                     }
-                    
-                    // Publish updated transaction event
-                    var settings = new JsonSerializerSettings
+                    finally
                     {
-                        DateFormatHandling = DateFormatHandling.IsoDateFormat,
-                        DateTimeZoneHandling = DateTimeZoneHandling.Utc
-                    };
-
-                    var messageJson = JsonConvert.SerializeObject(new
-                    {
-                        transaction.TransferId,
-                        Status = "completed",
-                        transaction.Amount,
-                        transaction.Description,
-                        transaction.FromAccount,
-                        transaction.ToAccount,
-                        transaction.CreatedAt,
-                        CompletedAt = DateTime.UtcNow
-                    }, settings);
-
-                    rabbitMqClient.Publish("TransactionCompleted", messageJson);
-                    logger.LogInformation("📢 PUBLISHED transaction completed event");
+                        // Release the lock
+                        await redisClient.DeleteAsync(lockKey);
+                    }
+                }
+                else
+                {
+                    logger.LogInformation("🔒 Another process is handling completion for {TransferId}", transferId);
                 }
             }
             else if (success == false)
@@ -510,7 +539,7 @@ public class TransactionService(
             else
             {
                 logger.LogInformation("⏳ WAITING for more confirmations. Current status: Withdrawal={WithdrawalDone}, Deposit={DepositDone}", 
-                    withdrawalDone, depositDone);
+                    withdrawalCompleted, depositCompleted);
             }
         }
         catch (Exception ex)

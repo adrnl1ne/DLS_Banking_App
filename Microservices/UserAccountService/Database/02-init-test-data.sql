@@ -24,7 +24,3 @@ VALUES ('Checking Account', 500.25, 1);
 -- Jane Smith's accounts
 INSERT INTO `useraccount_db`.`account` (`name`, `amount`, `User_id`) 
 VALUES ('Savings Account', 2000.75, 2);
-
--- Admin User's accounts
-INSERT INTO `useraccount_db`.`account` (`name`, `amount`, `User_id`) 
-VALUES ('Admin Account', 10000.00, 3);
