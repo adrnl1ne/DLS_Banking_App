@@ -220,6 +220,9 @@ if (app.Environment.IsDevelopment())
 // Add CORS middleware BEFORE authentication and authorization
 app.UseCors("AllowFrontend");
 
+app.UseHttpMetrics();
+app.MapMetrics(); 
+
 app.UseAuthentication();
 app.UseAuthorization();
 

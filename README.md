@@ -87,7 +87,9 @@ Ports for services:
 docker compose -f docker-compose.dev.yml down 
 ```
 
-### To run using Kubernetes create a secrets.yaml file with the following content:
+## To run the application in Kubernetes:
+
+### 1. create a secrets.yaml file inside /k8s with the following content:
 ```yaml
 apiVersion: v1
 kind: Secret
@@ -106,5 +108,30 @@ stringData:
   MYSQL_PASSWORD: "password1!"
   JWT_KEY: "XXX"
   TRANSACTION_SERVICE_TOKEN: "XXX"
+  QUERY_SERVICE_TOKEN: "XXX"
 ```
 
+### 2. Run Minikube from the k8s folder:
+```bash
+minikube start --driver=docker --cpus=8 --memory=8192
+```
+
+### 3. Apply all Kubernetes manifests:
+```bash
+kubectl apply -f .
+```
+
+### 4. Monitor the pods:
+```bash
+kubectl get pods -w
+```
+
+Kubectl cheat sheet:
+```bash
+kubectl get pods
+kubectl get services
+kubectl get deployments
+kubectl describe pod <pod-name>
+kubectl logs <pod-name>
+kubectl delete pod <pod-name>
+```

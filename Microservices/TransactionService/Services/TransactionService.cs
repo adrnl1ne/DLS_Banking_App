@@ -133,9 +133,6 @@ public class TransactionService(
                     fraudCheckPending = true;
                     transaction.FraudCheckResult = "pending_review";
                     await repository.UpdateTransactionAsync(transaction);
-                    
-                    // Queue an additional, higher-priority fraud check
-                    QueuePriorityFraudCheck(transaction);
                 }
             }
 
@@ -705,42 +702,6 @@ public class TransactionService(
             logger.LogError(ex, "Failed to queue delayed fraud check for transaction {TransferId}", 
                 transaction.TransferId);
             // Don't rethrow - we still want the transaction to proceed
-        }
-    }
-
-    // Queue a high-priority fraud check for suspicious transactions
-    private void QueuePriorityFraudCheck(Transaction transaction)
-    {
-        try
-        {
-            var priorityFraudMessage = new
-            {
-                transferId = transaction.TransferId,
-                fromAccount = transaction.FromAccount,
-                toAccount = transaction.ToAccount,
-                amount = transaction.Amount,
-                userId = transaction.UserId,
-                timestamp = DateTime.UtcNow,
-                priority = "high",
-                suspiciousAmount = true
-            };
-
-            string messageJson = JsonConvert.SerializeObject(priorityFraudMessage);
-            
-            logger.LogInformation("Queueing high-priority fraud check for suspicious amount");
-
-            // Make sure the queue exists
-            rabbitMqClient.DeclareQueue("PriorityFraudCheck", durable: true);
-            
-            // Queue the high-priority message
-            rabbitMqClient.Publish("PriorityFraudCheck", messageJson);
-            
-            logger.LogInformation("Successfully queued priority fraud check");
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to queue priority fraud check");
-            // Don't rethrow - we still want the transaction to proceed to pending state
         }
     }
 

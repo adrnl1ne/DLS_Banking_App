@@ -276,7 +276,6 @@ app.UseSwaggerUI(c =>
 {
     c.SwaggerEndpoint("/swagger/v1/swagger.json", "Transaction API v1");
     c.RoutePrefix = string.Empty;
-    c.DocExpansion(Swashbuckle.AspNetCore.SwaggerUI.DocExpansion.Full);
 });
 
 app.UseRouting();
