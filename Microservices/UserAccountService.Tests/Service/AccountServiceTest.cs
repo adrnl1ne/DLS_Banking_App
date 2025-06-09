@@ -24,16 +24,16 @@ namespace UserAccountService.Tests.Service
         private readonly UserAccountDbContext _context;
         private readonly Mock<ICurrentUserService> _mockCurrentUserService;
         private readonly Mock<IAccountRepository> _mockAccountRepository;
-        private readonly Mock<IRabbitMqClient> _mockRabbitMqClient;  // Changed from IEventPublisher
+        private readonly Mock<IRabbitMqClient> _mockRabbitMqClient;
         private readonly Mock<IDatabase> _mockRedisDb;
         private readonly UserAccountService.Service.AccountService _accountService;
 
         public AccountServiceTest()
         {
             var dbContextOptions = new DbContextOptionsBuilder<UserAccountDbContext>()
-                .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString()) // Unique name for each test run
+                .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
                 .ConfigureWarnings(warnings =>
-                    warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)) // Added to ignore transaction warnings
+                    warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)) 
                 .Options;
 
             _context = new UserAccountDbContext(dbContextOptions);
@@ -42,18 +42,17 @@ namespace UserAccountService.Tests.Service
             _mockCurrentUserService = new Mock<ICurrentUserService>();
             var mockLogger = new Mock<ILogger<UserAccountService.Service.AccountService>>();
             _mockAccountRepository = new Mock<IAccountRepository>();
-            _mockRabbitMqClient = new Mock<IRabbitMqClient>();  // Changed from IEventPublisher
+            _mockRabbitMqClient = new Mock<IRabbitMqClient>();
             var mockRedis = new Mock<IConnectionMultiplexer>();
             _mockRedisDb = new Mock<IDatabase>();
 
             mockRedis.Setup(m => m.GetDatabase(It.IsAny<int>(), It.IsAny<object>())).Returns(_mockRedisDb.Object);
 
-            // Initialize AccountService with mocks
             _accountService = new(
                 _context,
                 _mockCurrentUserService.Object,
                 mockLogger.Object,
-                _mockRabbitMqClient.Object,  // Changed from _mockEventPublisher
+                _mockRabbitMqClient.Object,
                 _mockAccountRepository.Object,
                 mockRedis.Object
             );
@@ -91,11 +90,10 @@ namespace UserAccountService.Tests.Service
                 {
                     Id = 4, Username = "service_user", Email = "service@dls.dk", Password = "hashed_password",
                     CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow, RoleId = 2, Role = roles[1]
-                } // Assuming service might have admin-like role or a specific one
+                }
             };
             _context.Users.AddRange(users);
 
-            // Seed Accounts
             var accounts = new List<Account>
             {
                 new Account { Id = 1, Name = "John's Savings", Amount = 5000.50m, UserId = 1, User = users[0] },
@@ -105,7 +103,6 @@ namespace UserAccountService.Tests.Service
             };
             _context.Accounts.AddRange(accounts);
 
-            // Initialize empty DeletedAccounts table
             _context.DeletedAccounts.RemoveRange(_context.DeletedAccounts);
             
             _context.SaveChanges();
@@ -113,11 +110,9 @@ namespace UserAccountService.Tests.Service
 
         public void Dispose()
         {
-            _context.Database.EnsureDeleted(); // Clean up the in-memory database after each test
+            _context.Database.EnsureDeleted();
             _context.Dispose();
         }
-
-        // --- White Box Tests (London Approach) ---
 
         // Example: GetAccountsAsync
         [Fact]
@@ -132,7 +127,7 @@ namespace UserAccountService.Tests.Service
 
             // Assert
             Assert.NotNull(result);
-            Assert.Equal(2, result.Count); // John Doe has 2 accounts
+            Assert.Equal(2, result.Count);
             Assert.All(result, acc => Assert.Equal(expectedUserId, acc.UserId));
         }
 
@@ -151,8 +146,8 @@ namespace UserAccountService.Tests.Service
         public async Task GetAccountAsync_AccountExistsAndUserIsOwner_ReturnsAccount()
         {
             // Arrange
-            var accountId = 1; // John's Savings
-            var userId = 1; // John Doe
+            var accountId = 1;
+            var userId = 1;
             _mockCurrentUserService.Setup(s => s.UserId).Returns(userId);
             _mockCurrentUserService.Setup(s => s.Role).Returns("user");
 
@@ -169,8 +164,8 @@ namespace UserAccountService.Tests.Service
         public async Task GetAccountAsync_AccountExistsAndUserIsNotOwner_ThrowsUnauthorizedAccessException()
         {
             // Arrange
-            var accountId = 1; // John's Savings
-            var userId = 2; // Jane Smith
+            var accountId = 1; 
+            var userId = 2;
             _mockCurrentUserService.Setup(s => s.UserId).Returns(userId);
             _mockCurrentUserService.Setup(s => s.Role).Returns("user");
 
@@ -182,7 +177,7 @@ namespace UserAccountService.Tests.Service
         public async Task GetAccountAsync_AccountExistsAndRoleIsService_ReturnsAccount()
         {
             // Arrange
-            var accountId = 1; // John's Savings
+            var accountId = 1;
             _mockCurrentUserService.Setup(s => s.Role).Returns("service");
             _mockCurrentUserService.Setup(s => s.UserId).Returns((int?)null); // Service role might not have a user ID
 
@@ -391,8 +386,8 @@ namespace UserAccountService.Tests.Service
         public async Task RenameAccountAsync_UserNotOwner_ThrowsUnauthorizedAccessException()
         {
             // Arrange
-            var accountId = 1; // John's Savings
-            var userId = 2; // Jane Smith
+            var accountId = 1;
+            var userId = 2;
             var request = new AccountRenameRequest { Name = "New Name" };
             _mockCurrentUserService.Setup(s => s.UserId).Returns(userId);
 
@@ -405,8 +400,8 @@ namespace UserAccountService.Tests.Service
         public async Task RenameAccountAsync_NameIsUnchanged_ReturnsAccountWithoutPublishingEvent()
         {
             // Arrange
-            var accountId = 1; // John's Savings, current name "John's Savings"
-            var userId = 1; // John Doe
+            var accountId = 1;
+            var userId = 1;
             var existingName = _context.Accounts.Find(accountId).Name;
             var request = new AccountRenameRequest { Name = existingName };
             _mockCurrentUserService.Setup(s => s.UserId).Returns(userId);
@@ -658,26 +653,6 @@ namespace UserAccountService.Tests.Service
             Assert.NotNull(result.Value);
             Assert.Empty(result.Value);
         }
-
-
-        // --- Black Box Tests (Conceptual - to be implemented as integration or API tests) ---
-
-        // Black box tests would typically be written against the API endpoints.
-        // They would involve:
-        // - Setting up a test HTTP client.
-        // - Making HTTP requests to the AccountController endpoints.
-        // - Asserting the HTTP response (status code, body content).
-        // - Verifying data changes in the database (if applicable, through a separate query or another API call).
-        // - These are out of scope for this specific unit test file but important for overall coverage.
-
-        // Example Black Box Test (Conceptual - for GetAccounts endpoint)
-        // [Fact]
-        // public async Task GetAccounts_UserIsAuthenticated_ReturnsOkWithAccounts()
-        // {
-        //     // Arrange: HttpClient setup, authentication token for a user
-        //     // Act: GET request to /api/account/user
-        //     // Assert: 200 OK, response body contains expected accounts for the authenticated user
-        // }
 
         [Fact]
         public async Task GetAccountsAsync_SuccessfulRequest_IncrementsMetrics()
