@@ -205,7 +205,10 @@ namespace TransactionService.Tests.Services
                     CreatedAt = DateTime.UtcNow
                 });
 
-            _mockRedisClient.Setup(r => r.SetAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<TimeSpan>()))
+            _mockRedisClient.Setup(r => r.ExistsAsync(It.IsAny<string>())).ReturnsAsync(false);
+            _mockRedisClient.Setup(r => r.HashSetAsync(It.IsAny<string>(), It.IsAny<Dictionary<string, string>>()))
+                .Returns(Task.CompletedTask);
+            _mockRedisClient.Setup(r => r.ExpireAsync(It.IsAny<string>(), It.IsAny<TimeSpan>()))
                 .Returns(Task.CompletedTask);
 
             var service = CreateService();
@@ -221,8 +224,10 @@ namespace TransactionService.Tests.Services
             _mockFraudDetectionService.Verify(f => f.CheckFraudAsync(It.IsAny<string>(), It.IsAny<Transaction>()), Times.Once);
             _mockRepository.Verify(r => r.CreateTransactionAsync(It.IsAny<Transaction>()), Times.Exactly(3));
             _mockRabbitMqClient.Verify(r => r.Publish("TransactionCreated", It.IsAny<string>()), Times.Once);
-            _mockRedisClient.Verify(r => r.SetAsync(It.Is<string>(key => key.Contains("transaction:tracking")), 
-                It.IsAny<string>(), It.IsAny<TimeSpan>()), Times.Once);
+            _mockRedisClient.Verify(r => r.HashSetAsync(It.Is<string>(key => key.Contains("transaction:tracking")), 
+                It.IsAny<Dictionary<string, string>>()), Times.Once);
+            _mockRedisClient.Verify(r => r.ExpireAsync(It.Is<string>(key => key.Contains("transaction:tracking")), 
+                It.IsAny<TimeSpan>()), Times.Once);
         }
 
 
