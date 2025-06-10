@@ -1,24 +1,38 @@
 // API Configuration utility that works in any environment
 // This dynamically determines the correct API URLs based on the current environment
 
-const getApiBaseUrl = () => {
-  // Check if we're in development mode
-  if (import.meta.env.DEV) {
-    return 'http://localhost';
+const getApiConfig = () => {
+  // Use environment variables if available (for Kubernetes/Docker deployments)
+  if (import.meta.env.VITE_USER_SERVICE_URL) {
+    return {
+      USER_SERVICE: import.meta.env.VITE_USER_SERVICE_URL,
+      TRANSACTION_SERVICE: import.meta.env.VITE_TRANSACTION_SERVICE_URL,
+      QUERY_SERVICE: import.meta.env.VITE_QUERY_SERVICE_URL,
+    };
   }
   
-  // In production, use the current hostname (works for any IP/domain)
+  // Fallback for development mode
+  if (import.meta.env.DEV) {
+    return {
+      USER_SERVICE: 'http://localhost:8002',
+      TRANSACTION_SERVICE: 'http://localhost:8003',
+      QUERY_SERVICE: 'http://localhost:8004',
+    };
+  }
+  
+  // In production without env vars, use the current hostname (works for any IP/domain)
   const currentHost = window.location.hostname;
-  return `http://${currentHost}`;
+  const baseUrl = `http://${currentHost}`;
+  return {
+    USER_SERVICE: `${baseUrl}:8002`,
+    TRANSACTION_SERVICE: `${baseUrl}:8003`,
+    QUERY_SERVICE: `${baseUrl}:8004`,
+  };
 };
-
-const BASE_URL = getApiBaseUrl();
 
 // API endpoints configuration
 export const API_CONFIG = {
-  USER_SERVICE: `${BASE_URL}:8002`,
-  QUERY_SERVICE: `${BASE_URL}:8004`, 
-  TRANSACTION_SERVICE: `${BASE_URL}:8003`,
+  ...getApiConfig(),
   
   // API paths
   AUTH_API: '/api/Token',

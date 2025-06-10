@@ -14,13 +14,15 @@ cd DLS_Banking_App
 
 ```
 # Frontend
+# Frontend
 VITE_API_URL=http://localhost:3001
-VITE_USER_SERVICE_URL=http://localhost:5000
-VITE_QUERY_SERVICE_URL=http://localhost:4000
+VITE_USER_SERVICE_URL=http://localhost:8002
+VITE_TRANSACTION_SERVICE_URL=http://localhost:8003
+VITE_QUERY_SERVICE_URL=http://localhost:8004
 
 # Grafana credentials
 GF_SECURITY_ADMIN_USER=admin
-GF_SECURITY_ADMIN_PASSWORD=admin
+GF_SECURITY_ADMIN_PASSWORD=7ikg@7Vq.g4BHRv
 
 # RabbitMQ credentials
 RABBITMQ_DEFAULT_USER=guest
@@ -49,8 +51,8 @@ PROMETHEUS_PORT=9091
 # Service token for TransactionService
 TRANSACTION_SERVICE_TOKEN=XXX
 
-# Service token for UserAccountService
-QUERY_SERVICE_TOKEN=XXX
+# Service token for QueryService
+QUERY_SERVICE_TOKEN=XXXX
 ```
 
 ### 3. Run the application:
@@ -109,6 +111,9 @@ stringData:
   JWT_KEY: "XXX"
   TRANSACTION_SERVICE_TOKEN: "XXX"
   QUERY_SERVICE_TOKEN: "XXX"
+  VITE_USER_SERVICE_URL: "http://user-account-service:8002"
+  VITE_TRANSACTION_SERVICE_URL: "http://transaction-service:8003"
+  VITE_QUERY_SERVICE_URL: "http://query-service:8004"
 ```
 
 ### 2. Run Minikube from the k8s folder:
