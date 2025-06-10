@@ -321,6 +321,7 @@ services:
       - NODE_OPTIONS=--max-old-space-size=512
       - VITE_API_URL=${VITE_API_URL}
       - VITE_USER_SERVICE_URL=${VITE_USER_SERVICE_URL}
+      - VITE_TRANSACTION_SERVICE_URL=${VITE_TRANSACTION_SERVICE_URL}
       - VITE_QUERY_SERVICE_URL=${VITE_QUERY_SERVICE_URL}
     command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
     depends_on:

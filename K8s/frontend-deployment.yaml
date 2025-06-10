@@ -29,6 +29,22 @@ spec:
       containers:
         - image: fhallengreen/frontend:latest
           imagePullPolicy: Always
+          env:
+            - name: VITE_USER_SERVICE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: banking-app-secret
+                  key: VITE_USER_SERVICE_URL
+            - name: VITE_TRANSACTION_SERVICE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: banking-app-secret
+                  key: VITE_TRANSACTION_SERVICE_URL
+            - name: VITE_QUERY_SERVICE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: banking-app-secret
+                  key: VITE_QUERY_SERVICE_URL
           livenessProbe:
             httpGet:
               path: /
